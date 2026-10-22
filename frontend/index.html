@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snackbot dev</title>
+<style>
+  body { font-family: system-ui, "Malgun Gothic", sans-serif; margin: 16px; background: #faf7f2; color: #222; }
+  #wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  #cam { width: 100%; min-height: 240px; background: #ccc; }
+  #state { font-size: 1.3rem; font-weight: 700; }
+  #log { height: 320px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; background: #fff; }
+  .user { color: #087f3c; } .robot { color: #a14d00; } .system { color: #c00; }
+  body.estop { outline: 8px solid #d00; outline-offset: -8px; }
+  @media (max-width: 760px) { #wrap { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<p><b>개발용 임시 화면</b> — Claude Design 결과물(index.html · app.js · style.css)로 교체한다.</p>
+<div id="wrap">
+  <div><img id="cam" src="/stream/front" alt="카메라 없음"></div>
+  <div>
+    <div id="state">연결 중…</div>
+    <div id="info"></div>
+    <div id="log"></div>
+    <form id="f"><input id="t" placeholder="예: 오란다 3개 옮겨줘" autocomplete="off" style="width:70%"> <button>보내기</button></form>
+    <p><button data-cmd="resume">재개</button> <button data-cmd="estop">비상정지</button> <button data-cmd="restart">재시작</button></p>
+    <div id="cycle"></div>
+  </div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let ws;
+  function add(m) {
+    const d = document.createElement("div");
+    d.className = m.role;
+    d.textContent = `${m.role}${m.source === "voice" ? " 🎤" : ""}: ${m.text}`;
+    $("log").appendChild(d);
+    $("log").scrollTop = $("log").scrollHeight;
+  }
+  function connect() {
+    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.type === "info") {
+        $("info").textContent = `대상: ${m.target.name} · ` +
+          Object.entries(m.models).map(([k, v]) => `${k}=${v}`).join(" · ");
+      } else if (m.type === "state") {
+        $("state").textContent = `${m.state} / ${m.phase} · count ${m.count} ` +
+          `(${m.thresholds.safe_max}/${m.thresholds.force_refuse}) · 남은 ${m.remaining} (${m.vision_method})`;
+        document.body.classList.toggle("estop", m.state === "ESTOP");
+      } else if (m.type === "message") {
+        add(m);
+      } else if (m.type === "cycle") {
+        $("cycle").textContent = `cycle ${m.n}: ${m.result} ${JSON.stringify(m.ms)}`;
+      }
+    };
+    ws.onclose = () => {
+      $("state").textContent = "연결 끊김 — 2초 후 재연결";
+      setTimeout(connect, 2000);
+    };
+  }
+  $("f").onsubmit = (e) => {
+    e.preventDefault();
+    const t = $("t").value.trim();
+    if (t && ws.readyState === 1) ws.send(JSON.stringify({ type: "chat", text: t }));
+    $("t").value = "";
+  };
+  document.querySelectorAll("[data-cmd]").forEach((b) => {
+    b.onclick = () => ws.readyState === 1 && ws.send(JSON.stringify({ type: "command", name: b.dataset.cmd }));
+  });
+  connect();
+</script>
+</body>
+</html>
