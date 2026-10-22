@@ -961,3 +961,39 @@ def test_loop_thread_runs_tests_and_skills_only_on_loop_thread(cfg):
     finally:
         c.stop()
     assert sk.threads == ["controller", "controller"]
+
+
+# --- LLM 도리도리 (채팅 의도) ---
+def test_chat_dori_runs_one_test_with_llm_prefix(cfg):
+    c, _ = make(cfg)
+    c.chat("도리도리 해 봐")
+    assert c.state == "TESTING" and c.skill == "dori_dori"
+    assert [m["role"] for m in c.history] == ["user", "robot"]   # 대사 먼저, 실행은 루프 스레드
+    assert c.step_test() == "timeout"
+    assert c.state == "IDLE" and c.skills.runs == ["dori_dori"] and c.count == 0
+    assert c.history[-1]["text"].startswith("도리도리 · 시간 초과로 끝남 · ")
+
+
+def test_chat_dori_ignored_outside_idle(cfg):
+    c, _ = make(cfg)
+    c.chat("2개 옮겨줘")
+    c.chat("도리도리 해 봐")
+    assert c.state == "WORKING" and c._pending_test is None
+
+
+def test_chat_dori_canceled_if_session_changed_during_llm(cfg):
+    class SlowBrain(Brain):
+        ctrl = None
+
+        def chat(self, text, state, count, history=None):
+            r = super().chat(text, state, count, history=history)
+            self.ctrl._estop()                                     # LLM을 기다리는 사이 비상정지·재시작
+            self.ctrl._restart()
+            return r
+
+    b = SlowBrain(cfg, rng=FirstRng())
+    c = Controller(cfg, b, FakeSkills())
+    b.ctrl = c
+    c.chat("도리도리 해 봐")
+    assert c.state == "IDLE" and c._pending_test is None
+    assert "테스트가 취소됐어요" in c.history[-1]["text"]

@@ -111,13 +111,16 @@ class Controller:
             hist = list(self.history)  # 현재 발화를 넣기 전 스냅샷 (brain이 현재 발화는 따로 붙인다)
         self._message("user", text, source)
         with self._lock:
-            state, count = self.state, self.count
+            state, count, gen = self.state, self.count, self._gen
         r = self.brain.chat(text, state, count, history=hist)
         self._message("robot", r["say"])
         if r["intent"] == "start_task":
             self._start_task(r.get("n"))
         elif r["intent"] == "resume":
             self._resume()
+        elif r["intent"] == "dori_dori":
+            # 버튼과 같은 경로 (대기 상태에서만, 횟수·피로도 미반영). LLM을 기다리는 사이 세션이 바뀌었으면 취소
+            self._request_test("dori_dori", expect_gen=gen, origin="llm")
 
     def generation(self):
         """현재 세션 번호. 콘솔 키 워커가 restart를 접수한 시점의 값을 command(expect_gen=)로 되돌려준다."""
