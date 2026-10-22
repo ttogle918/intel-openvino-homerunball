@@ -53,13 +53,16 @@
 │   ├── providers.py    # openai_compat / anthropic / openvino 어댑터 + fallback 체인
 │   ├── brain.py        # decide() 작업 판단, chat() 의도·대사
 │   ├── vision.py       # counter 체인 (A단계)
-│   ├── stt.py
-│   ├── voice.py
-│   └── skills.py       # physicalai: SO101, 카메라, InferenceModel, 자세 이동, 비상정지
+│   ├── stt.py          # STT 체인 (OpenVINO Whisper 로컬 → Gemini), 워밍업, 단독 확인 CLI
+│   ├── voice.py        # TTS (Gemini), 합성·재생 두 스레드, 대사 소리 시작 알림
+│   ├── skills.py       # DrySkills (dry-run), RunResult
+│   ├── motion.py       # 그리퍼 감시, 보간 이동, 정지 신호 (physicalai 없이 테스트)
+│   └── robot.py        # 실제 로봇: RobotRuntime 하나 + 동작 출처 교체, 비상정지 세대, warmup
 ├── frontend/           # Claude Design 결과물 (index.html, app.js, style.css)
 ├── tools/
-│   ├── save_pose.py    # home_pose / lift_pose 관절값 저장
-│   └── gripper_stats.py
+│   ├── fetch_calibration.py   # Studio runtime-config → calibration/follower.yaml (GET만)
+│   ├── robot_probe.py         # 관절값 보기(watch), home/lift 포즈 저장(save)
+│   └── export_yolo_world.py   # YOLO-World → OpenVINO (개수 세기 A단계)
 ├── tests/
 │   └── samples/        # 트레이 사진 (dry-run용)
 ├── models/             # 로컬 모델 (git 제외)
@@ -83,10 +86,17 @@ cp .env.example .env                                      # 쓸 API 키만 채�
 .venv/Scripts/python -m snackbot                      # 실제 로봇
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg   # 모듈 단독 테스트
 .venv/Scripts/python -m snackbot.stt a.wav b.wav      # Whisper 확인 (워밍업 후 파일마다 텍스트·source·ms)
-.venv/Scripts/python -m tools.save_pose home          # 현재 팔 자세를 home_pose로 저장
-.venv/Scripts/python -m tools.save_pose lift          # 현재 팔 자세를 lift_pose로 저장
 .venv/Scripts/python -m pytest
 ```
+로봇 노트북 (처음 연결 순서 전체는 `docs/DEMO_RUNBOOK.md` 2-2절):
+```bash
+.venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt   # physicalai 0.3.0
+.venv/bin/python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project <id> --env <id>
+.venv/bin/python -m tools.robot_probe watch           # 관절값 보기 (토크 끔, 그리퍼 기준값 정하기)
+.venv/bin/python -m tools.robot_probe save home       # 현재 팔 자세를 home_pose로 (lift도 같은 방법)
+.venv/bin/python -m snackbot.robot home               # 홈으로 이동 (스킬 하나만: dori_dori | oranda_pickup)
+```
+- 모델 폴더(`skills.<이름>.export_dir`)가 없는 정책은 건너뛴다 (과자 모델 없이 `home`·`dori_dori` 확인 가능).
 - 의존 방향: `server → controller → (brain, vision, skills, voice)`. controller는 FastAPI를 모른다.
 - 로봇 포트는 한 프로그램만 잡을 수 있다. 실행 전 physical-ai-studio 세션을 닫는다.
 
