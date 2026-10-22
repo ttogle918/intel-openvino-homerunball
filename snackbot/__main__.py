@@ -4,11 +4,12 @@
 """
 import argparse
 import atexit
+import collections
 import logging
 import os
-import queue
 import sys
 import threading
+import time
 from pathlib import Path
 
 from .brain import Brain
@@ -49,15 +50,22 @@ def build(cfg, env, dry_run=True):
             "frame_fn": lambda: skills.latest_frame(camera)}
 
 
-def handle_key(ch, controller, quit_fn, submit=None):
-    """submit(name): estop 외 명령을 넘길 곳. 없으면 인라인 실행 (key_loop는 명령 워커의 submit을 넘긴다)."""
+def handle_key(ch, controller, quit_fn, submit=None, clear=None):
+    """submit(name): estop 외 명령을 넘길 곳. 없으면 인라인 실행 (key_loop는 명령 워커의 submit을 넘긴다).
+    clear(): 아직 시작 안 한 대기 명령을 버린다 (비상정지·종료 직전에 부른다)."""
     if ch in QUIT_CHARS:
+        if clear is not None:
+            clear()
         quit_fn()
         return "quit"
     name = KEYS.get(ch.lower())
     if name == "quit":
+        if clear is not None:
+            clear()
         quit_fn()
     elif name == "estop":
+        if clear is not None:
+            clear()  # 대기 중인 restart 등이 estop 뒤에 실행되어 estop을 풀면 안 된다
         controller.command(name)  # 논블로킹이라 항상 인라인, 다른 무엇보다 먼저
     elif name is not None:
         if submit is None:
@@ -67,22 +75,51 @@ def handle_key(ch, controller, quit_fn, submit=None):
     return name
 
 
-def start_command_worker(controller):
-    """명령(restart는 수 초 걸린다)을 키 스레드 밖에서 순서대로 실행한다. (submit, stop)을 돌려준다."""
-    q = queue.Queue()
+class CommandWorker:
+    """명령(restart는 수 초 걸린다)을 키 스레드 밖에서 순서대로 실행한다.
 
-    def run():
-        while True:
-            name = q.get()
-            if name is None:
+    submit(name) 대기열에 넣기 · clear() 아직 시작 안 한 명령 버리기 · stop() 대기분 버리고 종료."""
+
+    def __init__(self, controller):
+        self._controller = controller
+        self._pending = collections.deque()
+        self._cond = threading.Condition()
+        self._closed = False
+        threading.Thread(target=self._run, name="key-commands", daemon=True).start()
+
+    def submit(self, name):
+        with self._cond:
+            if self._closed:
                 return
+            self._pending.append(name)
+            self._cond.notify()
+
+    def clear(self):
+        with self._cond:
+            self._pending.clear()
+
+    def stop(self):
+        with self._cond:
+            self._closed = True
+            self._pending.clear()
+            self._cond.notify()
+
+    def _run(self):
+        while True:
+            with self._cond:
+                while not self._pending and not self._closed:
+                    self._cond.wait()
+                if self._closed:
+                    return
+                name = self._pending.popleft()  # 여기서 꺼낸 명령은 시작된 것으로 본다
             try:
-                controller.command(name)
+                self._controller.command(name)
             except Exception:
                 log.exception("명령 실행 실패: %s", name)
 
-    threading.Thread(target=run, name="key-commands", daemon=True).start()
-    return q.put, lambda: q.put(None)
+
+def start_command_worker(controller):
+    return CommandWorker(controller)
 
 
 def read_windows_key(getch):
@@ -149,22 +186,26 @@ KEY_OFF_MSG = "콘솔 키 비활성: UI 비상정지 버튼을 쓰세요"
 MAX_KEY_ERRORS = 10
 
 
-def key_loop(controller, quit_fn):
+ESC_WINDOW = 0.1  # ESC가 든 입력 직후 이 시간 안에 오는 입력은 시퀀스 꼬리일 수 있다
+
+
+def key_loop(controller, quit_fn, clock=time.monotonic):
     try:
         enter_cbreak()
     except Exception as e:
         print(f"경고: 터미널 키 입력을 켜지 못했어요 ({e}). space 비상정지 키가 꺼져 있으니 UI 버튼을 쓰세요.",
               file=sys.stderr, flush=True)
         return
-    submit, stop_worker = start_command_worker(controller)
+    worker = start_command_worker(controller)
     try:
-        _read_keys(controller, quit_fn, submit)
+        _read_keys(controller, quit_fn, worker.submit, worker.clear, clock)
     finally:
-        stop_worker()
+        worker.stop()
 
 
-def _read_keys(controller, quit_fn, submit):
+def _read_keys(controller, quit_fn, submit, clear=None, clock=time.monotonic):
     errors = 0
+    last_esc = None  # 마지막으로 ESC/시퀀스를 버린 시각
     while not controller.stopped:
         try:
             ch = read_key()
@@ -180,16 +221,23 @@ def _read_keys(controller, quit_fn, submit):
                 return
             continue
         errors = 0
+        now = clock()
         if ch is None:
-            continue  # 버린 방향키/F키 시퀀스
+            last_esc = now  # 버린 방향키/F키/ESC 입력: 꼬리가 뒤따라 올 수 있다
+            continue
         if ch == "":
             print(KEY_OFF_MSG, file=sys.stderr, flush=True)
             return  # EOF
+        if last_esc is not None and now - last_esc <= ESC_WINDOW:
+            ch = " " * ch.count(" ")  # 나뉘어 들어온 시퀀스 꼬리: space만 인정
+            last_esc = now
+            if not ch:
+                continue
         for one in ch:
             if controller.stopped:
                 break  # 종료 요청 뒤의 글자는 처리하지 않는다
             try:
-                handle_key(one, controller, quit_fn, submit)
+                handle_key(one, controller, quit_fn, submit, clear)
             except Exception:
                 log.exception("키 처리 실패: %r", one)
 
