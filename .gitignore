@@ -13,3 +13,5 @@ outputs/
 
 # physical-ai-studio 학습 결과물 (용량 큼, git 제외)
 traind-model/
+.env
+.pytest_cache/

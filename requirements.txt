@@ -1,0 +1,13 @@
+# 개발 PC · dry-run (python -m snackbot --dry-run)
+fastapi
+uvicorn[standard]
+httpx
+pyyaml
+numpy
+opencv-python
+anthropic
+pytest
+# 선택 (필요한 환경에서만 설치)
+# pyttsx3          # voice.engine: pyttsx3
+# openvino-genai   # local_ov provider (LLM / VLM / Whisper)
+# ultralytics      # vision yolo counter, tools.export_yolo_world
