@@ -70,7 +70,13 @@ skills:
   #   학습 이름은 결과물 manifest.json의 "images.<이름>"에서 확인한다. 예: {A: tower cam, B: side cam}
   # replay: dry-run 재생에 쓸 Studio 녹화 {dataset: <데이터셋 id>, episode: <번호>} (python -m tools.fetch_replays 가 읽는다)
   oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}, replay: {dataset: null, episode: null}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
-  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}, replay: {dataset: null, episode: null}}
+  dori_dori:
+    export_dir: traind-model/dori-dori-model/exports/openvino
+    max_time_s: 6
+    camera_map: {}
+    replay: {dataset: null, episode: null}
+    source: auto                           # auto | policy | script  (auto: 모델 폴더가 있으면 정책, 없으면 코드 도리도리)
+    script: {joint: shoulder_pan, amplitude: 15, shakes: 2, shake_s: 0.35}   # 코드 도리도리: 홈 기준 joint만 ±amplitude(최대 30)를 shakes번, 한쪽 shake_s초
   gripper:                                 # python -m tools.robot_probe watch 로 값을 읽고 정한다 (0..100, 작을수록 닫힘)
     closed_below: null                     # 이보다 작으면 "닫힘"
     open_above: null                       # 닫힘 뒤 이보다 큰 값이 open_hold_s 동안 이어지면 "놓음" → ACT 정지

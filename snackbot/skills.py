@@ -22,9 +22,10 @@ REPLAY_SKILLS = ("oranda_pickup", "dori_dori")
 
 @dataclass
 class RunResult:
-    stop_reason: str   # gripper_open | timeout | estop
+    stop_reason: str   # gripper_open | timeout | estop | script(코드 도리도리)
     grasped: bool
     ms: int
+    record: str | None = None   # 실행 기록 폴더 (실제 로봇에서 기록했을 때만, posix 경로)
 
 
 def _ms(t0):
