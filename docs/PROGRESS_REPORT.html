@@ -89,9 +89,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <div class="wrap">
 
 <h1>snackbot 진행 보고서</h1>
-<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-23 갱신 · 기준: 커밋 <code>fe9f77e</code> (브랜치 <code>feat/robot-m4</code>)</p>
+<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-23 갱신 · 기준: 커밋 <code>7d80ccd</code> (브랜치 <code>feat/robot-m4</code> = 로컬 main, homerunball main <code>c85e1ed</code>)</p>
 
-<div class="note"><b>이번 갱신(c38ee0b 이후):</b> (1) <b>스킬 1회 실행 버튼 · 코드 도리도리 · LLM 도리도리를 마쳤다.</b> 설계 <code>docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md</code>, 계획 <code>docs/superpowers/plans/2026-10-22-skill-test.md</code>, Task 1~6(<code>0c15ece..90a1096</code>) + 리뷰 수정(<code>b4d2019</code>, <code>07e402d</code>, <code>fe9f77e</code>). Task별 리뷰는 모두 승인(로봇·controller는 opus), 전체 최종 리뷰(opus)도 반영했다. <b>스킬 테스트:</b> 화면 아래 "스킬 테스트" 줄(<code>오란다 1회</code> · <code>도리도리 1회</code> · <code>홈으로</code>). 실제 로봇 모드에서는 진짜 팔이 움직이는 추론 1회 테스트이고, dry-run에서는 녹화 재생이다. 대기 상태에서만 되며 "테스트(TESTING)" 상태로 들어가고, 횟수·피로도에는 반영하지 않는다. 결과는 채팅창에 표시하고(예: "테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초") 비상정지는 즉시 먹는다. <b>코드 도리도리:</b> <code>skills.dori_dori.source: auto|policy|script</code>(모델이 없으면 auto가 자동으로 코드 동작). 홈에서 몸통만 좌우로 흔든다(기본 ±15, 2회, 한쪽 0.35초). 안전: 진폭 상한 30, 한쪽 0.15~3초, 횟수 1~10, 잘못된 값은 모델 로드 전에 안내하고 종료, 비상정지는 기존 경로 그대로. <b>LLM 도리도리:</b> 대기 중 "도리도리 해 봐" / "고개 저어 봐"라고 하면 대화 LLM이 의도 <code>dori_dori</code>를 골라 버튼과 같은 경로로 1회 실행하며, 대사 소리가 나기 시작한 뒤 움직인다(사이클과 같은 A안). 키워드 규칙에서는 작업 시작이 우선이다(사용자 결정: "도리도리 하지 말고 옮겨줘"는 작업 시작). 잡담에 팔이 움직이지 않도록 프롬프트 범위를 좁혔다. Chrome(dry-run)에서 버튼, 도리도리 1회, LLM 채팅 "보리야 도리도리 해 봐"(Claude가 dori_dori 선택), 오란다 1회 중 비상정지(비상정지·결과 문구 확인), 재시작을 확인했다. (2) 4분할·3D 트윈 작업은 homerunball에 push 완료(<code>b7d2253</code>). (3) 테스트는 408개. 남은 일: <b>노트북 실기(내일 로봇 연결)</b> — 런북 2-2·2-3·2-4절: 포트 · 카메라 · 캘리브레이션 · 그리퍼 · 포즈 · home · 도리도리 1회 테스트로 코드 도리도리 폭·속도 조정 · 3D 영점. 그다음 과자 모델 반영·실기, 전체 흐름 실기. 현장 확인 항목: 3D 렌더와 ACT 추론이 같은 iGPU를 써서 느려지는지(느리면 <code>ui.tiles</code>에서 twin 제외), Studio 영상 코덱(AV1), 카메라 시리얼, 녹화 CPU. 주의: 개발 PC의 <code>replays/</code>에는 화면 확인용 가짜 데이터가 있으니 시연 전에 실제 녹화로 바꾼다.</div>
+<div class="note"><b>이번 갱신(c38ee0b 이후):</b> (1) <b>스킬 1회 실행 버튼 · 코드 도리도리 · LLM 도리도리를 마쳤다.</b> 설계 <code>docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md</code>, 계획 <code>docs/superpowers/plans/2026-10-22-skill-test.md</code>, Task 1~6(<code>0c15ece..90a1096</code>) + 리뷰 수정(<code>b4d2019</code>, <code>07e402d</code>, <code>fe9f77e</code>). Task별 리뷰는 모두 승인(로봇·controller는 opus), 전체 최종 리뷰(opus)도 반영했다. <b>스킬 테스트:</b> 화면 아래 "스킬 테스트" 줄(<code>오란다 1회</code> · <code>도리도리 1회</code> · <code>홈으로</code>). 실제 로봇 모드에서는 진짜 팔이 움직이는 추론 1회 테스트이고, dry-run에서는 녹화 재생이다. 대기 상태에서만 되며 "테스트(TESTING)" 상태로 들어가고, 횟수·피로도에는 반영하지 않는다. 결과는 채팅창에 표시하고(예: "테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초") 비상정지는 즉시 먹는다. <b>코드 도리도리:</b> <code>skills.dori_dori.source: auto|policy|script</code>(모델이 없으면 auto가 자동으로 코드 동작). 홈에서 몸통만 좌우로 흔든다(기본 ±15, 2회, 한쪽 0.35초). 안전: 진폭 상한 30, 한쪽 0.15~3초, 횟수 1~10, 잘못된 값은 모델 로드 전에 안내하고 종료, 비상정지는 기존 경로 그대로. <b>LLM 도리도리:</b> 대기 중 "도리도리 해 봐" / "고개 저어 봐"라고 하면 대화 LLM이 의도 <code>dori_dori</code>를 골라 버튼과 같은 경로로 1회 실행하며, 대사 소리가 나기 시작한 뒤 움직인다(사이클과 같은 A안). 키워드 규칙에서는 작업 시작이 우선이다(사용자 결정: "도리도리 하지 말고 옮겨줘"는 작업 시작). 잡담에 팔이 움직이지 않도록 프롬프트 범위를 좁혔다. Chrome(dry-run)에서 버튼, 도리도리 1회, LLM 채팅 "보리야 도리도리 해 봐"(Claude가 dori_dori 선택), 오란다 1회 중 비상정지(비상정지·결과 문구 확인), 재시작을 확인했다. (2) 스킬 테스트까지 전부 main에 병합하고 homerunball에 push 완료(<code>c85e1ed</code>, 사용자 실행). 다음 세션 메모(<code>docs/memo/next-session-prompt.md</code>)도 노트북 실기부터 이어지게 갱신했다(<code>7d80ccd</code>). (3) 테스트는 408개. 남은 일: <b>노트북 실기(내일 로봇 연결)</b> — 런북 2-2·2-3·2-4절: 포트 · 카메라 · 캘리브레이션 · 그리퍼 · 포즈 · home · 도리도리 1회 테스트로 코드 도리도리 폭·속도 조정 · 3D 영점. 그다음 과자 모델 반영·실기, 전체 흐름 실기. 현장 확인 항목: 3D 렌더와 ACT 추론이 같은 iGPU를 써서 느려지는지(느리면 <code>ui.tiles</code>에서 twin 제외), Studio 영상 코덱(AV1), 카메라 시리얼, 녹화 CPU. 주의: 개발 PC의 <code>replays/</code>에는 화면 확인용 가짜 데이터가 있으니 시연 전에 실제 녹화로 바꾼다.</div>
 
 <h2 id="intro">1. 프로젝트와 시연 시나리오</h2>
 <div class="card">
@@ -112,9 +112,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="summary">2. 전체 진척 요약</h2>
 <div class="grid">
-  <div class="stat"><b style="color:var(--done)">44</b><span>완료</span></div>
+  <div class="stat"><b style="color:var(--done)">45</b><span>완료</span></div>
   <div class="stat"><b style="color:var(--review)">0</b><span>리뷰 대기 (구현됨, 리뷰 안 함)</span></div>
-  <div class="stat"><b style="color:var(--wip)">4</b><span>진행 중</span></div>
+  <div class="stat"><b style="color:var(--wip)">3</b><span>진행 중</span></div>
   <div class="stat"><b style="color:var(--todo)">3</b><span>남음</span></div>
   <div class="stat"><b style="color:var(--hold)">1</b><span>보류</span></div>
   <div class="stat"><b>408</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>fe9f77e</code> 시점 전체)</span></div>
@@ -125,7 +125,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <div class="prow"><span class="n">설계 마일스톤 M0~M7</span><div class="bar"><i class="d" style="width:75%"></i><i class="w" style="width:12.5%"></i></div><span class="v">완료 6 · 진행 1 · 남음 1</span></div>
 <div class="prow"><span class="n">소프트웨어 Task 1~10</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 10 / 10</span></div>
 <div class="prow"><span class="n">M4 로봇 Task 1~6</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 6 / 6</span></div>
-<div class="prow"><span class="n">그 밖의 연결·정리 (28개)</span><div class="bar"><i class="d" style="width:78.5%"></i><i class="w" style="width:10.5%"></i></div><span class="v">완료 22 · 진행 3 · 남음 2 · 보류 1</span></div>
+<div class="prow"><span class="n">그 밖의 연결·정리 (28개)</span><div class="bar"><i class="d" style="width:82.1%"></i><i class="w" style="width:7.1%"></i></div><span class="v">완료 23 · 진행 2 · 남음 2 · 보류 1</span></div>
 </div>
 <p class="sub">범례: <span class="badge b-done">완료</span> <span class="badge b-review">리뷰 대기</span> <span class="badge b-wip">진행 중</span> <span class="badge b-todo">남음</span> <span class="badge b-hold">보류</span></p>
 
@@ -195,7 +195,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td class="grp" colspan="3">그 밖의 연결·정리</td></tr>
 <tr><td>최종 리뷰 반영과 콘솔 키 보강 (비상정지 지연, 재시작 키 h, ESC 처리)</td><td><span class="badge b-done">완료</span></td><td><code>0a14bb2</code> <code>4b3b5bf</code> <code>59f967a</code> <code>5a67d35</code> <code>34c886e</code> <code>db07574</code></td></tr>
 <tr><td>dori_dori 결과물·Studio 설정 확인</td><td><span class="badge b-done">완료</span></td><td>설계 11.5절, <code>03256a4</code></td></tr>
-<tr><td>프로젝트 저장소(homerunball)에 subtree push</td><td><span class="badge b-done">완료</span></td><td>1회 완료: 원격 main <code>2afa38e</code>(사용자가 직접 실행, README 병합 포함). 이후 커밋은 아래 병합 행 참고</td></tr>
+<tr><td>프로젝트 저장소(homerunball)에 subtree push</td><td><span class="badge b-done">완료</span></td><td>첫 push 원격 main <code>2afa38e</code>(사용자가 직접 실행, README 병합 포함). 이후 <code>8ae941e</code> → <code>0e5f5ee</code> → <code>b7d2253</code> → <code>c85e1ed</code>(최신)</td></tr>
 <tr><td>대화 LLM: Claude 우선 → NVIDIA → 규칙, Gemini provider</td><td><span class="badge b-done">완료</span></td><td><code>4d6b040</code> <code>bd1c9ee</code>. sonnet 리뷰 승인. Claude 대화는 실제 동작 확인(1.8~3.6초)</td></tr>
 <tr><td>대화 기억(최근 12개), 캐릭터 이름 "보리", 재시작 때 초기화</td><td><span class="badge b-done">완료</span></td><td><code>b2fc422</code>. sonnet 리뷰 승인</td></tr>
 <tr><td>콘솔 키 단순화 (ESC 섞이면 space만, 명령 워커 1개) + 정지 때 대기열 비우기</td><td><span class="badge b-done">완료</span></td><td><code>620cdfa</code> <code>b2f4c6e</code> → 수정 <code>3b33cf1</code> + 테스트 수정 <code>369dda6</code>, opus 리뷰 2회. 누출 2건: space와 방향키·Home이 거의 동시에 오면 H가 재시작으로 읽혀 비상정지가 풀림 → ESC가 든 입력 뒤 100ms는 space만 인정 / h 직후 space가 재시작에 덮임 → 재시작에 세션 번호를 붙여 그 사이 비상정지가 있었으면 거부</td></tr>
@@ -216,7 +216,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>STT를 OpenVINO Whisper 로컬로 (결정 21번)</td><td><span class="badge b-done">완료</span></td><td>결정은 <code>4ac9524</code>, 구현 <code>1284e6a</code> <code>e006840</code> (small CPU 기본, Gemini 예비). 노트북에서 설치·속도 확인은 남음</td></tr>
 <tr><td>oranda_pickup ACT 학습 (Studio)</td><td><span class="badge b-wip">진행 중</span></td><td>Studio에서 학습 중. 끝나면 <code>exports/openvino</code>가 나온다 (외부 작업)</td></tr>
 <tr><td>counter 체인의 실제 모델(YOLO-World 내보내기, VLM, OpenCV 튜닝)</td><td><span class="badge b-todo">남음</span></td><td>도구 <code>93915c8</code>는 있음. 큰 패키지(ultralytics 등)는 이 PC에 설치하지 않음. 실제 트레이 사진으로 정해야 함</td></tr>
-<tr><td>feat/robot-m4를 main에 병합하고 homerunball에 push</td><td><span class="badge b-wip">진행 중</span></td><td>M4 코드 완료분까지 로컬 main에 fast-forward 병합한 뒤 다음 push를 준비한다(subtree split 후 homerunball-export에 병합, push는 사용자가 직접 실행). origin(강의 저장소)에는 push하지 않기로 함</td></tr>
+<tr><td>feat/robot-m4를 main에 병합하고 homerunball에 push</td><td><span class="badge b-done">완료</span></td><td>스킬 테스트까지 로컬 main에 fast-forward 병합(<code>405ebc4</code>) → homerunball main·<code>feat/robot-m4</code> = <code>c85e1ed</code>(사용자가 직접 실행). 이후 커밋은 같은 절차(subtree split → homerunball-export에 병합 → 사용자 push)로 올린다. origin(강의 저장소)에는 push하지 않기로 함</td></tr>
 <tr><td>로봇이 안 될 때 대비책: 4분할 화면 · 3D 디지털 트윈 · 녹화 재생 · 실행 기록 · 카메라 찾기</td><td><span class="badge b-done">완료</span></td><td>설계 <code>digital-twin-design.md</code>, 계획 <code>digital-twin.md</code>, Task 1~7 <code>3aa5cef..57b98fd</code>(<code>b51754a</code> 화면·3D, <code>b963dab</code> 스트림·재생 API, <code>0a75abc</code> <code>c643932</code> 실행 기록, <code>264d5ee</code> 카메라 찾기, <code>16bf641</code> 에피소드 받기). Task별 리뷰 모두 승인(Task 4·5 opus), 최종 리뷰(opus) "병합 가능", 반영 수정 <code>7f4292c</code>. Chrome(dry-run) 확인: 4분할, 3D 로드(요청 28개 200, 콘솔 오류 없음), 녹화 재생 동기, 비상정지, 재시작, 목업. 현장 확인은 남음(iGPU 경합, 3D 영점, Studio 영상 코덱 AV1, 카메라 시리얼, 녹화 CPU). 개발 PC <code>replays/</code>는 가짜 데이터</td></tr>
 <tr><td>팀 메모: 로봇 실행과 화면 대비책 (Studio 역할, iframe, 카메라 연결, 4분할 설계안)</td><td><span class="badge b-done">완료</span></td><td><code>52c64e9</code>, <a href="memo/2026-10-22-robot-runtime-and-twin.html"><code>2026-10-22-robot-runtime-and-twin.html</code></a></td></tr>
 <tr><td>스킬 테스트: UI 스킬 1회 실행(추론 테스트, TESTING 상태)과 모델 없이 코드로 도리도리</td><td><span class="badge b-done">완료</span></td><td>설계 <code>skill-test-and-scripted-dori-design.md</code>, 계획 <code>skill-test.md</code>, Task 1~6 <code>0c15ece..90a1096</code>(<code>0c15ece</code> 코드 도리도리, <code>2e5c53d</code> 버튼·TESTING 표시, <code>e7eab50</code> controller TESTING, <code>277e8b9</code> WS test 명령, <code>90a1096</code> 현장 문서) + 리뷰 수정 <code>b4d2019</code> <code>07e402d</code> <code>fe9f77e</code>. Task별 리뷰 승인(로봇·controller는 opus), 최종 리뷰(opus) 반영. 실제 로봇 모드는 진짜 추론 1회, dry-run은 녹화 재생. 횟수·피로도 미반영, 비상정지 즉시. 코드 도리도리는 <code>source: auto|policy|script</code>, 진폭 상한 30·shake_s 0.15~3·shakes 1~10 검증. 로봇 실기 확인은 남음</td></tr>
@@ -451,7 +451,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <li>(완료) M4 Task 5(진입점 <code>python -m snackbot</code>에 실제 로봇 연결)·Task 6(현장 문서). 코드 Task 6개 모두 끝.</li>
 <li>노트북 실기 확인(1순위, 내일 로봇 연결): <a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a> 2-2·2-3·2-4절 순서(포트 → 카메라 → 캘리브레이션 → 그리퍼 → 포즈 저장 → home 이동 → 스킬 테스트의 도리도리 1회로 코드 도리도리 폭·속도 조정). 카메라는 <code>python -m tools.cameras</code>로 목록·시리얼을 확인하고 3D 영점도 함께 본다.</li>
 <li>과자 모델(<code>oranda_pickup</code>) 학습이 끝나면 <code>camera_map</code>·<code>grasp_min</code> 확정, <code>oranda_pickup</code> 실기, 전체 흐름 실기(<code>python -m snackbot</code>).</li>
-<li>homerunball push: 4분할·3D 트윈까지 push 완료(<code>b7d2253</code>). 스킬 테스트 작업분은 다음 push로 준비한다(사용자가 직접 실행, origin에는 push하지 않음).</li>
+<li>homerunball push: 스킬 테스트까지 push 완료(<code>c85e1ed</code>). 이후 변경은 같은 절차로 사용자가 직접 push한다(origin에는 push하지 않음).</li>
 <li>(완료) 로봇이 안 될 때 대비책: 4분할 화면 · 3D 디지털 트윈 · 녹화 재생 · 실행 기록 · 카메라 찾기.</li>
 <li>(완료) UI 스킬 1회 실행(추론 테스트), 코드 도리도리, LLM 도리도리. 실기 조정은 1번 노트북 실기 때 함께 한다.</li>
 <li>챗봇 추가 후보: 긴 대화 요약, 서버 쪽 입력 길이 제한 (스트리밍은 보류).</li>
