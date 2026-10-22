@@ -25,6 +25,7 @@
 | 18 | 남은 일·미확인 | git 인덱스 정리, physicalai 시그니처 등 |
 | 19 | 파이썬 패키지 | 루트 `.py`들을 `snackbot/`으로, 화면은 `frontend/` |
 | 20 | 구현 계획과 dori-dori 결과물 | 계획 2개로 분리 (소프트웨어 → 로봇), M4는 06의 RobotRuntime 방식 |
+| 21 | 음성(STT/TTS) provider | STT는 OpenVINO Whisper 로컬, TTS는 Gemini, 대화는 Claude 우선 · 이름 보리 |
 
 ---
 
@@ -232,3 +233,13 @@
 - 06 실습은 스킬마다 runtime.yaml + `RobotRuntime.from_config` → `run(duration_s)`로 정책을 돌린다 (0.3.0 시그니처 확인됨). M4는 이 방식을 기반으로 하고, 그리퍼 정지 조건·비상정지는 `stop_event`/`callbacks`로 거는 방법을 먼저 확인한다.
 - 런타임이 카메라를 잡고 있는 동안 화면 영상·개수 세기를 어떻게 할지는 M4 숙제.
 - `traind-model/`은 약 1GB라 git에서 제외했다.
+
+## 21. 음성(STT/TTS) provider
+
+**결정:** STT는 OpenVINO Whisper 로컬(C안). TTS는 Gemini(크레딧 충전 필요), 예비로 OS TTS. 대화 LLM은 Claude → NVIDIA → 규칙, 캐릭터 이름 "보리", 대화 기억 최근 12개.
+
+**상세**
+- Claude(Anthropic)는 음성 모델이 없다. OpenAI 키는 무효(401), Gemini는 크레딧 소진(402)으로 실제 확인 못 함.
+- NVIDIA: OpenAI 호환 API에는 음성 모델 없음. build.nvidia.com 음성 NIM은 Riva gRPC라 어댑터가 따로 필요하고, 한국어 TTS는 확인되지 않았다.
+- OpenVINO Whisper를 고른 이유: 코드(`OpenVINOProvider(kind="whisper")`)가 이미 있고, 노트북 안에서 돌아 네트워크·크레딧에 영향받지 않으며, "on-device" 평가 항목에도 맞는다.
+- 실행 순서는 `docs/memo/next-session-prompt.md` 끝의 "결정" 절.

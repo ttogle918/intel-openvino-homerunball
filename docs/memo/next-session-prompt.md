@@ -78,3 +78,13 @@
 - build.nvidia.com의 음성 NIM(Parakeet/Canary/Whisper Large v3 ASR, Magpie 등 TTS)은 Riva gRPC(`grpc.nvcf.nvidia.com:443` + function-id, `nvidia-riva-client`)로 호출 → 새 어댑터 필요 (호출 방식은 문서로 직접 확인 못 함).
 - 한국어: STT는 Whisper Large v3 가능, Parakeet는 문서상 en/vi/es/zh만. TTS는 한국어 지원 모델을 확인 못 함.
 - 선택지: A) Gemini STT/TTS 유지(크레딧 충전) B) NVIDIA Whisper STT(gRPC) + Gemini TTS C) OpenVINO Whisper 로컬 STT(온디바이스 평가에 유리) + Gemini/OS TTS. 사용자 결정 대기.
+
+## 결정 (2026-10-22, 세션 마지막): STT는 C안 — OpenVINO Whisper 로컬
+다음 세션에서 "바로 할 일"의 2번(Gemini 확인)보다 이것을 먼저 한다. 순서:
+1. 설치: `.venv/Scripts/python -m pip install openvino-genai` — 큰 패키지라 설치 전 용량을 사용자에게 먼저 알리고 확인받는다. (시연 노트북 Ubuntu에도 같은 설치 필요)
+2. 모델: Hugging Face OpenVINO 조직의 사전 변환 Whisper(예: OpenVINO/whisper-small-…-ov, 정확한 repo 이름 확인)를 `models/whisper-small`에 받는다(용량 먼저 확인). 없으면 optimum-cli로 int8 변환(torch 필요 → 무거우니 사용자 확인).
+   후보: whisper-base(빠름·한국어 약함) / whisper-small(기본 추천) / large-v3-turbo(정확·노트북 CPU에서 느림).
+3. 코드: `snackbot/providers.py`의 `OpenVINOProvider(kind="whisper")`(WhisperPipeline, wav_to_float32, language="<|ko|>")가 이미 있음 → 설치된 openvino_genai 버전으로 API 확인·수정. 서버 시작 때 warmup(첫 호출 지연 방지).
+4. config: `stt.chain: [{provider: local_ov, model_dir: models/whisper-small, device: CPU, kind: whisper}, (Gemini는 크레딧 있을 때 예비)]`. CPU/GPU 지연 비교 후 device 결정.
+5. 검증: 한국어 녹음 몇 개로 정확도·지연 측정 → UI 🎤로 확인. UI 모델 정보에 "Whisper · OpenVINO · CPU"처럼 표시되는지 확인(온디바이스 평가 항목).
+- TTS: Gemini(크레딧 충전 시) 유지, 안 되면 pyttsx3(OS TTS)를 예비로.
