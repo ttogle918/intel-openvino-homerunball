@@ -57,6 +57,9 @@ def test_robot_probe_save_averages_and_disconnects(tmp_path, monkeypatch):
     class FakeRobot:
         disconnected = False
 
+        def set_torque(self, *, enabled):
+            pass
+
         def get_observation(self):
             return Obs()
 
@@ -68,6 +71,68 @@ def test_robot_probe_save_averages_and_disconnects(tmp_path, monkeypatch):
     cfg = tmp_path / "config.yaml"
     cfg.write_text(yaml.safe_dump({"poses_file": str(poses), "robot": {}}), encoding="utf-8")
     monkeypatch.setattr(robot_probe, "open_robot", lambda c: robot)
+    sleeps = []
+    monkeypatch.setattr(robot_probe.time, "sleep", sleeps.append)
     robot_probe.main(["save", "home", "--config", str(cfg)])
     assert yaml.safe_load(poses.read_text(encoding="utf-8"))["home_pose"] == [1, 2, 3, 4, 5, 6]
     assert robot.disconnected
+    assert sleeps == [0.05] * 4
+
+
+def test_robot_probe_disconnects_when_set_torque_fails(tmp_path, monkeypatch):
+    import pytest
+    import yaml
+
+    from tools import robot_probe
+
+    class Boom:
+        disconnected = False
+
+        def set_torque(self, *, enabled):
+            raise RuntimeError("torque")
+
+        def disconnect(self):
+            self.disconnected = True
+
+    robot = Boom()
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.safe_dump({"robot": {}}), encoding="utf-8")
+    monkeypatch.setattr(robot_probe, "open_robot", lambda c: robot)
+    with pytest.raises(RuntimeError):
+        robot_probe.main(["watch", "--config", str(cfg)])
+    assert robot.disconnected
+
+
+def test_fetch_calibration_rejects_non_dict_calibration(tmp_path, monkeypatch):
+    import httpx
+    import pytest
+    import yaml
+
+    from tools import fetch_calibration
+
+    doc = {"class_path": "a.SO101", "init_args": {"role": "follower", "calibration": "/home/x/cal.json"}}
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=yaml.safe_dump(doc))))
+    monkeypatch.setattr(fetch_calibration.httpx, "get", lambda url, **kw: client.get(url, **kw))
+    out = tmp_path / "cal.yaml"
+    with pytest.raises(SystemExit, match="str"):
+        fetch_calibration.main(["--studio", "http://s", "--project", "p", "--env", "e", "--out", str(out)])
+    assert not out.exists()
+
+
+def test_fetch_calibration_http_errors_become_messages(monkeypatch):
+    import httpx
+    import pytest
+
+    from tools import fetch_calibration
+
+    def refuse(url, **kw):
+        raise httpx.ConnectError("no route")
+
+    monkeypatch.setattr(fetch_calibration.httpx, "get", refuse)
+    with pytest.raises(SystemExit, match="연결하지 못했어요"):
+        fetch_calibration.main(["--studio", "http://s", "--project", "p", "--env", "e"])
+
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(404)))
+    monkeypatch.setattr(fetch_calibration.httpx, "get", lambda url, **kw: client.get(url, **kw))
+    with pytest.raises(SystemExit, match="404"):
+        fetch_calibration.main(["--studio", "http://s", "--project", "p", "--env", "e"])

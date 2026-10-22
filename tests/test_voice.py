@@ -289,14 +289,103 @@ def test_event_set_after_close():
 def test_close_sets_events_of_unprocessed_items(monkeypatch):
     v = Voice("none")
     v._join_timeout_s = 0.2
-    gate = threading.Event()
-    monkeypatch.setattr(v, "_say", lambda text, started=None, wav=None: gate.wait(3))
-    v.speak("first")  # 워커가 여기서 막힌다
-    time.sleep(0.1)
+    gate, entered = threading.Event(), threading.Event()
+
+    def stuck(text, started=None, wav=None):
+        entered.set()
+        gate.wait(3)
+
+    monkeypatch.setattr(v, "_say", stuck)
+    v.speak("first")
+    assert entered.wait(2)  # 재생 스레드가 여기서 막혔다
     pending = [v.speak("a"), v.speak("b")]
-    v.close()  # join 2초 타임아웃, 남은 항목은 set
+    v.close()  # 마감 시간(0.2초) 안에 못 끝난 남은 항목은 set
     assert all(e.is_set() for e in pending)
     gate.set()
+
+
+def test_close_sets_event_of_sentence_synth_thread_holds(monkeypatch):
+    v = Voice("none")
+    v._join_timeout_s = 0.2
+    gate, entered, played = threading.Event(), threading.Event(), []
+
+    def stuck(text, started=None, wav=None):
+        played.append(text)
+        entered.set()
+        gate.wait(3)
+
+    monkeypatch.setattr(v, "_say", stuck)
+    v.speak("playing")
+    assert entered.wait(2)
+    evs = [v.speak(str(i)) for i in range(5)]  # 재생 큐(2칸)가 차고 합성 스레드는 손에 든 채 put 재시도
+    v.close()
+    assert all(e.wait(2) for e in evs)  # 손에 든 문장은 put 재시도 루프(0.05초 간격)가 포기를 알아챈 직후 set
+    gate.set()
+    v._play_thread.join(0.5)
+    assert not v._play_thread.is_alive()  # 종료 신호가 재생 큐에 들어갔다
+    assert played == ["playing"]  # 포기된 문장은 재생되지 않는다
+    v._synth_thread.join(2)
+    assert not v._synth_thread.is_alive()
+
+
+def test_close_shares_one_deadline_between_joins():
+    v = Voice("none")
+    v._join_timeout_s = 0.4
+    timeouts = []
+
+    class SlowJoin:
+        def join(self, timeout=None):
+            timeouts.append(timeout)
+            time.sleep(timeout)  # 주어진 시간을 다 쓴 척한다
+
+    v._synth_thread, v._play_thread = SlowJoin(), SlowJoin()
+    v.close()
+    assert timeouts[0] <= 0.4 and timeouts[1] <= 0.05  # 두 join이 하나의 마감 시간을 나눠 쓴다
+
+
+def test_clear_pending_drops_queued_sentences_but_not_the_playing_one(monkeypatch):
+    v = Voice("none")
+    gate, entered, played = threading.Event(), threading.Event(), []
+
+    def say(text, started=None, wav=None):
+        played.append(text)
+        started.set()
+        entered.set()
+        gate.wait(3)
+
+    monkeypatch.setattr(v, "_say", say)
+    first = v.speak("playing")
+    assert entered.wait(2)
+    pending = [v.speak(str(i)) for i in range(5)]
+    v.clear_pending()
+    assert first.is_set() and all(e.wait(1) for e in pending)  # 합성 스레드가 손에 든 문장은 곧바로(<=0.05초)
+    gate.set()
+    after = v.speak("after")  # 비운 뒤의 새 문장은 정상 재생
+    assert after.wait(2)
+    v.close()
+    assert played == ["playing", "after"]
+
+
+def test_clear_pending_drops_sentence_being_synthesized(monkeypatch):
+    import snackbot.voice as vm
+    v = Voice("none")
+    v.engine = "openai"
+    in_synth, gate, played = threading.Event(), threading.Event(), []
+
+    def synth(text):
+        in_synth.set()
+        gate.wait(3)
+        return text.encode()
+
+    monkeypatch.setattr(v, "synthesize", synth)
+    monkeypatch.setattr(vm, "play_wav", played.append)
+    ev = v.speak("합성 중")
+    assert in_synth.wait(2)
+    v.clear_pending()
+    gate.set()
+    assert ev.wait(2)
+    v.close()
+    assert played == []
 
 
 def test_next_sentence_synthesizes_while_previous_plays(monkeypatch):

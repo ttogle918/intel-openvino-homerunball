@@ -20,10 +20,27 @@ def open_robot(cfg):
 
     SO101 = load_so101()
     r = cfg["robot"]
-    robot = SO101(port=r["port"], calibration=load_calibration(r["calibration"]), role="follower")
-    robot.connect()
-    robot.set_torque(enabled=False)
+    try:
+        calibration = load_calibration(r["calibration"])
+    except FileNotFoundError:
+        raise SystemExit(f"캘리브레이션 파일이 없어요: {r['calibration']}\n"
+                         "먼저 python -m tools.fetch_calibration --studio URL --project ID --env ID 로 받아 오세요")
+    robot = SO101(port=r["port"], calibration=calibration, role="follower")
+    try:
+        robot.connect()  # 실패하면 SO101이 스스로 포트를 닫는다
+    except Exception as e:
+        raise SystemExit(f"포트를 열지 못했어요: {r['port']} ({type(e).__name__}: {e})\n"
+                         "Linux는 ls /dev/ttyACM* 로 포트 이름을 확인하고, "
+                         "physical-ai-studio 세션이 열려 있으면 닫으세요 (포트는 한 프로그램만 잡을 수 있어요)")
     return robot
+
+
+def _spaced(n, gap=0.05):
+    """n번 돌려주되 사이마다 gap초 쉰다 (값 평균용)."""
+    for i in range(n):
+        if i:
+            time.sleep(gap)
+        yield i
 
 
 def fmt(joints):
@@ -41,13 +58,14 @@ def main(argv=None):
     cfg = load_config(a.config)
     robot = open_robot(cfg)
     try:
+        robot.set_torque(enabled=False)
         if a.cmd == "watch":
             print(JOINTS, "(Ctrl+C로 끝)")
             while True:
                 print(fmt(robot.get_observation().joint_positions), flush=True)
                 time.sleep(0.2)
         else:
-            joints = np.mean([robot.get_observation().joint_positions for _ in range(5)], axis=0)
+            joints = np.mean([robot.get_observation().joint_positions for _ in _spaced(5)], axis=0)
             save_pose(cfg.get("poses_file", "poses.yaml"), f"{a.name}_pose", joints)
             print(f"{a.name}_pose 저장: {fmt(joints)}")
     except KeyboardInterrupt:

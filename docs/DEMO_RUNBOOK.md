@@ -38,7 +38,31 @@ gantt
 - [ ] 확인: `.venv/Scripts/python -m snackbot.stt a.wav b.wav` (한국어 녹음 파일. 워밍업 후 파일마다 텍스트·source·ms가 나온다)
 - [ ] CPU/GPU 선택: 기본은 `config.yaml`의 `stt.chain` 첫 항목 `device: CPU` (small 1.2~1.8초/문장). GPU로 바꾸면 `device`와 `label`("Whisper small · OpenVINO · GPU")을 같이 바꾼다. GPU는 0.4~0.5초지만 첫 로드가 길다(캐시 `models/ov_cache` 후 2~4초)
 - [ ] 서버를 켜면 백그라운드에서 워밍업한다 (CPU 약 5.6초). 그 뒤 UI 🎤로 "오란다 세 개 옮겨줘" 확인
-- [ ] TTS는 Gemini만 쓴다 (OS TTS 예비는 만들지 않기로 했다). 크레딧을 충전한 뒤 TTS → STT 왕복 검사를 하고, 크레딧이 없으면(402) 소리 없이 진행한다
+- [ ] TTS는 Gemini `gemini-2.5-flash-preview-tts`만 쓴다 (OS TTS 예비 없음). `.env`의 `GEMINI_API_KEY`는 **결제를 연결하지 않은 Google 프로젝트의 무료 등급 키**다 (결제 연결 프로젝트 키는 크레딧이 없으면 402). 실패하면 소리 없이 진행하고 채팅 글은 그대로 나온다. 선택 이유: `docs/VOICE_PROVIDERS.md`
+
+## 2-2. 로봇 첫 연결 (노트북, 처음 한 번)
+
+모든 명령은 project 루트에서, Ubuntu는 `.venv/bin/python`. **physical-ai-studio 세션을 먼저 닫는다** (로봇 포트는 한 프로그램만 잡는다).
+
+준비
+- [ ] 코드: homerunball 저장소 `feat/robot-m4`(또는 main) 받기
+- [ ] 로봇 패키지: `.venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt` (physicalai 0.3.0. SO101은 physicalai 본체 `physicalai.robot.so101`에 있어 플러그인은 필요 없다)
+- [ ] 정책 결과물 복사 (git 제외 폴더): `traind-model/dori-dori-model/exports/openvino/` (act.xml, act.bin, manifest.json). 과자 모델은 나오면 `traind-model/oranda-pickup-model/exports/openvino/`. **모델 폴더가 없는 정책은 건너뛰고 경고만 낸다** → 과자 모델 없이도 `home`·`dori_dori` 확인 가능
+- [ ] 카메라: `ls /dev/video*` (또는 `v4l2-ctl --list-devices`)로 번호를 보고 `config.yaml`의 `cameras.<이름>.device`를 고친다. 런타임은 config의 카메라를 **모두** 연다 → 사이드 캠이 아직 없으면 `side cam` 줄을 주석 처리한다
+
+| 순서 | 명령 | 확인할 것 → 고칠 곳 |
+|---|---|---|
+| 1 | `ls /dev/ttyACM*` | 팔로워 포트 → `config.yaml` `robot.port` (Studio 학습 PC는 `/dev/ttyACM1`, 리더 팔은 다른 번호) |
+| 2 | `python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project 0d36a88a-0078-47f9-972e-d5dd3e94a262 --env 24aadb64-3457-411c-8411-48529eada534` | Studio에서 팔로워 캘리브레이션을 받아 `calibration/follower.yaml`에 저장 (조회만 한다). **녹화 때와 같은 캘리브레이션**이어야 정책이 맞게 움직인다 |
+| 3 | `python -m tools.robot_probe watch` | 연결 확인. 토크가 꺼져 손으로 움직일 수 있고 관절값 6개가 0.2초마다 찍힌다 (Ctrl+C로 끝, 끝나면 그 자세로 토크 유지). **그리퍼를 쥐었다 폈다 하며 값이 작을수록 닫히는지** 확인. 과자 모델을 쓸 때는 열림·닫힘·과자를 쥔 값으로 `skills.gripper`의 `closed_below`, `open_above`, `grasp_min`을 정한다 (과자 모델이 없으면 비워 둬도 된다) |
+| 4 | 팔을 손으로 홈 자세에 두고 `python -m tools.robot_probe save home`, 과자 위로 들어 올린 자세에서 `save lift` | `poses.yaml`에 `home_pose`, `lift_pose` 저장 (5번 읽어 평균) |
+| 5 | `python -m snackbot.robot home` | 다른 자세에서 홈으로 천천히(`skills.move_s`) 이동. 도중에 **Ctrl+C → 그 자리에서 토크 유지, 팔이 떨어지지 않는지** 확인 |
+| 6 | `python -m snackbot.robot dori_dori` | 실제 ACT 정책이 노트북에서 OpenVINO로 도는 첫 확인 (카메라 `tower cam`·`follow cam`). 시작할 때 정책 입력을 한 번 미리 돌려 보므로, 카메라 이름이 모델과 다르면 바로 안내와 함께 멈춘다 → `skills.dori_dori.camera_map` 또는 `cameras` 이름 확인. 도리도리 뒤 홈 복귀 |
+| 7 | (과자 모델이 나오면) `manifest.json`의 `images.<이름>` 확인 → 다르면 `skills.oranda_pickup.camera_map` | Studio 카메라 이름과 config 이름 맞추기 |
+| 8 | (과자 모델) `python -m snackbot.robot oranda_pickup` | 집기 → 놓기(그리퍼 닫힘→열림) 감지 → lift → home. 출력의 `stop_reason`이 `gripper_open`, `grasped`가 맞는지 |
+| 9 | `python -m snackbot` (실제 로봇 + UI, M4 Task 5 이후) | 채팅 시작 → 옮기기 → 거부(도리도리) → 달래기 → 완료 전체 흐름 |
+
+- 비상정지는 토크를 켠 채 그 자리를 유지한다. 단, 프로그램을 끝낼 때(Ctrl+C 뒤 종료)는 SO101이 그 순간의 실제 자세를 목표로 다시 잡고 포트를 닫는다.
 
 ## 3. 진행자 대본 예시
 1. "이 로봇은 과자 공장 직원입니다. 오란다만 골라내요." → 시작

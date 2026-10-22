@@ -194,7 +194,7 @@ def test_commands_processed_in_order_per_connection(cfg, tmp_path, monkeypatch):
     c, app = make_app(cfg, tmp_path)
     order = []
 
-    def slow_restart():
+    def slow_restart(expect_gen=None):
         time.sleep(0.3)
         order.append("restart")
 
@@ -232,3 +232,36 @@ def test_stream_stops_when_controller_stopped(cfg, tmp_path, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/stream/front")
     assert r.status_code == 200 and calls["n"] <= 5
+
+
+def test_ws_restart_carries_generation_seen_on_receipt(cfg, tmp_path, monkeypatch):
+    import threading
+    c, app = make_app(cfg, tmp_path)
+    c.command("estop")
+    gate, got, done = threading.Event(), threading.Event(), threading.Event()
+    results = []
+    orig_gen, orig_restart = c.generation, c._restart
+
+    def generation():
+        g = orig_gen()
+        got.set()
+        return g
+
+    def restart(expect_gen=None):
+        results.append(orig_restart(expect_gen))
+        done.set()
+        return results[-1]
+
+    monkeypatch.setattr(c, "generation", generation)
+    monkeypatch.setattr(c, "_restart", restart)
+    monkeypatch.setattr(c, "chat", lambda text, source="text": gate.wait(5))  # 워커를 붙잡아 restart를 큐에 쌓는다
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        ws.send_json({"type": "chat", "text": "붙잡기"})
+        ws.send_json({"type": "command", "name": "restart"})
+        assert got.wait(5)          # 서버가 restart를 접수하고 세션 번호를 읽었다
+        c.command("estop")          # 접수 뒤에 다시 비상정지가 끼어든다
+        gate.set()
+        assert done.wait(5)
+    assert results == [False]
+    assert c.state == "ESTOP" and c.skills.estopped and c.skills.homed == 0

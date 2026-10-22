@@ -69,8 +69,7 @@ def handle_key(ch, controller, quit_fn, submit=None, clear=None):
         controller.command(name)  # 논블로킹이라 항상 인라인, 다른 무엇보다 먼저
     elif name == "restart" and submit is not None:
         # 접수 시점의 세션 번호를 함께 넘긴다: 그 뒤에 비상정지가 끼어들면 controller가 락 안에서 거부한다
-        gen_fn = getattr(controller, "generation", None)
-        submit(name, gen_fn() if gen_fn is not None else None)
+        submit(name, controller.generation())
     elif name is not None:
         if submit is None:
             controller.command(name)

@@ -128,7 +128,10 @@ def test_slow_restart_does_not_delay_estop():
     calls, done = [], []
 
     class C:
-        def command(self, name):
+        def generation(self):
+            return 0
+
+        def command(self, name, expect_gen=None):
             calls.append(name)
             if name == "restart":
                 time.sleep(0.5)
@@ -380,7 +383,10 @@ def test_estop_drops_queued_commands():
     started, release = threading.Event(), threading.Event()
 
     class C:
-        def command(self, name):
+        def generation(self):
+            return 0
+
+        def command(self, name, expect_gen=None):
             calls.append(name)
             if name == "restart":
                 started.set()
@@ -404,7 +410,10 @@ def test_quit_drops_queued_commands():
     started, release = threading.Event(), threading.Event()
 
     class C:
-        def command(self, name):
+        def generation(self):
+            return 0
+
+        def command(self, name, expect_gen=None):
             calls.append(name)
             if name == "restart":
                 started.set()
@@ -488,7 +497,10 @@ def _loop_with(monkeypatch, chunks, times, calls, expect):
     class C:
         stopped = False
 
-        def command(self, name):
+        def generation(self):
+            return 0
+
+        def command(self, name, expect_gen=None):
             calls.append(name)
 
     c = C()
@@ -528,60 +540,79 @@ def test_key_loop_chunks_run_in_order_through_worker(monkeypatch):
     assert calls == ["start", "resume", "restart"]
 
 
-def test_key_loop_space_with_esc_in_same_read_opens_window(monkeypatch):
-    calls = []
-    # " " 읽기(space + ESC) 직후 10ms 뒤에 "[H"가 오면 꼬리다: restart로 새면 안 된다.
-    _loop_with(monkeypatch, [(" ", True), "[H"], [1.0, 1.01, 9.0], calls, 1)
-    assert calls == ["estop"]
-
-
-def test_key_loop_window_after_space_with_esc_still_allows_space(monkeypatch):
-    calls = []
-    _loop_with(monkeypatch, [(" ", True), "[ H"], [1.0, 1.01, 9.0], calls, 2)
-    assert calls == ["estop", "estop"]
-
-
-def test_key_loop_real_posix_chunks_space_esc_then_tail(monkeypatch):
-    import os
+def _read_keys_recorded(monkeypatch, chunks, times):
+    """_read_keys를 직접 돌려 estop(인라인)과 워커로 가는 submit을 순서대로 기록한다.
+    워커를 거치지 않으므로 종료 때 대기 명령이 버려져 결과가 가려지는 일이 없다."""
     import snackbot.__main__ as m
     calls = []
 
     class C:
         stopped = False
 
-        def command(self, name):
+        def generation(self):
+            return 0
+
+        def command(self, name, expect_gen=None):
             calls.append(name)
 
-    c = C()
+    it, tm = iter(chunks), iter(times)
+    monkeypatch.setattr(m, "read_key", lambda: next(it, ("", False)))  # 다 읽으면 EOF로 끝
+    m._read_keys(C(), lambda: None, lambda n, *a: calls.append(n), lambda: None,
+                 clock=lambda: next(tm, 99.0))
+    return calls
+
+
+def test_key_loop_space_with_esc_in_same_read_opens_window(monkeypatch, capsys):
+    # space + ESC 읽기 직후 10ms 뒤에 "[H"가 오면 꼬리다: restart가 submit되면 안 된다.
+    calls = _read_keys_recorded(monkeypatch, [(" ", True), ("[H", False)], [1.0, 1.01])
+    assert calls == ["estop"]
+
+
+def test_key_loop_window_after_space_with_esc_still_allows_space(monkeypatch, capsys):
+    calls = _read_keys_recorded(monkeypatch, [(" ", True), ("[ H", False)], [1.0, 1.01])
+    assert calls == ["estop", "estop"]
+
+
+def test_key_loop_real_posix_chunks_space_esc_then_tail(monkeypatch, capsys):
+    import os
+    import snackbot.__main__ as m
     r, w = os.pipe()
-    chunks = iter([b" ", b"[H"])
+    chunks = iter([b" \x1b", b"[H"])
 
     def read_key():
         try:
             os.write(w, next(chunks))
         except StopIteration:
-            wait_for(lambda: len(calls) >= 1)
-            c.stopped = True
-            return "", True
+            return "", False
         return m.read_posix_chunk(r)
 
-    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
-    monkeypatch.setattr(m, "read_key", read_key)
-    times = iter([1.0, 1.01, 9.0])
     try:
-        m.key_loop(c, lambda: None, clock=lambda: next(times, 99.0))
+        monkeypatch.setattr(m, "read_key", read_key)
+        calls = []
+
+        class C:
+            stopped = False
+
+            def generation(self):
+                return 0
+
+            def command(self, name, expect_gen=None):
+                calls.append(name)
+
+        times = iter([1.0, 1.01])
+        m._read_keys(C(), lambda: None, lambda n, *a: calls.append(n), lambda: None,
+                     clock=lambda: next(times, 99.0))
     finally:
         _close(r, w)
     assert calls == ["estop"]
 
 
 def test_read_windows_key_escape_returns_none():
-    assert read_windows_key(_getch("")) is None
+    assert read_windows_key(_getch("\x1b")) is None
 
 
-def test_key_loop_logs_keys_dropped_in_esc_window(monkeypatch, caplog):
-    calls = []
+def test_key_loop_logs_keys_dropped_in_esc_window(monkeypatch, caplog, capsys):
     with caplog.at_level("DEBUG", logger="snackbot.__main__"):
-        _loop_with(monkeypatch, [None, "q", (" ", True)], [1.0, 1.02, 1.04, 9.0], calls, 1)
+        calls = _read_keys_recorded(monkeypatch, [("", True), ("q", False), (" ", True)], [1.0, 1.02, 1.04])
     assert calls == ["estop"]
     assert "ESC 창" in caplog.text
