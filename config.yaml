@@ -29,7 +29,7 @@ brain:
   #   - {provider: local_ov, model_dir: "models/llm", device: GPU, kind: llm}
 
 vision:
-  camera: front
+  camera: tower cam
   # 비우면 B단계 (시작 개수 + 그리퍼 판정). 위에서부터 시도.
   chain: []
   # chain:
@@ -43,6 +43,32 @@ stt:
   # chain:
   #   - {provider: local_ov, model_dir: "models/whisper", device: CPU, kind: whisper}
   #   - {provider: openai, model: "[전사 모델 ID]", timeout_s: 10}
+
+robot:
+  port: /dev/ttyACM0                       # [ ] 노트북의 팔로워 포트 (ls /dev/ttyACM*). Studio 학습 PC는 /dev/ttyACM1이었다
+  calibration: calibration/follower.yaml   # python -m tools.fetch_calibration 으로 Studio에서 받는다
+
+cameras:                                   # 키 = 학습 때 카메라 이름 (정책 입력 images.<이름>). 정책이 쓰는 카메라를 모두 둔다
+  tower cam:  {device: 0, width: 1280, height: 720, fps: 30}   # [ ] 노트북의 카메라 번호
+  side cam:   {device: 4, width: 1280, height: 720, fps: 30}   # [ ] oranda_pickup용 사이드 캠: Studio에 등록한 이름·해상도 확인
+  follow cam: {device: 2, width: 1280, height: 720, fps: 30}
+
+skills:
+  fps: 30
+  device: GPU                              # CPU | GPU | NPU (정책별로 device를 따로 써도 된다)
+  # camera_map: 학습 때 Studio 카메라 이름이 위 cameras 키와 다르면 {학습 이름: config 이름}.
+  #   학습 이름은 결과물 manifest.json의 "images.<이름>"에서 확인한다. 예: {A: tower cam, B: side cam}
+  oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
+  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}}
+  gripper:                                 # python -m tools.robot_probe watch 로 값을 읽고 정한다 (0..100, 작을수록 닫힘)
+    closed_below: null                     # 이보다 작으면 "닫힘"
+    open_above: null                       # 닫힘 뒤 이보다 큰 값이 open_hold_s 동안 이어지면 "놓음" → ACT 정지
+    grasp_min: null                        # 닫힘 구간 최솟값이 이 이상이면 과자를 쥔 것 (빈 그리퍼는 끝까지 닫힌다)
+    open_hold_s: 0.5
+  home_tolerance: 5                        # 관절별 오차가 이보다 크면 스킬 전에 home_pose로 이동
+  move_s: 2.0                              # 자세 하나로 이동하는 시간 (초)
+
+poses_file: poses.yaml                     # python -m tools.robot_probe save home | save lift 가 기록
 
 voice:
   engine: none              # none | log | pyttsx3
