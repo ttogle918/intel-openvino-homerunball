@@ -126,6 +126,10 @@ def build_policies(cfg):
     sk = cfg["skills"]
     found = {}
     dori_source = dori_source_setting(sk)   # 잘못된 설정이면 모델을 로드하기 전에 끝낸다
+    if dori_source == "policy" and not Path(sk["dori_dori"]["export_dir"]).is_dir():
+        # 어떤 모델도 로드하기 전에 끝낸다 (oranda GPU 컴파일을 기다리지 않게)
+        raise SystemExit("skills.dori_dori.source가 policy인데 dori_dori 모델이 없어요: export_dir 폴더를 확인하거나 "
+                         "source를 auto(모델이 없으면 코드 도리도리) 또는 script로 바꾸세요.")
     for name in POLICIES:
         if name == "dori_dori" and dori_source == "script":
             log.info("dori_dori: source가 script라 정책을 로드하지 않아요 (코드 도리도리)")

@@ -552,6 +552,17 @@ def test_dori_source_policy_without_model_or_unknown_source_exits(rcfg):
         make(rcfg)
 
 
+def test_build_policies_policy_without_dori_model_exits_before_any_load(rcfg, tmp_path):
+    oranda = tmp_path / "oranda"
+    oranda.mkdir()
+    rcfg["skills"]["oranda_pickup"]["export_dir"] = str(oranda)       # oranda 모델은 있다 (로드 대상)
+    rcfg["skills"]["dori_dori"].update(export_dir=str(tmp_path / "none"), source="policy")
+    sys.modules.pop("physicalai", None)
+    with pytest.raises(SystemExit, match="dori_dori"):
+        build_policies(rcfg)
+    assert "physicalai" not in sys.modules                           # 어떤 모델도 로드하기 전에 끝났다
+
+
 def test_build_policies_skips_dori_model_when_source_is_script(rcfg, tmp_path):
     export = tmp_path / "dori"
     export.mkdir()

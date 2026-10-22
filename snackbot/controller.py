@@ -48,7 +48,7 @@ class Controller:
         self._run_idle.set()
         self._restart_wait_hook = None  # 테스트용: 재시작이 동작 종료를 기다리기 시작할 때 부른다
         self._gen = 0  # 세션 번호: estop/start/resume/restart 때 올라간다 (이전 세션의 결정을 버리는 용도)
-        self._pending_test = None  # (skill, gen, origin): 루프 스레드가 step_test()로 꺼내 실행한다
+        self._pending_test = None  # (skill, gen, origin, say): 루프 스레드가 step_test()로 꺼내 실행한다
         self.brain, self.skills, self.voice, self.clock = brain, skills, voice, clock
         self.vision = vision if vision is not None and vision.enabled else None
         self.state, self.phase = IDLE, "idle"
@@ -115,9 +115,9 @@ class Controller:
         r = self.brain.chat(text, state, count, history=hist)
         if r["intent"] == "dori_dori":
             # 버튼과 같은 경로 (대기 상태에서만, 횟수·피로도 미반영). LLM을 기다리는 사이 세션이 바뀌었으면 취소.
-            # 요청이 받아들여졌을 때만 대사를 낸다 (거부되면 거부 이유만 남는다)
-            if self._request_test("dori_dori", expect_gen=gen, origin="llm"):
-                self._message("robot", r["say"])
+            # 거부되면 대사 없이 거부 이유만 남는다
+            # 대사는 job에 실어 루프 스레드(step_test)가 내고, 소리가 시작된 뒤 움직인다 (사이클과 같다)
+            self._request_test("dori_dori", expect_gen=gen, origin="llm", say=r["say"])
             return
         self._message("robot", r["say"])
         if r["intent"] == "start_task":
@@ -258,9 +258,10 @@ class Controller:
         return ok
 
     # ---- 스킬 테스트 (TESTING) ----
-    def _request_test(self, skill, expect_gen=None, origin="button"):
+    def _request_test(self, skill, expect_gen=None, origin="button", say=None):
         """스킬 1회 실행 요청. 대기(IDLE)이고 진행 중인 동작이 없을 때만 받는다.
-        expect_gen: 접수 순간의 세션 번호 (그 뒤 비상정지·재시작이 끼면 거부). 실행은 루프 스레드(step_test)가 한다."""
+        expect_gen: 접수 순간의 세션 번호 (그 뒤 비상정지·재시작이 끼면 거부).
+        say: 있으면 루프 스레드가 말하고 소리가 시작된 뒤에 움직인다 (버튼은 없음 = 즉시). 실행은 루프 스레드(step_test)가 한다."""
         if skill not in TEST_SKILLS:
             raise ValueError(f"알 수 없는 테스트 스킬: {skill}")
         with self._lock:
@@ -273,7 +274,7 @@ class Controller:
             else:
                 refused = None
                 self._gen += 1
-                self._pending_test = (skill, self._gen, origin)
+                self._pending_test = (skill, self._gen, origin, say)
                 self.state, self.phase, self.skill = TESTING, "idle", skill
         if refused:
             log.info("스킬 테스트 거부 (%s): %s", skill, refused)
@@ -282,6 +283,10 @@ class Controller:
         self._publish()
         self._wake.set()
         return True
+
+    def _testing(self, gen):
+        with self._lock:
+            return self.state == TESTING and self._gen == gen
 
     def _set_test_phase(self, phase, gen):
         with self._lock:
@@ -297,10 +302,25 @@ class Controller:
             job, self._pending_test = self._pending_test, None
             if job is None:
                 return None
-            skill, gen, origin = job
+            skill, gen, origin, say = job
             if self.state != TESTING or self._gen != gen:
                 return None
-            self._run_idle.clear()  # 확인과 같은 락 안: 재시작이 그 사이로 끼어들지 못한다
+            if not say:
+                self._run_idle.clear()  # 확인과 같은 락 안: 재시작이 그 사이로 끼어들지 못한다
+        if say:
+            # 락 밖에서 말하고 소리가 시작될 때까지 기다린다. 팔은 아직 안 움직이고 _run_idle은 set이라
+            # 비상정지·재시작은 이 대기를 기다리지 않는다 (세대가 바뀌면 0.1초 안에 빠져나온다)
+            try:
+                started = self._message("robot", say)
+            except Exception as e:
+                log.warning("테스트 대사 실패: %r", e)
+                started = None
+            self._wait_speech(started, gen, alive=lambda: self._testing(gen),
+                              on_wait=lambda: self._set_test_phase("speaking", gen))
+            with self._lock:
+                if self.state != TESTING or self._gen != gen or self._stop.is_set():
+                    return None
+                self._run_idle.clear()  # 재확인과 같은 락 안
         t0 = time.monotonic()
         stop_reason, grasped, record, error = None, None, None, None
         try:
@@ -340,6 +360,8 @@ class Controller:
     def _test_text(self, skill, origin, stop_reason, grasped, ms, record):
         """결과 한 줄: 버튼 '테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초 · 기록 …', LLM '도리도리 · …'."""
         how = STOP_REASON_KO.get(stop_reason, "알 수 없음" if stop_reason is None else str(stop_reason))
+        if skill == "dori_dori" and stop_reason == "timeout":
+            how = "정책 동작 완료"  # 정책 도리도리는 끝 신호가 없어 시간이 끝나는 것이 정상 종료다 (RunResult·로그는 원본)
         label = self.target_name if skill == "oranda_pickup" else TEST_LABELS[skill]
         parts = [f"{label} · {how}" if origin == "llm" else f"테스트 · {label}: {how}"]
         if skill == "oranda_pickup":
@@ -370,16 +392,19 @@ class Controller:
             self.phase = phase
         self._publish()
 
-    def _wait_speech(self, started, gen):
+    def _wait_speech(self, started, gen, alive=None, on_wait=None):
         """대사 소리가 나기 시작할 때까지 기다린다 (최대 sync_timeout_s). 대기한 ms를 돌려준다.
-        비상정지·종료·상태 변경이 오면 즉시 멈춘다. 락은 잡지 않는다."""
+        비상정지·종료·상태 변경이 오면 즉시 멈춘다. 락은 잡지 않는다.
+        alive: 계속 기다려도 되는지 판정 (기본: 사이클 일하는 중), on_wait: 기다리기 시작할 때 단계 표시."""
+        alive = alive or self._working
+        on_wait = on_wait or (lambda: self._set_phase("speaking"))
         if started is None:
             return 0
         t0 = time.monotonic()
         if not started.is_set():
-            self._set_phase("speaking")
+            on_wait()
             while not started.wait(0.1):
-                if (not self._working() or self._stop.is_set() or self._gen != gen
+                if (not alive() or self._stop.is_set() or self._gen != gen
                         or time.monotonic() - t0 >= self.sync_timeout_s):
                     break
         return _ms(t0)

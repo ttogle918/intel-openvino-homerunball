@@ -246,5 +246,5 @@ def test_chat_prompt_describes_dori_tool(cfg):
     fake = Scripted('{"intent": "chat", "say": "네", "n": null}')
     Brain(cfg, chain=Chain([Member("f", fake)]), rng=FirstRng()).chat("안녕", "IDLE", 0)
     system = fake.messages[0]["content"]
-    assert "- dori_dori: 고개를 좌우로 젓는 동작 한 번 (싫다고 하거나, 도리도리를 해 보라고 할 때)" in system
+    assert "- dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)" in system
     assert json.loads(fake.messages[-1]["content"])["allowed"] == ["start_task", "chat", "dori_dori"]

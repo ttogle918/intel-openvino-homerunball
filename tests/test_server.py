@@ -445,8 +445,8 @@ def test_ws_test_carries_generation_seen_on_receipt(cfg, tmp_path, monkeypatch):
         got.set()
         return g
 
-    def request(skill, expect_gen=None, origin="button"):
-        results.append(orig_request(skill, expect_gen=expect_gen, origin=origin))
+    def request(skill, expect_gen=None, origin="button", say=None):
+        results.append(orig_request(skill, expect_gen=expect_gen, origin=origin, say=say))
         done.set()
         return results[-1]
 
@@ -464,3 +464,25 @@ def test_ws_test_carries_generation_seen_on_receipt(cfg, tmp_path, monkeypatch):
         assert done.wait(5)
     assert results == [False]
     assert c.state == "IDLE" and c._pending_test is None and c.skills.runs == []
+
+
+def test_estop_not_queued_behind_pending_test_on_same_connection(cfg, tmp_path, monkeypatch):
+    import threading
+    c, app = make_app(cfg, tmp_path)
+    gate, entered, estopped = threading.Event(), threading.Event(), threading.Event()
+    c.subscribe(lambda e: estopped.set() if e["type"] == "state" and e["state"] == "ESTOP" else None)
+
+    def slow_chat(text, source="text"):
+        entered.set()
+        gate.wait(10)
+
+    monkeypatch.setattr(c, "chat", slow_chat)          # 워커를 붙잡아 test를 큐 뒤에 쌓는다
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        ws.send_json({"type": "chat", "text": "붙잡기"})
+        assert entered.wait(5)
+        ws.send_json({"type": "command", "name": "test", "skill": "dori_dori"})   # 큐에서 대기
+        ws.send_json({"type": "command", "name": "estop"})
+        assert estopped.wait(5)                        # 큐가 풀리기(gate.set) 전에 비상정지가 처리됐다
+        assert not gate.is_set() and c.state == "ESTOP" and c.skills.estopped
+        gate.set()

@@ -1,6 +1,6 @@
 # 설계: UI 스킬 1회 실행(추론 테스트) · 코드 도리도리
 
-작성 2026-10-22. 상태: **설계 확정, 구현 전**. 기존 기준: `2026-10-22-chat-ui-design.md`(상태·명령), `2026-10-22-digital-twin-design.md`(4분할·재생·실행 기록), M4 구현 결정(chat-ui-design 11.6절).
+작성 2026-10-22. 상태: **구현 완료 (2026-10-23)**. 기존 기준: `2026-10-22-chat-ui-design.md`(상태·명령), `2026-10-22-digital-twin-design.md`(4분할·재생·실행 기록), M4 구현 결정(chat-ui-design 11.6절).
 
 구현 계획: `docs/superpowers/plans/2026-10-22-skill-test.md`.
 
@@ -101,7 +101,7 @@ skills:
 
 - 대화 LLM이 **채팅 의도(intent)로 도리도리를 고를 수 있다.** 대화 체인(Claude → NVIDIA → 규칙)의 모든 provider에서 같게 동작하도록 Anthropic tool-use API가 아니라 기존 JSON intent 방식을 쓴다 (절대 규칙 3: LLM 출력은 허용된 값만).
   - `allowed_intents("IDLE")` = `["start_task", "chat", "dori_dori"]` (그 밖의 상태에는 넣지 않는다).
-  - `CHAT_SYSTEM` 프롬프트에 도구 설명 한 줄: `dori_dori: 고개를 좌우로 젓는 동작 한 번 (싫다고 하거나, 도리도리를 해 보라고 할 때)`.
+  - `CHAT_SYSTEM` 프롬프트에 도구 설명 한 줄: `dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)`.
   - LLM 실패 시 키워드 fallback: `도리도리`, `고개 저어`, `고개를 저어` → `dori_dori` (IDLE에서만).
   - LLM이 `dori_dori`를 골라도 상태가 IDLE이 아니면 무시되고 chat으로 처리된다 (기존 허용 목록 규칙).
 - **실행 경로는 버튼과 하나:** `controller.chat`에서 intent가 `dori_dori`면 대사를 낸 뒤 `command("test", skill="dori_dori")`와 같은 내부 경로(`_request_test`)로 1회 실행한다. 즉 TESTING 상태, 대기 상태에서만, 횟수·피로도 미반영, 결과 시스템 메시지, 비상정지 즉시 — 버튼과 완전히 같다.

@@ -791,7 +791,7 @@ def test_test_command_only_requests_and_step_test_runs_once(cfg):
     assert (c.state, c.phase, c.skill) == ("IDLE", "idle", None)
     assert c.skills.runs == ["dori_dori"]
     assert c.history[-1]["role"] == "system"
-    assert c.history[-1]["text"].startswith("테스트 · 도리도리: 시간 초과로 끝남 · ")
+    assert c.history[-1]["text"].startswith("테스트 · 도리도리: 정책 동작 완료 · ")
     assert c.step_test() is None                                  # 대기 중인 테스트 없음
     assert ("TESTING", "acting") in _states(ev) and _states(ev)[-1] == ("IDLE", "idle")
 
@@ -969,10 +969,11 @@ def test_chat_dori_runs_one_test_with_llm_prefix(cfg):
     c, _ = make(cfg)
     c.chat("도리도리 해 봐")
     assert c.state == "TESTING" and c.skill == "dori_dori"
-    assert [m["role"] for m in c.history] == ["user", "robot"]   # 대사 먼저, 실행은 루프 스레드
+    assert [m["role"] for m in c.history] == ["user"]            # 대사는 루프 스레드가 낸다 (소리 시작 뒤 실행)
     assert c.step_test() == "timeout"
+    assert [m["role"] for m in c.history] == ["user", "robot", "system"]
     assert c.state == "IDLE" and c.skills.runs == ["dori_dori"] and c.count == 0
-    assert c.history[-1]["text"].startswith("도리도리 · 시간 초과로 끝남 · ")
+    assert c.history[-1]["text"].startswith("도리도리 · 정책 동작 완료 · ")
 
 
 def test_chat_dori_ignored_outside_idle(cfg):
@@ -1104,3 +1105,76 @@ def test_restart_finished_before_step_test_wraps_up_does_not_paste_old_result(cf
     c.step_test()
     assert fired and c.state == "IDLE"
     assert not any("시간 초과" in m["text"] or "비상정지로 멈춤" in m["text"] for m in c.history)
+
+
+# --- LLM 도리도리: 대사 소리가 시작된 뒤 움직인다 ---
+def _llm_dori_voiced(cfg, timeout=8):
+    v = EventVoice()
+    cfg["voice"]["sync_timeout_s"] = timeout
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills(), voice=v)
+    speaking = threading.Event()
+    c.subscribe(lambda e: speaking.set() if (e["type"] == "state" and e["state"] == "TESTING"
+                                             and e["phase"] == "speaking") else None)
+    c.chat("도리도리 해 봐")
+    return c, v, speaking
+
+
+def _step_test_in_thread(c):
+    out = []
+    t = threading.Thread(target=lambda: out.append(c.step_test()), daemon=True)
+    t.start()
+    return t, out
+
+
+def test_llm_dori_waits_for_speech_before_moving(cfg):
+    c, v, speaking = _llm_dori_voiced(cfg)
+    assert v.spoken == [] and c.state == "TESTING"                # chat()은 말하지 않는다 (루프 스레드가 말한다)
+    t, out = _step_test_in_thread(c)
+    assert speaking.wait(3)
+    assert c.skills.runs == [] and c.phase == "speaking" and len(v.spoken) == 1
+    assert c._run_idle.is_set()                                   # 팔은 아직 안 움직였다
+    v.events[0].set()
+    t.join(3)
+    assert out == ["timeout"] and c.skills.runs == ["dori_dori"] and c.state == "IDLE"
+
+
+def test_llm_dori_estop_during_speech_wait_never_runs(cfg):
+    c, v, speaking = _llm_dori_voiced(cfg)
+    t, out = _step_test_in_thread(c)
+    assert speaking.wait(3)
+    c._estop()                                                    # 대기를 기다리지 않는다 (락 없이 즉시)
+    t.join(3)
+    assert not t.is_alive() and out == [None]
+    assert c.state == "ESTOP" and c.skills.runs == [] and c._run_idle.is_set()
+
+
+def test_llm_dori_runs_after_sync_timeout(cfg):
+    c, v, _ = _llm_dori_voiced(cfg, timeout=0)                    # 소리가 끝내 시작되지 않아도 실행한다
+    assert c.step_test() == "timeout"
+    assert c.skills.runs == ["dori_dori"] and c.state == "IDLE"
+    assert v.events and not v.events[0].is_set()
+
+
+def test_llm_dori_session_change_during_speech_wait_never_runs(cfg):
+    c, v, speaking = _llm_dori_voiced(cfg)
+    t, out = _step_test_in_thread(c)
+    assert speaking.wait(3)
+    with c._lock:
+        c._gen += 1                                               # 대기 중 세션이 바뀌었다
+    t.join(3)
+    assert out == [None] and c.skills.runs == [] and c._run_idle.is_set()
+
+
+def test_button_test_does_not_wait_for_speech(cfg):
+    v = EventVoice()
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills(), voice=v)
+    c.command("test", skill="dori_dori")
+    assert c.step_test() == "timeout"                             # 소리 이벤트를 set하지 않아도 바로 실행
+    assert c.skills.runs == ["dori_dori"] and v.spoken == []
+
+
+def test_dori_timeout_text_is_policy_done_but_other_skills_unchanged(cfg):
+    c, _ = make(cfg)
+    assert c._test_text("dori_dori", "button", "timeout", None, 1000, None) == "테스트 · 도리도리: 정책 동작 완료 · 1.0초"
+    assert c._test_text("dori_dori", "button", "script", None, 1000, None) == "테스트 · 도리도리: 코드 동작 완료 · 1.0초"
+    assert "시간 초과" in c._test_text("oranda_pickup", "button", "timeout", False, 1000, None)

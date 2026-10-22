@@ -57,7 +57,7 @@ CHAT_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {targe
 사람이 한 말(text), 지금 상태(state), 지금까지 옮긴 횟수(count), 고를 수 있는 의도 목록(allowed)을 받아.
 - start_task: 과자를 옮기라는 작업 지시
 - resume: 거부 중일 때 달래거나 다시 해 달라는 부탁
-- dori_dori: 고개를 좌우로 젓는 동작 한 번 (싫다고 하거나, 도리도리를 해 보라고 할 때)
+- dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)
 - chat: 그 밖의 말
 반드시 allowed 안에서 intent를 골라. 작업 지시에 개수가 있으면 n에 숫자, 없으면 null.
 
