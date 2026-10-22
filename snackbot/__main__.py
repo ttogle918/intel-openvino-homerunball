@@ -18,7 +18,7 @@ from .controller import Controller
 from .providers import build_chain
 from .stt import build_stt
 from .vision import build_vision
-from .voice import Voice
+from .voice import make_voice
 
 KEYS = {"s": "start", "r": "resume", "h": "restart", " ": "estop", "q": "quit"}
 QUIT_CHARS = (chr(3), chr(4))  # Ctrl+C, Ctrl+D
@@ -36,7 +36,7 @@ def build(cfg, env, dry_run=True):
     llm = build_chain(cfg["brain"].get("chain"), providers, env)
     vision = build_vision(cfg["vision"], providers, env, remaining_fn=lambda: skills.tray)
     stt = build_stt(cfg.get("stt"), providers, env)
-    voice = Voice(cfg.get("voice", {}).get("engine", "none"))
+    voice = make_voice(cfg, env)
     controller = Controller(cfg, Brain(cfg, chain=llm), skills, vision=vision, voice=voice,
                             log_dir=cfg.get("logging", {}).get("dir", "logs"))
     info = {"type": "info", "target": {"name": cfg["target"]["name"]}, "models": {
