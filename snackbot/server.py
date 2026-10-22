@@ -1,5 +1,6 @@
-"""FastAPI: WebSocket(/ws), 음성(/stt), 카메라(/stream/front), frontend/ 정적 서빙.
-controller를 부르기만 한다 (controller는 이 모듈을 모른다). 메시지 형식: docs/UI_DESIGN_PROMPT.md"""
+"""FastAPI: WebSocket(/ws), 음성(/stt), 카메라(/stream/front, /stream/{cam}), 재생 데이터(/api/replay/{skill}, /replays),
+frontend/ 정적 서빙. controller를 부르기만 한다 (controller는 이 모듈을 모른다).
+메시지 형식: docs/UI_DESIGN_PROMPT.md, 4분할·3D: docs/superpowers/specs/2026-10-22-digital-twin-design.md"""
 import asyncio
 import contextlib
 import functools
@@ -14,11 +15,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from .twin import replay_payload, to_radians
 from .vision import encode_jpeg
 
 log = logging.getLogger(__name__)
 UI_COMMANDS = ("resume", "estop", "restart")
 STREAM_INTERVAL_S = 0.1
+MJPEG = "multipart/x-mixed-replace; boundary=frame"
 
 
 def draw_boxes(frame, boxes):
@@ -34,9 +37,16 @@ def mjpeg_chunk(frame, boxes=None):
     return b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + encode_jpeg(draw_boxes(frame, boxes)) + b"\r\n"
 
 
-def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend"):
+def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend", *, cameras=(), box_camera=None,
+               joints_fn=None, joints_hz=15.0, convert=None, replays_dir=None):
+    """frame_fn(cam=None): RGB 프레임. 인자 없이 부르면 vision 카메라 (/stream/front).
+    cameras: /stream/{cam}으로 열 수 있는 config 카메라 이름. box_camera: 개수 세기 상자를 그릴 카메라.
+    joints_fn(): normalized 관절값 6개 또는 None (dry-run). joints_hz마다 읽어 바뀌면 joints 메시지.
+    convert: normalized → 라디안 (기본 twin.to_radians). replays_dir: /api/replay, /replays의 폴더."""
     clients = set()
-    shared = {"loop": None, "queue": None}
+    shared = {"loop": None, "queue": None, "joints": None}
+    camera_names = set(cameras)
+    to_rad = convert or to_radians
 
     async def pump(queue):
         """이벤트를 들어온 순서대로 모든 접속의 outbox에 넣는다 (소켓을 await하지 않는다)."""
@@ -44,6 +54,23 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
             event = await queue.get()
             for outbox in list(clients):
                 outbox.put_nowait((event, True))
+
+    async def joints_pump():
+        """joints_fn()을 joints_hz로 읽어 라디안으로 바꾸고, 값이 바뀌었을 때만 모든 연결에 보낸다."""
+        last = None
+        while True:
+            try:
+                values = joints_fn()
+                q = None if values is None else [round(float(v), 4) for v in to_rad(values)]
+            except Exception as e:
+                log.debug("관절값 읽기 실패: %r", e)
+                q = None
+            if q is not None and q != last:
+                last = q
+                event = {"type": "joints", "q": q}
+                shared["joints"] = event
+                shared["queue"].put_nowait(event)
+            await asyncio.sleep(1.0 / joints_hz)
 
     async def writer(ws, outbox, skip_keys):
         """접속별 전송 작업. 오류·타임아웃이면 outbox를 등록 해제하고 소켓을 닫아
@@ -74,14 +101,16 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
     async def lifespan(app):
         shared["queue"] = asyncio.Queue()
         shared["loop"] = asyncio.get_running_loop()
-        task = asyncio.create_task(pump(shared["queue"]))
+        tasks = [asyncio.create_task(pump(shared["queue"]))]
+        if joints_fn is not None:
+            tasks.append(asyncio.create_task(joints_pump()))
         try:
             yield
         finally:
             shared["loop"] = None
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     app = FastAPI(lifespan=lifespan)
     controller.subscribe(on_event)
@@ -96,6 +125,8 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
         history = list(controller.history)
         for m in history:
             outbox.put_nowait((m, False))
+        if shared["joints"] is not None:   # 팔이 멈춰 있으면 다음 joints가 오지 않으므로 마지막 값을 한 번
+            outbox.put_nowait((shared["joints"], False))
         skip_keys = {(m.get("ts"), m.get("role"), m.get("text")) for m in history}
         clients.add(outbox)
         task = asyncio.create_task(writer(ws, outbox, skip_keys))
@@ -159,25 +190,43 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
         await run_in_threadpool(controller.chat, text, "voice")
         return {"text": text}
 
+    async def mjpeg(read, boxes):
+        while not controller.stopped:
+            try:
+                frame = await run_in_threadpool(read)
+                chunk = mjpeg_chunk(frame, boxes()) if frame is not None else None
+            except Exception as e:
+                log.debug("프레임 오류, 건너뜀: %r", e)
+                chunk = None
+            if chunk is not None:
+                yield chunk
+            await asyncio.sleep(STREAM_INTERVAL_S)
+
     @app.get("/stream/front")
     async def stream_front():
         if frame_fn is None:
             raise HTTPException(404, "카메라 없음")
+        return StreamingResponse(mjpeg(frame_fn, lambda: controller.last_boxes), media_type=MJPEG)
 
-        async def frames():
-            while not controller.stopped:
-                try:
-                    frame = await run_in_threadpool(frame_fn)
-                    chunk = mjpeg_chunk(frame, controller.last_boxes) if frame is not None else None
-                except Exception as e:
-                    log.debug("프레임 오류, 건너뜀: %r", e)
-                    chunk = None
-                if chunk is not None:
-                    yield chunk
-                await asyncio.sleep(STREAM_INTERVAL_S)
+    @app.get("/stream/{cam}")
+    async def stream_cam(cam: str):
+        if frame_fn is None or cam not in camera_names:
+            raise HTTPException(404, "카메라 없음")
+        boxes = (lambda: controller.last_boxes) if cam == box_camera else (lambda: None)
+        return StreamingResponse(mjpeg(functools.partial(frame_fn, cam), boxes), media_type=MJPEG)
 
-        return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+    @app.get("/api/replay/{skill}")
+    async def replay(skill: str):
+        data = None
+        if replays_dir is not None:
+            data = await run_in_threadpool(replay_payload, replays_dir, skill, to_rad)
+        if data is None:
+            raise HTTPException(404, f"{skill} 재생 데이터 없음")
+        return data
 
+    if replays_dir is not None:
+        Path(replays_dir).mkdir(parents=True, exist_ok=True)
+        app.mount("/replays", StaticFiles(directory=replays_dir), name="replays")
     static = Path(static_dir)
     if static.is_dir():
         app.mount("/", StaticFiles(directory=static, html=True), name="frontend")

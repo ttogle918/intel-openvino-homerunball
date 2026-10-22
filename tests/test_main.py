@@ -771,3 +771,65 @@ def test_key_loop_logs_keys_dropped_in_esc_window(monkeypatch, caplog, capsys):
         calls = _read_keys_recorded(monkeypatch, [("", True), ("q", False), (" ", True)], [1.0, 1.02, 1.04])
     assert calls == ["estop"]
     assert "ESC 창" in caplog.text
+
+
+def test_build_dry_run_twin_info_and_parts(cfg, tmp_path):
+    cfg["robot"]["calibration"] = str(tmp_path / "none.yaml")
+    parts = build(cfg, env={}, dry_run=True)
+    try:
+        info = parts["info"]
+        assert [t["kind"] for t in info["ui"]["tiles"]] == ["camera", "camera", "camera", "twin"]
+        assert info["twin"] == {"mode": "replay", "urdf": "twin/so101/so101_new_calib.urdf"}
+        assert info["replays"] == []
+        assert parts["joints_fn"] is None and parts["joints_hz"] == 15.0
+        assert parts["cameras"] == ["tower cam", "side cam", "follow cam"] and parts["box_camera"] == "tower cam"
+        assert parts["frame_fn"]("side cam").shape == (480, 640, 3)
+        assert parts["convert"]([0] * 6)[0] == 0
+        assert parts["replays_dir"] == cfg["replays_dir"]
+    finally:
+        parts["voice"].close()
+
+
+def test_build_real_robot_twin_live(real_cfg):
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        assert parts["info"]["twin"]["mode"] == "live"
+        assert parts["joints_fn"] == parts["skills"].latest_joints
+    finally:
+        parts["voice"].close()
+
+
+def test_main_passes_twin_parts_to_create_app(monkeypatch):
+    import uvicorn
+
+    import snackbot.__main__ as m
+    import snackbot.server as server
+
+    events = []
+    _patch_main(monkeypatch, events, lambda: None)
+    parts = m.build(None, None)
+    parts.update(cameras=["tower cam"], box_camera="tower cam", joints_fn=lambda: None, joints_hz=20.0,
+                 convert=str, replays_dir="replays")
+    seen = {}
+
+    def fake_create_app(controller, info, **kw):
+        seen.update(kw)
+        return "app"
+
+    class FakeServer:
+        should_exit = False
+
+        def __init__(self, config):
+            pass
+
+        def run(self):
+            events.append("served")
+
+    monkeypatch.setattr(server, "create_app", fake_create_app)
+    monkeypatch.setattr(uvicorn, "Config", lambda app, **kw: app)
+    monkeypatch.setattr(uvicorn, "Server", FakeServer)
+    m.main([])
+    assert "served" in events
+    assert seen["cameras"] == ["tower cam"] and seen["box_camera"] == "tower cam"
+    assert seen["joints_fn"] is parts["joints_fn"] and seen["joints_hz"] == 20.0
+    assert seen["convert"] is str and seen["replays_dir"] == "replays"

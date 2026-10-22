@@ -1,4 +1,9 @@
+import json
+import time
+from pathlib import Path
+
 import numpy as np
+import pytest
 
 from snackbot.skills import DrySkills, RunResult, synth_tray
 from snackbot.vision import OpenCVCounter
@@ -59,3 +64,26 @@ def test_frame_is_synthetic_and_countable(cfg):
     assert f.shape == (480, 640, 3) and f.dtype == np.uint8
     assert OpenCVCounter(**OPENCV).count(f).n == 3
     assert OpenCVCounter(**OPENCV).count(synth_tray(0)).n == 0
+
+
+def test_replay_episode_sets_act_time(cfg):
+    folder = Path(cfg["replays_dir"]) / "dori_dori"
+    folder.mkdir(parents=True)
+    (folder / "episode.json").write_text(json.dumps({"skill": "dori_dori", "source": "run", "fps": 10,
+                                                     "joints": [[0] * 6] * 3, "cameras": {}}), encoding="utf-8")
+    s = DrySkills(cfg)
+    assert s.replay_s == {"dori_dori": pytest.approx(0.3)}
+    t0 = time.monotonic()
+    assert s.run("dori_dori").stop_reason == "timeout"
+    assert time.monotonic() - t0 >= 0.28
+    assert s.run("oranda_pickup").ms < 200               # 재생 데이터가 없는 스킬은 act_s (테스트에서 0)
+
+
+def test_frames_per_camera(cfg):
+    s = DrySkills(cfg)
+    s.new_task(2)
+    tray = s.latest_frame("tower cam")                    # vision 카메라
+    assert np.array_equal(tray, s.latest_frame()) and np.array_equal(tray, s.latest_frame("front"))
+    side = s.latest_frame("side cam")                     # config의 다른 카메라: 이름표 화면
+    assert side.shape == (480, 640, 3) and not np.array_equal(side, tray)
+    assert side is s.latest_frame("side cam")
