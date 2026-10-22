@@ -32,6 +32,16 @@ def test_build_real_robot_not_yet(cfg):
         build(cfg, {}, dry_run=False)
 
 
+def wait_for(cond, timeout=2.0):
+    import time
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if cond():
+            return True
+        time.sleep(0.005)
+    return cond()
+
+
 def test_handle_key():
     calls, quits = [], []
 
@@ -41,8 +51,11 @@ def test_handle_key():
 
     quit_fn = lambda: quits.append(1)  # noqa: E731
     assert handle_key("s", C(), quit_fn) == "start"
+    assert wait_for(lambda: calls == ["start"])
     assert handle_key(" ", C(), quit_fn) == "estop"
+    assert calls == ["start", "estop"]  # estop은 인라인
     assert handle_key("R", C(), quit_fn) == "resume"
+    assert wait_for(lambda: len(calls) == 3)
     assert handle_key("x", C(), quit_fn) is None
     assert handle_key("q", C(), quit_fn) == "quit"
     assert calls == ["start", "estop", "resume"] and quits == [1]
@@ -87,7 +100,37 @@ def test_handle_key_h_restarts():
             calls.append(name)
 
     assert handle_key("h", C(), lambda: None) == "restart"
-    assert calls == ["restart"]
+    assert wait_for(lambda: calls == ["restart"])
+
+
+def test_handle_key_restart_does_not_block_estop():
+    import time
+    calls, done = [], []
+
+    class C:
+        def command(self, name):
+            calls.append(name)
+            if name == "restart":
+                time.sleep(0.5)
+                done.append(1)
+
+    c = C()
+    t0 = time.monotonic()
+    assert handle_key("h", c, lambda: None) == "restart"
+    assert time.monotonic() - t0 < 0.1
+    assert handle_key(" ", c, lambda: None) == "estop"
+    assert "estop" in calls and not done  # 재시작이 끝나기 전에 estop 기록
+    assert wait_for(lambda: done)
+
+
+def test_handle_key_background_command_error_is_logged(caplog):
+    class C:
+        def command(self, name):
+            raise RuntimeError("boom")
+
+    with caplog.at_level("ERROR"):
+        handle_key("s", C(), lambda: None)
+        assert wait_for(lambda: "boom" in caplog.text)
 
 
 def _pipe_with(data):
@@ -106,12 +149,26 @@ def _close(*fds):
             pass
 
 
-@pytest.mark.parametrize("data", [b"\x1b[H", b"\x1bOS", b"\x1bq", b"\x1b", b"\x1b[A"])
+@pytest.mark.parametrize("data", [b"\x1b[H", b"\x1bOS", b"\x1bq", b"\x1b", b"\x1b[A", b"\x1b["])
 def test_read_posix_chunk_discards_escape_sequences(data):
     from snackbot.__main__ import read_posix_chunk
     r, w = _pipe_with(data)
     try:
         assert read_posix_chunk(r) is None
+    finally:
+        _close(r, w)
+
+
+@pytest.mark.parametrize("data,expected", [
+    (b"\x1b[A ", " "),
+    (b"\x1b[1;5A s", " s"),
+    (b"s\x1b[Aq", "sq"),
+])
+def test_read_posix_chunk_keeps_keys_around_escape_sequences(data, expected):
+    from snackbot.__main__ import read_posix_chunk
+    r, w = _pipe_with(data)
+    try:
+        assert read_posix_chunk(r) == expected
     finally:
         _close(r, w)
 
@@ -179,7 +236,32 @@ def test_key_loop_handles_every_char_of_a_chunk(monkeypatch):
     monkeypatch.setattr(m, "enter_cbreak", lambda: None)
     monkeypatch.setattr(m, "read_key", lambda: next(keys))
     m.key_loop(c, lambda: setattr(c, "stopped", True))
-    assert calls == ["start", "resume"]
+    assert wait_for(lambda: len(calls) == 2)
+    assert sorted(calls) == ["resume", "start"]
+
+
+def test_key_loop_ignores_chars_after_quit(monkeypatch):
+    import snackbot.__main__ as m
+    calls, quits = [], []
+
+    class C:
+        stopped = False
+
+        def command(self, name):
+            calls.append(name)
+
+    c = C()
+
+    def quit_fn():
+        quits.append(1)
+        c.stopped = True
+
+    keys = iter(["qs"])
+    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
+    monkeypatch.setattr(m, "read_key", lambda: next(keys))
+    m.key_loop(c, quit_fn)
+    assert quits == [1]
+    assert not wait_for(lambda: calls, timeout=0.1)
 
 
 def test_key_loop_empty_string_is_eof(monkeypatch, capsys):

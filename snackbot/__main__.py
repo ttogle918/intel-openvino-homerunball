@@ -55,9 +55,19 @@ def handle_key(ch, controller, quit_fn):
     name = KEYS.get(ch.lower())
     if name == "quit":
         quit_fn()
+    elif name == "estop":
+        controller.command(name)  # 논블로킹이라 인라인
     elif name is not None:
-        controller.command(name)
+        # restart는 팔을 홈으로 보내느라 수 초 걸린다. 키 스레드가 막히면 space를 못 읽는다.
+        threading.Thread(target=_run_command, args=(controller, name), daemon=True).start()
     return name
+
+
+def _run_command(controller, name):
+    try:
+        controller.command(name)
+    except Exception:
+        log.exception("명령 실행 실패: %s", name)
 
 
 def read_windows_key(getch):
@@ -72,13 +82,31 @@ def read_windows_key(getch):
 def read_posix_chunk(fd):
     """fd에서 버퍼 없이 한 번 읽는다 (sys.stdin.read는 시퀀스 꼬리를 파이썬 버퍼에 숨겨 키로 새게 한다).
 
-    ESC 앞의 글자만 돌려준다. 방향키·F키·Home/End·Alt+키는 ESC로 시작하고 한 번에 전달되므로
-    ESC부터 뒤는 통째로 버린다. 반환: 키 문자열 · None(버림) · ""(EOF)."""
+    이스케이프 시퀀스(CSI·SS3·Alt+키)만 건너뛰고 나머지 글자는 모두 돌려준다.
+    끝이 잘린 시퀀스는 버린다. 반환: 키 문자열 · None(남은 글자 없음) · ""(EOF)."""
     data = os.read(fd, 32)
     if not data:
         return ""
-    head = data.decode("utf-8", errors="replace").split(chr(27), 1)[0]
-    return head or None
+    text = data.decode("utf-8", errors="replace")
+    out, i, n = [], 0, len(text)
+    while i < n:
+        if text[i] != "\x1b":
+            out.append(text[i])
+            i += 1
+        elif i + 1 >= n:
+            break  # 홀로 남은 ESC
+        elif text[i + 1] == "[":  # CSI: 파라미터 0x30-0x3F, 중간 0x20-0x2F, 끝 0x40-0x7E
+            i += 2
+            while i < n and "0" <= text[i] <= "?":
+                i += 1
+            while i < n and " " <= text[i] <= "/":
+                i += 1
+            i += 1  # 끝 바이트 (없으면 i > n 이 되어 루프 종료)
+        elif text[i + 1] == "O":  # SS3: ESC O + 1글자
+            i += 3
+        else:  # Alt+키
+            i += 2
+    return "".join(out) or None
 
 
 def enter_cbreak():
@@ -150,6 +178,8 @@ def key_loop(controller, quit_fn):
             print(KEY_OFF_MSG, file=sys.stderr, flush=True)
             return  # EOF
         for one in ch:
+            if controller.stopped:
+                break  # 종료 요청 뒤의 글자는 처리하지 않는다
             try:
                 handle_key(one, controller, quit_fn)
             except Exception:
