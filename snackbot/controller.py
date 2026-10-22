@@ -25,7 +25,10 @@ class Controller:
         self.initial_count = cfg["target"]["initial_count"]
         self.camera = cfg["vision"].get("camera", "front")
         sync = (cfg.get("voice") or {}).get("sync_timeout_s")
-        self.sync_timeout_s = 8.0 if sync is None else float(sync)
+        self.sync_timeout_s = 10.0 if sync is None else float(sync)
+        self.restart_wait_s = 5.0  # 재시작이 진행 중인 동작(skills.run)이 멈추기를 기다리는 최대 시간
+        self._run_idle = threading.Event()  # set = skills.run 실행 중이 아님
+        self._run_idle.set()
         self._gen = 0  # 세션 번호: estop/start/resume/restart 때 올라간다 (이전 세션의 결정을 버리는 용도)
         self.brain, self.skills, self.voice, self.clock = brain, skills, voice, clock
         self.vision = vision if vision is not None and vision.enabled else None
@@ -158,6 +161,11 @@ class Controller:
             self._gen += 1
             self.state, self.phase = ESTOP, "idle"  # 이미 ESTOP이면 진행 중인 재시작도 중단
         self.skills.estop()  # 상태 기록 뒤 한 번 더: 재시작의 release_estop과 겹쳐도 래치가 남는다
+        if self.voice is not None:  # 락 밖: 비상정지 전의 남은 대사가 이어 나오지 않게 (재생 중인 한 문장은 끝까지)
+            try:
+                self.voice.clear_pending()
+            except Exception:
+                log.exception("남은 대사 비우기 실패")
         if not already:
             self.notify("비상정지됨")
         self._publish()
@@ -167,6 +175,17 @@ class Controller:
             if expect_gen is not None and self._gen != expect_gen:
                 # 접수 뒤에 비상정지 등이 끼어들었다: 나중에 누른 비상정지를 풀면 안 된다
                 log.info("restart 거부: 접수 뒤 세션이 바뀜 (%s != %s)", expect_gen, self._gen)
+                return False
+            if self.state != ESTOP or self.phase == "returning":
+                return False
+        # 진행 중인 동작이 멈출 때까지 기다린다 (락 밖: 비상정지는 이 대기와 무관하게 즉시 처리된다).
+        # 동작이 아직 도는 채로 토크 해제·홈 복귀를 하면 두 명령이 겹친다.
+        if not self._run_idle.wait(self.restart_wait_s):
+            self.notify("아직 동작이 멈추는 중이에요. 잠시 뒤 다시 재시작하세요")
+            return False
+        with self._lock:
+            if expect_gen is not None and self._gen != expect_gen:
+                log.info("restart 거부: 대기 중 세션이 바뀜 (%s != %s)", expect_gen, self._gen)
                 return False
             if self.state != ESTOP or self.phase == "returning":
                 return False
@@ -230,7 +249,7 @@ class Controller:
             gen = self._gen
         if self.vision:
             self._set_phase("counting")
-            seen = self._count(ms)
+            seen = self._count(ms, gen)
             if seen is not None:
                 n_before = seen
         self._set_phase("thinking")
@@ -245,11 +264,21 @@ class Controller:
             self.skill = d["skill"]
         started = self._message("robot", d["say"])
         if d["skill"] == "done":
-            return self._finish(ms, d)
+            return self._finish(ms, d, gen)
         ms["speech_wait"] = self._wait_speech(started, gen)
-        if not self._working() or self._stop.is_set() or self._gen != gen:
+        with self._lock:
+            go = self._working() and not self._stop.is_set() and self._gen == gen
+            if go:
+                self._run_idle.clear()  # 확인과 같은 락 안에서 표시: 재시작이 그 사이로 끼어들지 못한다
+        if not go:
             self._log_cycle("estop", ms, d)  # 기다리는 중 중단: 대사만 나가고 동작은 안 했다
             return None
+        try:
+            return self._act(n_before, ms, d, gen)
+        finally:
+            self._run_idle.set()
+
+    def _act(self, n_before, ms, d, gen):
         self._set_phase("acting")
         t0 = time.monotonic()
         returning_at = []
@@ -259,7 +288,10 @@ class Controller:
                 returning_at.append(time.monotonic())
             self._set_phase(phase)
 
-        r = self.skills.run(d["skill"], on_phase=on_phase)
+        try:
+            r = self.skills.run(d["skill"], on_phase=on_phase)
+        finally:
+            self._run_idle.set()  # 동작 끝: 이후 판정·로그는 재시작을 막지 않는다
         total = _ms(t0)
         if returning_at:
             ms["act"] = int((returning_at[0] - t0) * 1000)
@@ -286,9 +318,9 @@ class Controller:
             self._publish()
             self._log_cycle("refuse", ms, d, r)
             return "refuse"
-        return self._judge(n_before, ms, d, r)
+        return self._judge(n_before, ms, d, r, gen)
 
-    def _count(self, ms):
+    def _count(self, ms, gen):
         """A단계 개수 세기. 실패하면 None (그 사이클은 B로 판정)."""
         t0 = time.monotonic()
         c = self.vision.count(self.skills.latest_frame(self.camera))
@@ -297,23 +329,25 @@ class Controller:
             if c is None:
                 self.vision_method = "estimate"
                 return None
+            if self._gen != gen:  # 세는 동안 세션이 바뀌었다: 이전 세션의 개수로 새 세션을 덮지 않는다
+                return None
             self.remaining, self.vision_method, self.last_boxes = c.n, c.method, c.boxes
         self._publish()
         return c.n
 
-    def _judge(self, n_before, ms, d, r):
+    def _judge(self, n_before, ms, d, r, gen):
         with self._lock:
-            aborted = self.state != WORKING
+            aborted = self.state != WORKING or self._gen != gen
         if aborted:
             self._log_cycle("estop", ms, d, r)
             return "estop"
         seen = None
         if self.vision:
             self._set_phase("counting")
-            seen = self._count(ms)
+            seen = self._count(ms, gen)
         success = seen < n_before if seen is not None else r.grasped
         with self._lock:
-            aborted = self.state != WORKING
+            aborted = self.state != WORKING or self._gen != gen
             if not aborted:
                 if success:
                     self.count += 1
@@ -336,8 +370,10 @@ class Controller:
         self._log_cycle(result, ms, d, r)
         return result
 
-    def _finish(self, ms, d):
+    def _finish(self, ms, d, gen):
         with self._lock:
+            if self.state == WORKING and self._gen != gen:
+                return None  # 이전 세션의 done 결정: 새 세션을 끝내지 않는다
             aborted = self.state != WORKING
             if not aborted:
                 self.state, self.phase = DONE, "idle"

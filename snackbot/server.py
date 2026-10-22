@@ -2,6 +2,7 @@
 controller를 부르기만 한다 (controller는 이 모듈을 모른다). 메시지 형식: docs/UI_DESIGN_PROMPT.md"""
 import asyncio
 import contextlib
+import functools
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -123,6 +124,10 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
                             controller.command("estop")     # 즉시 처리: 큐·스레드풀 뒤에 서지 않는다
                         except Exception:
                             log.exception("비상정지 처리 실패")
+                    elif kind == "command" and msg.get("name") == "restart":
+                        # 접수한 순간의 세션 번호를 함께 넣는다: 대기하는 사이 비상정지가 끼면 이 재시작은 거부된다
+                        g = controller.generation()
+                        commands.put_nowait((functools.partial(controller.command, "restart", expect_gen=g), ()))
                     elif kind == "command" and msg.get("name") in UI_COMMANDS:
                         commands.put_nowait((controller.command, (msg["name"],)))
                 except Exception as e:

@@ -462,6 +462,9 @@ class EventVoice:
         self.spoken.append(text)
         return ev
 
+    def clear_pending(self):
+        self.cleared = getattr(self, "cleared", 0) + 1
+
 
 def _make_voiced(cfg, voice, timeout=8):
     cfg["voice"]["sync_timeout_s"] = timeout
@@ -592,7 +595,7 @@ def test_estop_restart_start_during_wait_drops_old_decision(cfg):
 def test_sync_timeout_null_uses_default(cfg):
     cfg["voice"]["sync_timeout_s"] = None
     c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills())
-    assert c.sync_timeout_s == 8
+    assert c.sync_timeout_s == 10  # config.yaml 기본값과 같다
 
 
 def test_restart_with_stale_generation_is_rejected_and_estop_stays(cfg):
@@ -613,3 +616,107 @@ def test_restart_with_current_generation_and_without_expect_gen_behave_as_before
     c.command("estop")
     c.command("restart")
     assert c.state == "IDLE"
+
+
+# --- 세션 번호 확인 보강 ---
+def test_stale_done_decision_does_not_finish_new_session(cfg):
+    c, _ = make(cfg)
+    c.chat("2개 옮겨줘")
+    c.remaining = 0  # B모드: 남은 0 -> decide가 done
+    orig, fired = c._message, []
+
+    def message(role, text, source=None):
+        if role == "robot" and not fired:  # decide 뒤 done 처리 사이에 새 세션이 시작된다
+            fired.append(1)
+            c._estop()
+            c._restart()
+            c._start_task(5)
+        return orig(role, text, source)
+
+    c._message = message
+    assert c.step() is None
+    assert c.state == "WORKING" and c.remaining == 5
+
+
+def test_stale_count_does_not_overwrite_new_session_remaining(cfg):
+    class Vis(FakeVision):
+        ctrl = None
+
+        def count(self, frame):
+            self.ctrl._estop()
+            self.ctrl._restart()
+            self.ctrl._start_task(5)
+            return Count(0, "yolo")
+
+    vis = Vis()
+    c, _ = make(cfg, vision=vis)
+    vis.ctrl = c
+    c.chat("2개 옮겨줘")
+    c.step()
+    assert c.remaining == 5 and c.vision_method == "estimate" and c.skills.runs == []
+
+
+# --- 재시작은 진행 중인 동작이 멈춘 뒤 ---
+class BlockingRun(FakeSkills):
+    """run()이 entered를 알리고 release 될 때까지 붙잡힌다. release_estop 시점에 run이 끝났는지 기록."""
+
+    def __init__(self):
+        super().__init__()
+        self.entered, self.release = threading.Event(), threading.Event()
+        self.run_done, self.done_at_release = False, None
+
+    def run(self, name, on_phase=None):
+        self.runs.append(name)
+        self.entered.set()
+        self.release.wait(5)
+        self.run_done = True
+        return RunResult("estop", False, 1)
+
+    def release_estop(self):
+        self.done_at_release = self.run_done
+        super().release_estop()
+
+
+def _estop_while_in_run(cfg, sk):
+    c, _ = make(cfg, sk)
+    c.chat("2개 옮겨줘")
+    t = threading.Thread(target=c.step, daemon=True)
+    t.start()
+    assert sk.entered.wait(2)
+    c.command("estop")
+    return c, t
+
+
+def test_restart_waits_for_running_skill_to_finish(cfg):
+    sk = BlockingRun()
+    c, t = _estop_while_in_run(cfg, sk)
+    r = threading.Thread(target=lambda: c.command("restart"), daemon=True)
+    r.start()
+    sk.release.set()
+    r.join(5)
+    t.join(5)
+    assert not r.is_alive() and not t.is_alive()
+    assert sk.done_at_release is True  # 동작이 끝난 뒤에야 토크 해제
+    assert c.state == "IDLE"
+
+
+def test_restart_refused_when_skill_does_not_stop_in_time(cfg):
+    sk = BlockingRun()
+    c, t = _estop_while_in_run(cfg, sk)
+    assert c.state == "ESTOP"  # 비상정지는 run을 기다리지 않고 즉시 처리됐다
+    c.restart_wait_s = 0
+    c.command("restart")
+    assert c.state == "ESTOP" and sk.estopped and sk.done_at_release is None and sk.homed == 0
+    assert c.history[-1]["role"] == "system" and "멈추는 중" in c.history[-1]["text"]
+    sk.release.set()
+    t.join(5)
+    assert not t.is_alive()
+    c.command("restart")  # 멈춘 뒤에는 된다
+    assert c.state == "IDLE"
+
+
+def test_estop_clears_pending_speech(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    c.command("estop")
+    assert v.cleared == 1
