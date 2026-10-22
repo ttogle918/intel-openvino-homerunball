@@ -28,8 +28,8 @@ class Voice:
                 return
             try:
                 self._say(text)
-            except Exception as e:
-                log.warning("TTS 실패: %s", e)
+            except Exception:
+                log.exception("TTS 실패")
 
     def _say(self, text):
         if self.engine == "log":

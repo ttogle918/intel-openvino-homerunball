@@ -5,6 +5,7 @@
 import argparse
 import atexit
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
@@ -64,29 +65,20 @@ def read_windows_key(getch):
     ch = getch()
     if ch in (chr(0), chr(0xE0)):
         getch()
-        return ""
+        return None
     return ch
 
 
-def _stdin_ready():
-    import select
-    return bool(select.select([sys.stdin], [], [], 0.05)[0])
+def read_posix_chunk(fd):
+    """fd에서 버퍼 없이 한 번 읽는다 (sys.stdin.read는 시퀀스 꼬리를 파이썬 버퍼에 숨겨 키로 새게 한다).
 
-
-def read_posix_key(read1, ready=None):
-    """ESC로 시작하는 방향키·F키·Alt 시퀀스는 뒤따르는 입력이 있을 때만 (최대 5글자) 읽고 버린다.
-
-    반환: 키 문자 · None(버린 시퀀스/ESC 단독) · ""(read1이 EOF)."""
-    ch = read1()
-    if ch != chr(27):
-        return ch
-    ready = ready or _stdin_ready
-    for _ in range(5):
-        if not ready():
-            break
-        if read1() == "":
-            return ""
-    return None
+    ESC 앞의 글자만 돌려준다. 방향키·F키·Home/End·Alt+키는 ESC로 시작하고 한 번에 전달되므로
+    ESC부터 뒤는 통째로 버린다. 반환: 키 문자열 · None(버림) · ""(EOF)."""
+    data = os.read(fd, 32)
+    if not data:
+        return ""
+    head = data.decode("utf-8", errors="replace").split(chr(27), 1)[0]
+    return head or None
 
 
 def enter_cbreak():
@@ -122,7 +114,7 @@ def read_key():
     if sys.platform == "win32":
         import msvcrt
         return read_windows_key(msvcrt.getwch)
-    return read_posix_key(lambda: sys.stdin.read(1))
+    return read_posix_chunk(sys.stdin.fileno())
 
 
 KEY_OFF_MSG = "콘솔 키 비활성: UI 비상정지 버튼을 쓰세요"
@@ -154,13 +146,14 @@ def key_loop(controller, quit_fn):
         errors = 0
         if ch is None:
             continue  # 버린 방향키/F키 시퀀스
-        if ch == "" and sys.platform != "win32":
+        if ch == "":
             print(KEY_OFF_MSG, file=sys.stderr, flush=True)
             return  # EOF
-        try:
-            handle_key(ch, controller, quit_fn)
-        except Exception:
-            log.exception("키 처리 실패: %r", ch)
+        for one in ch:
+            try:
+                handle_key(one, controller, quit_fn)
+            except Exception:
+                log.exception("키 처리 실패: %r", one)
 
 
 def console_printer(event):

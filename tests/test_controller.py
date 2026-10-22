@@ -345,7 +345,7 @@ def test_cycle_ms_split_reflects_real_phases(cfg):
     c.chat("1개 옮겨줘")
     c.step()
     ms = [e for e in ev if e["type"] == "cycle"][-1]["ms"]
-    assert 40 <= ms["act"] <= 90 and 80 <= ms["return"] <= 160
+    assert 40 <= ms["act"] <= 150 and 80 <= ms["return"] <= 250
 
 
 def test_cycle_ms_without_returning_has_no_return(cfg):

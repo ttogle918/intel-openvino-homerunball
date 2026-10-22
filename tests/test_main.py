@@ -56,7 +56,7 @@ def _getch(*chars):
 @pytest.mark.parametrize("prefix", [chr(0), chr(0xE0)])
 @pytest.mark.parametrize("code", ["R", "S"])
 def test_read_windows_key_ignores_special_keys(prefix, code):
-    assert read_windows_key(_getch(prefix, code)) == ""
+    assert read_windows_key(_getch(prefix, code)) is None
 
 
 def test_read_windows_key_plain():
@@ -90,35 +90,48 @@ def test_handle_key_h_restarts():
     assert calls == ["restart"]
 
 
-def test_read_posix_key_discards_escape_sequence():
-    from snackbot.__main__ import read_posix_key
-    left = iter([True, True, False])
-    assert read_posix_key(_getch(chr(27), "O", "R"), ready=lambda: next(left)) is None
-    assert read_posix_key(_getch("r")) == "r"
-    assert read_posix_key(lambda: "") == ""     # EOF 는 빈 문자열
+def _pipe_with(data):
+    import os
+    r, w = os.pipe()
+    os.write(w, data)
+    return r, w
 
 
-def test_read_posix_key_lone_escape_consumes_nothing_more():
-    from snackbot.__main__ import read_posix_key
-    reads = iter([chr(27), " "])
-    read1 = lambda: next(reads)
-    assert read_posix_key(read1, ready=lambda: False) is None
-    assert read_posix_key(read1, ready=lambda: False) == " "
+def _close(*fds):
+    import os
+    for fd in fds:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
-def test_read_posix_key_caps_sequence_length():
-    from snackbot.__main__ import read_posix_key
-    n = []
-
-    def read1():
-        n.append(1)
-        return chr(27) if len(n) == 1 else "x"
-
-    assert read_posix_key(read1, ready=lambda: True) is None
-    assert len(n) == 6      # ESC + 최대 5글자
+@pytest.mark.parametrize("data", [b"\x1b[H", b"\x1bOS", b"\x1bq", b"\x1b", b"\x1b[A"])
+def test_read_posix_chunk_discards_escape_sequences(data):
+    from snackbot.__main__ import read_posix_chunk
+    r, w = _pipe_with(data)
+    try:
+        assert read_posix_chunk(r) is None
+    finally:
+        _close(r, w)
 
 
-def test_key_loop_posix_arrow_does_not_kill_loop(monkeypatch):
+def test_read_posix_chunk_plain_keys_and_eof():
+    from snackbot.__main__ import read_posix_chunk
+    r, w = _pipe_with(b" ")
+    try:
+        assert read_posix_chunk(r) == " "
+        import os
+        os.write(w, b"s\x1b[A")
+        assert read_posix_chunk(r) == "s"
+        os.close(w)
+        assert read_posix_chunk(r) == ""
+    finally:
+        _close(r, w)
+
+
+def test_key_loop_escape_tails_never_become_commands(monkeypatch):
+    import os
     import snackbot.__main__ as m
     calls, quits = [], []
 
@@ -128,16 +141,30 @@ def test_key_loop_posix_arrow_does_not_kill_loop(monkeypatch):
         def command(self, name):
             calls.append(name)
 
-    it = iter([chr(27), "[", "A", " ", "q"])
-    avail = iter([True, True, False])
+    c = C()
+
+    def quit_fn():
+        quits.append(1)
+        c.stopped = True
+
+    r, w = os.pipe()
+    chunks = iter([b"\x1b[H", b"\x1bOS", b" ", b"q"])
+
+    def read_key():
+        os.write(w, next(chunks))
+        return m.read_posix_chunk(r)
+
     monkeypatch.setattr(m.sys, "platform", "linux")
     monkeypatch.setattr(m, "enter_cbreak", lambda: None)
-    monkeypatch.setattr(m, "read_key", lambda: m.read_posix_key(lambda: next(it), ready=lambda: next(avail)))
-    m.key_loop(C(), lambda: quits.append(1))
+    monkeypatch.setattr(m, "read_key", read_key)
+    try:
+        m.key_loop(c, quit_fn)
+    finally:
+        _close(r, w)
     assert calls == ["estop"] and quits == [1]
 
 
-def test_key_loop_lone_escape_then_space_still_estops(monkeypatch):
+def test_key_loop_handles_every_char_of_a_chunk(monkeypatch):
     import snackbot.__main__ as m
     calls = []
 
@@ -147,12 +174,20 @@ def test_key_loop_lone_escape_then_space_still_estops(monkeypatch):
         def command(self, name):
             calls.append(name)
 
-    it = iter([chr(27), " ", ""])
-    monkeypatch.setattr(m.sys, "platform", "linux")
+    c = C()
+    keys = iter(["sr", None, "q"])
     monkeypatch.setattr(m, "enter_cbreak", lambda: None)
-    monkeypatch.setattr(m, "read_key", lambda: m.read_posix_key(lambda: next(it), ready=lambda: False))
-    m.key_loop(C(), lambda: None)
-    assert calls == ["estop"]
+    monkeypatch.setattr(m, "read_key", lambda: next(keys))
+    m.key_loop(c, lambda: setattr(c, "stopped", True))
+    assert calls == ["start", "resume"]
+
+
+def test_key_loop_empty_string_is_eof(monkeypatch, capsys):
+    import snackbot.__main__ as m
+    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
+    monkeypatch.setattr(m, "read_key", lambda: "")
+    m.key_loop(type("C", (), {"stopped": False})(), lambda: None)
+    assert "콘솔 키 비활성" in capsys.readouterr().err
 
 
 def test_key_loop_stops_after_repeated_errors(monkeypatch, capsys):
