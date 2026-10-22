@@ -22,9 +22,40 @@ from .vision import build_vision
 from .voice import make_voice
 
 KEYS = {"s": "start", "r": "resume", "h": "restart", " ": "estop", "q": "quit"}
+TEST_BUTTONS = (("oranda_pickup", "{target} 1회"), ("dori_dori", "도리도리 1회"), ("home", "홈으로"))
 QUIT_CHARS = (chr(3), chr(4))  # Ctrl+C, Ctrl+D
 _restore_terminal = None
 log = logging.getLogger(__name__)
+
+
+def act_label(cfg, skills):
+    """화면 '제어' 칸: ACT · OpenVINO · <장치> (+ 로드한 정책·없는 모델, 코드 도리도리면 '· 도리도리: 코드 동작')."""
+    from .robot import POLICIES
+
+    script = getattr(skills, "dori_source", None) == "script"
+    loaded = [n for n in POLICIES if n in skills.policies]
+    missing = [n for n in POLICIES if n not in skills.policies and not (n == "dori_dori" and script)]
+    act = f"ACT · OpenVINO · {cfg['skills'].get('device', 'CPU')}"
+    if missing:
+        act += f" ({'·'.join(loaded) + '만' if loaded else '정책 없음'}, {'·'.join(missing)} 모델 없음)"
+    elif script and loaded:
+        act += f" ({'·'.join(loaded)})"
+    if script:
+        act += " · 도리도리: 코드 동작"
+    return act
+
+
+def skill_tests_info(cfg, skills):
+    """info.tests: 화면 '스킬 테스트' 버튼. 로드되지 않은 정책 버튼은 끈다 (dry-run·홈·코드 도리도리는 켠다)."""
+    policies = getattr(skills, "policies", None)   # DrySkills에는 없다 → 모두 가능 (녹화 재생)
+    script = getattr(skills, "dori_source", None) == "script"
+    out = []
+    for skill, label in TEST_BUTTONS:
+        enabled = (skill == "home" or policies is None or skill in policies
+                   or (skill == "dori_dori" and script))
+        out.append({"skill": skill, "label": label.replace("{target}", cfg["target"]["name"]),
+                    "enabled": enabled, "reason": "" if enabled else "모델 없음"})
+    return out
 
 
 def build(cfg, env, dry_run=True):
@@ -34,17 +65,13 @@ def build(cfg, env, dry_run=True):
         skills, act = DrySkills(cfg), "dry-run"
     else:
         from .config import load_poses
-        from .robot import POLICIES, RobotSkills
+        from .robot import RobotSkills
 
         # 포즈가 없으면 여기서 SystemExit (physicalai를 import하기 전). connect()는 main이 부른다.
         skills = RobotSkills(cfg, load_poses(cfg.get("poses_file", "poses.yaml")))
-        act = f"ACT · OpenVINO · {cfg['skills'].get('device', 'CPU')}"
-        loaded = [n for n in POLICIES if n in skills.policies]
-        if len(loaded) < len(POLICIES):
-            missing = [n for n in POLICIES if n not in skills.policies]
-            act += f" ({'·'.join(loaded) + '만' if loaded else '정책 없음'}, {'·'.join(missing)} 모델 없음)"
-        if not skills.policies:
-            print("경고: 정책 모델이 없어요: home 이동만 확인 가능", file=sys.stderr, flush=True)
+        act = act_label(cfg, skills)
+        if not skills.policies:   # 정책이 하나도 없으면 도리도리는 코드 도리도리다 (source: policy면 위에서 SystemExit)
+            print("경고: 정책 모델이 없어요: 코드 도리도리·home만 확인 가능", file=sys.stderr, flush=True)
         elif "oranda_pickup" not in skills.policies:
             print("경고: 과자 옮기기 모델이 없어 작업 시작은 안 돼요: dori_dori·home만 확인 가능", file=sys.stderr, flush=True)
         chain = cfg["vision"].get("chain") or []
@@ -70,6 +97,7 @@ def build(cfg, env, dry_run=True):
     info["ui"] = {"tiles": ui_tiles(cfg)}
     info["twin"] = {"mode": "replay" if dry_run else "live", "urdf": twin.get("urdf", DEFAULT_URDF)}
     info["replays"] = list_replays(replays_dir)
+    info["tests"] = skill_tests_info(cfg, skills)
     return {"controller": controller, "skills": skills, "voice": voice, "stt": stt, "info": info,
             "frame_fn": lambda cam=None: skills.latest_frame(cam or camera),
             "cameras": list(cfg.get("cameras") or {}), "box_camera": camera,

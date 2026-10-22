@@ -415,3 +415,52 @@ def test_app_starts_when_replays_dir_cannot_be_created(cfg, tmp_path, caplog):
         assert client.get("/").status_code == 200
         assert client.get("/replays/x").status_code == 404
     assert "replays" in caplog.text
+
+
+def test_ws_test_command_enters_testing_and_ignores_unknown_skill(cfg, tmp_path):
+    c, app = make_app(cfg, tmp_path)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        ws.send_json({"type": "command", "name": "test", "skill": "dance"})   # 허용 외: 무시
+        ws.send_json({"type": "command", "name": "test"})                     # skill 없음: 무시
+        ws.send_json({"type": "command", "name": "test", "skill": "home"})
+        ws.send_json({"type": "chat", "text": "안녕"})                         # 같은 FIFO: 테스트 요청 뒤에 처리
+        events = []
+        while not (events and events[-1].get("role") == "robot"):
+            events.append(ws.receive_json())
+    assert [(e["state"], e["skill"]) for e in events if e["type"] == "state"] == [("TESTING", "home")]
+    assert c._pending_test is not None and c._pending_test[0] == "home"
+    assert not any(m["role"] == "system" for m in c.history)               # 거부 메시지 없음
+
+
+def test_ws_test_carries_generation_seen_on_receipt(cfg, tmp_path, monkeypatch):
+    import threading
+    c, app = make_app(cfg, tmp_path)
+    gate, got, done = threading.Event(), threading.Event(), threading.Event()
+    results = []
+    orig_gen, orig_request = c.generation, c._request_test
+
+    def generation():
+        g = orig_gen()
+        got.set()
+        return g
+
+    def request(skill, expect_gen=None, origin="button"):
+        results.append(orig_request(skill, expect_gen=expect_gen, origin=origin))
+        done.set()
+        return results[-1]
+
+    monkeypatch.setattr(c, "generation", generation)
+    monkeypatch.setattr(c, "_request_test", request)
+    monkeypatch.setattr(c, "chat", lambda text, source="text": gate.wait(5))  # 워커를 붙잡아 test를 큐에 쌓는다
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        ws.send_json({"type": "chat", "text": "붙잡기"})
+        ws.send_json({"type": "command", "name": "test", "skill": "dori_dori"})
+        assert got.wait(5)            # 서버가 test를 접수하고 세션 번호를 읽었다
+        c.command("estop")            # 접수 뒤에 비상정지·재시작이 끼어든다 (다시 IDLE)
+        c.command("restart")
+        gate.set()
+        assert done.wait(5)
+    assert results == [False]
+    assert c.state == "IDLE" and c._pending_test is None and c.skills.runs == []

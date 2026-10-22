@@ -1,6 +1,7 @@
 """FastAPI: WebSocket(/ws), 음성(/stt), 카메라(/stream/front, /stream/{cam}), 재생 데이터(/api/replay/{skill}, /replays),
 frontend/ 정적 서빙. controller를 부르기만 한다 (controller는 이 모듈을 모른다).
-메시지 형식: docs/UI_DESIGN_PROMPT.md, 4분할·3D: docs/superpowers/specs/2026-10-22-digital-twin-design.md"""
+메시지 형식: docs/UI_DESIGN_PROMPT.md, 4분할·3D: docs/superpowers/specs/2026-10-22-digital-twin-design.md
+스킬 테스트 명령(test): docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md 3장"""
 import asyncio
 import contextlib
 import functools
@@ -15,6 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from .controller import TEST_SKILLS
 from .twin import replay_payload, to_radians
 from .vision import encode_jpeg
 
@@ -165,6 +167,15 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend",
                         # 접수한 순간의 세션 번호를 함께 넣는다: 대기하는 사이 비상정지가 끼면 이 재시작은 거부된다
                         g = controller.generation()
                         commands.put_nowait((functools.partial(controller.command, "restart", expect_gen=g), ()))
+                    elif kind == "command" and msg.get("name") == "test":
+                        skill = msg.get("skill")
+                        if skill in TEST_SKILLS:
+                            # 재시작과 같은 패턴: 접수 순간의 세션 번호. 기다리는 사이 비상정지·재시작이 끼면 거부된다
+                            g = controller.generation()
+                            commands.put_nowait((functools.partial(controller.command, "test", skill=skill,
+                                                                   expect_gen=g), ()))
+                        else:
+                            log.info("알 수 없는 테스트 스킬 무시: %r", skill)
                     elif kind == "command" and msg.get("name") in UI_COMMANDS:
                         commands.put_nowait((controller.command, (msg["name"],)))
                 except Exception as e:

@@ -843,3 +843,39 @@ def test_build_twin_rate_hz_is_clamped(cfg, raw, expected):
         assert parts["joints_hz"] == expected
     finally:
         parts["voice"].close()
+
+
+def test_build_dry_run_info_tests_all_enabled(cfg):
+    parts = build(cfg, env={}, dry_run=True)
+    try:
+        assert parts["info"]["tests"] == [
+            {"skill": "oranda_pickup", "label": "오란다 1회", "enabled": True, "reason": ""},
+            {"skill": "dori_dori", "label": "도리도리 1회", "enabled": True, "reason": ""},
+            {"skill": "home", "label": "홈으로", "enabled": True, "reason": ""}]
+    finally:
+        parts["voice"].close()
+
+
+def test_build_real_robot_without_models_uses_scripted_dori(real_cfg, capsys):
+    real_cfg["skills"]["device"] = "GPU"
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        info = parts["info"]
+        assert info["models"]["act"] == "ACT · OpenVINO · GPU (정책 없음, oranda_pickup 모델 없음) · 도리도리: 코드 동작"
+        assert [(t["skill"], t["enabled"], t["reason"]) for t in info["tests"]] == [
+            ("oranda_pickup", False, "모델 없음"), ("dori_dori", True, ""), ("home", True, "")]
+        assert "코드 도리도리·home만" in capsys.readouterr().err
+    finally:
+        parts["voice"].close()
+
+
+def test_build_real_robot_oranda_with_scripted_dori_act_info(real_cfg, monkeypatch):
+    import snackbot.robot as robot
+    monkeypatch.setattr(robot, "build_policies", lambda c: ({"oranda_pickup": object()}, {}))
+    real_cfg["skills"]["device"] = "GPU"
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        assert parts["info"]["models"]["act"] == "ACT · OpenVINO · GPU (oranda_pickup) · 도리도리: 코드 동작"
+        assert all(t["enabled"] for t in parts["info"]["tests"])
+    finally:
+        parts["voice"].close()
