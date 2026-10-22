@@ -14,7 +14,7 @@ def test_repo_config_has_core_sections():
         assert entry["provider"] in cfg["providers"]
         assert entry.get("model")
     assert cfg["vision"]["chain"] == []
-    assert cfg["stt"]["chain"] == []
+    assert [e["provider"] for e in cfg["stt"]["chain"]] == ["openai"]
 
 
 def test_load_env_reads_file_and_environment_wins(tmp_path, monkeypatch):

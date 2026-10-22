@@ -69,3 +69,76 @@ def test_pyttsx3_error_resets_engine(monkeypatch):
         assert v._tts is not None and v._tts.said == ["b"]
     finally:
         v.close()
+
+
+# --- openai engine ---
+import json
+
+import httpx
+
+from snackbot import voice as voice_mod
+from snackbot.voice import make_voice
+
+PROVIDERS = {"openai": {"type": "openai_compat", "base_url": "https://api.test/v1", "api_key_env": "K"}}
+OPTS = {"engine": "openai", "provider": "openai", "model": "tts-m", "voice": "coral",
+        "instructions": "짧게", "timeout_s": 3}
+
+
+def _voice(handler, opts=OPTS, env=None):
+    return Voice("openai", opts, PROVIDERS, {"K": "secret"} if env is None else env,
+                 transport=httpx.MockTransport(handler))
+
+
+def test_openai_request_and_playback(monkeypatch):
+    seen, played = [], []
+
+    def handler(req):
+        seen.append(req)
+        return httpx.Response(200, content=b"RIFFwav")
+
+    monkeypatch.setattr(voice_mod, "play_wav", played.append)
+    v = _voice(handler)
+    v.speak("안녕")
+    v.close()
+    req = seen[0]
+    assert req.url.path == "/v1/audio/speech"
+    assert req.headers["authorization"] == "Bearer secret"
+    assert json.loads(req.content) == {"model": "tts-m", "voice": "coral", "input": "안녕",
+                                       "response_format": "wav", "instructions": "짧게"}
+    assert played == [b"RIFFwav"]
+
+
+def test_openai_failure_keeps_worker_alive(monkeypatch):
+    calls, played = [], []
+
+    def handler(req):
+        calls.append(1)
+        return httpx.Response(500) if len(calls) == 1 else httpx.Response(200, content=b"ok")
+
+    monkeypatch.setattr(voice_mod, "play_wav", played.append)
+    v = _voice(handler)
+    v.speak("a")
+    v.speak("b")
+    v.close()
+    assert played == [b"ok"]
+
+
+def test_openai_without_options_behaves_like_none(capsys):
+    v = Voice("openai")
+    assert v.engine == "none"
+    v.speak("x")
+    v.close()
+    assert capsys.readouterr().out == ""
+
+
+def test_openai_without_key_behaves_like_none():
+    v = Voice("openai", OPTS, PROVIDERS, {})
+    assert v.engine == "none"
+    v.close()
+
+
+def test_make_voice_wiring():
+    v = make_voice({"voice": OPTS, "providers": PROVIDERS}, {"K": "secret"})
+    assert v.engine == "openai" and v.options["voice"] == "coral"
+    v.close()
+    assert make_voice({}, {}).engine == "none"
