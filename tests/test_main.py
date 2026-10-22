@@ -1,6 +1,6 @@
 import pytest
 
-from snackbot.__main__ import build, handle_key
+from snackbot.__main__ import build, handle_key, read_windows_key
 
 
 def test_build_dry_run_parts(cfg):
@@ -46,3 +46,34 @@ def test_handle_key():
     assert handle_key("x", C(), quit_fn) is None
     assert handle_key("q", C(), quit_fn) == "quit"
     assert calls == ["start", "estop", "resume"] and quits == [1]
+
+
+def _getch(*chars):
+    it = iter(chars)
+    return lambda: next(it)
+
+
+@pytest.mark.parametrize("prefix", [chr(0), chr(0xE0)])
+@pytest.mark.parametrize("code", ["R", "S"])
+def test_read_windows_key_ignores_special_keys(prefix, code):
+    assert read_windows_key(_getch(prefix, code)) == ""
+
+
+def test_read_windows_key_plain():
+    assert read_windows_key(_getch("s")) == "s"
+
+
+@pytest.mark.parametrize("ch", [chr(3), chr(4)])
+def test_handle_key_ctrl_c_d_quit(ch):
+    quits = []
+
+    class C:
+        def command(self, name):
+            raise AssertionError(name)
+
+    assert handle_key(ch, C(), lambda: quits.append(1)) == "quit"
+    assert quits == [1]
+
+
+def test_handle_key_empty_is_noop():
+    assert handle_key("", object(), lambda: None) is None

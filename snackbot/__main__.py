@@ -3,6 +3,7 @@
 키: s 시작 · r 재개 · space 비상정지 · q 종료 (UI 버튼과 같은 동작)
 """
 import argparse
+import atexit
 import logging
 import sys
 import threading
@@ -17,6 +18,8 @@ from .vision import build_vision
 from .voice import Voice
 
 KEYS = {"s": "start", "r": "resume", " ": "estop", "q": "quit"}
+QUIT_CHARS = (chr(3), chr(4))  # Ctrl+C, Ctrl+D
+_restore_terminal = None
 
 
 def build(cfg, env, dry_run=True):
@@ -44,6 +47,9 @@ def build(cfg, env, dry_run=True):
 
 
 def handle_key(ch, controller, quit_fn):
+    if ch in QUIT_CHARS:
+        quit_fn()
+        return "quit"
     name = KEYS.get(ch.lower())
     if name == "quit":
         quit_fn()
@@ -52,27 +58,63 @@ def handle_key(ch, controller, quit_fn):
     return name
 
 
+def read_windows_key(getch):
+    """방향키·Insert·Delete·F키는 접두(0x00/0xe0) + 스캔코드 두 글자로 온다. 둘 다 읽고 버린다."""
+    ch = getch()
+    if ch in (chr(0), chr(0xE0)):
+        getch()
+        return ""
+    return ch
+
+
+def enter_cbreak():
+    """POSIX 터미널을 cbreak로 바꾸고 원래 설정을 복원하는 함수를 모듈에 보관한다."""
+    global _restore_terminal
+    if sys.platform == "win32" or _restore_terminal is not None:
+        return
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    tty.setcbreak(fd)
+
+    def restore():
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+    _restore_terminal = restore
+    atexit.register(restore_terminal)
+
+
+def restore_terminal():
+    global _restore_terminal
+    fn, _restore_terminal = _restore_terminal, None
+    if fn is not None:
+        try:
+            fn()
+        except Exception:
+            pass
+
+
 def read_key():
     if sys.platform == "win32":
         import msvcrt
-        return msvcrt.getwch()
-    import termios
-    import tty
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)
-        return sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        return read_windows_key(msvcrt.getwch)
+    return sys.stdin.read(1)
 
 
 def key_loop(controller, quit_fn):
+    try:
+        enter_cbreak()
+    except Exception:
+        return
     while not controller.stopped:
         try:
             ch = read_key()
         except (EOFError, OSError):
             return
+        if ch == "" and sys.platform != "win32":
+            return  # EOF
         handle_key(ch, controller, quit_fn)
 
 
@@ -95,6 +137,10 @@ def main(argv=None):
     p.add_argument("--host")
     p.add_argument("--port", type=int)
     args = p.parse_args(argv)
+    try:
+        sys.stdout.reconfigure(errors="replace")  # cp949 콘솔에서 이모지 출력 오류 방지
+    except (AttributeError, ValueError):
+        pass
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     root = Path(args.config).resolve().parent
@@ -104,8 +150,10 @@ def main(argv=None):
     controller = parts["controller"]
     controller.subscribe(console_printer)
     server = None
+    quit_requested = threading.Event()
 
     def quit_fn():
+        quit_requested.set()
         controller.stop()
         if server is not None:
             server.should_exit = True
@@ -128,10 +176,12 @@ def main(argv=None):
                              static_dir=root / "frontend")
             server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
             print(f"UI: http://{host}:{port}", flush=True)
-            server.run()
+            if not quit_requested.is_set():
+                server.run()
     except KeyboardInterrupt:
         pass
     finally:
+        restore_terminal()
         controller.stop()
         parts["skills"].close()
         parts["voice"].close()
