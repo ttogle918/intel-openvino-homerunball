@@ -605,3 +605,50 @@ def test_run_result_record_only_when_recorded(rcfg):
     rcfg["recording"]["enabled"] = False
     s2, _, _ = make(rcfg)
     assert s2.run("dori_dori").record is None
+
+
+def test_dori_settings_rejects_unsafe_values(caplog):
+    bad = ({"shake_s": 0}, {"shake_s": float("inf")}, {"shake_s": float("nan")}, {"amplitude": float("nan")},
+           {"amplitude": float("inf")}, {"amplitude": True}, {"shakes": 2.9}, {"shakes": True}, {"shakes": "2"},
+           {"joint": 0}, {"joint": None})
+    for conf in bad:
+        with pytest.raises(SystemExit):
+            dori_settings(conf)
+    for script in ("shoulder_pan", ["joint"], 3):
+        with pytest.raises(SystemExit):
+            dori_settings(script)
+
+
+def test_dori_settings_clamps_speed_and_length(caplog):
+    with caplog.at_level("WARNING"):
+        s = dori_settings({"shake_s": 0.01, "shakes": 100})
+    assert s["shake_s"] == 0.15 and s["shakes"] == 10 and "0.15" in caplog.text
+    assert dori_settings({"shake_s": 1e5})["shake_s"] == 3.0
+    assert dori_settings({"shake_s": 0.15, "shakes": 10})["shakes"] == 10
+
+
+def test_bad_dori_script_config_exits_before_loading_models(rcfg, tmp_path):
+    export = tmp_path / "dori"
+    export.mkdir()
+    rcfg["skills"]["dori_dori"].update(export_dir=str(export), source="script", script={"shake_s": float("nan")})
+    rcfg["skills"]["oranda_pickup"]["export_dir"] = str(tmp_path / "none")
+    with pytest.raises(SystemExit, match="shake_s"):
+        build_policies(rcfg)
+    assert "physicalai" not in sys.modules
+    rcfg["skills"]["dori_dori"].update(source="magic", script={})
+    with pytest.raises(SystemExit, match="auto"):
+        build_policies(rcfg)
+
+
+def test_script_dori_goes_home_after_timeout(rcfg, monkeypatch):
+    s, rt, robot = make_script(rcfg)
+    calls = []
+    real = s._move
+
+    def fake_move(targets, gen, segment_s=None):
+        calls.append(len(targets))
+        return "timeout" if len(calls) == 1 and segment_s else real(targets, gen, segment_s)
+
+    monkeypatch.setattr(s, "_move", fake_move)
+    assert s._script_dori(s._current_gen()) == "done"
+    assert calls == [5, 1] and at(robot, POSES["home_pose"])

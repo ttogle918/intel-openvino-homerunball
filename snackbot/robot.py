@@ -13,6 +13,7 @@ RobotRuntime 하나를 시작할 때 연결해 두고, run()마다 동작 출처
 python -m snackbot.robot oranda_pickup | dori_dori | home   # 스킬 하나만 실행 (현장 점검용)
 """
 import logging
+import math
 import threading
 import time
 from pathlib import Path
@@ -29,6 +30,8 @@ log = logging.getLogger(__name__)
 POLICIES = ("oranda_pickup", "dori_dori")
 DORI_SOURCES = ("auto", "policy", "script")
 DORI_MAX_AMPLITUDE = 30.0                 # 코드 도리도리 진폭 안전 상한 (normalized)
+DORI_SHAKE_S = (0.15, 3.0)                # 한쪽 시간 안전 범위(초): 아래는 속도 상한, 위는 경로 길이 상한
+DORI_MAX_SHAKES = 10
 DORI_DEFAULTS = {"joint": "shoulder_pan", "amplitude": 15, "shakes": 2, "shake_s": 0.35}
 BODY_JOINTS = JOINTS[:GRIPPER]            # 그리퍼를 뺀 몸통 관절 5개
 
@@ -37,22 +40,49 @@ def _ms(t0):
     return int((time.monotonic() - t0) * 1000)
 
 
+def _finite(value, what):
+    """숫자(bool 제외)이고 유한하면 float, 아니면 SystemExit."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise SystemExit(f"config.yaml skills.dori_dori.script.{what}는 유한한 숫자여야 해요: {value!r}")
+    return float(value)
+
+
 def dori_settings(conf):
     """skills.dori_dori.script → {joint(관절 번호), amplitude, shakes, shake_s}.
-    잘못된 값은 시작할 때 SystemExit. 진폭은 안전 상한 30으로 자른다 (경고)."""
+    잘못된 값은 시작할 때 SystemExit. 진폭(<=30), 한쪽 시간(0.15~3초), 횟수(1~10)는 안전 범위로 자른다 (경고)."""
+    if conf is not None and not isinstance(conf, dict):
+        raise SystemExit(f"config.yaml skills.dori_dori.script는 {{joint, amplitude, shakes, shake_s}} 형태여야 해요: {conf!r}")
     s = {**DORI_DEFAULTS, **(conf or {})}
     if s["joint"] not in BODY_JOINTS:
-        raise SystemExit(f"config.yaml skills.dori_dori.script.joint는 {', '.join(BODY_JOINTS)} 중 하나예요: {s['joint']}")
-    try:
-        amplitude, shakes, shake_s = float(s["amplitude"]), int(s["shakes"]), float(s["shake_s"])
-    except (TypeError, ValueError) as e:
-        raise SystemExit(f"config.yaml skills.dori_dori.script 값이 숫자가 아니에요: {e}") from e
+        raise SystemExit(f"config.yaml skills.dori_dori.script.joint는 {', '.join(BODY_JOINTS)} 중 하나예요: {s['joint']!r}")
+    amplitude, shake_s = _finite(s["amplitude"], "amplitude"), _finite(s["shake_s"], "shake_s")
+    shakes = s["shakes"]
+    if isinstance(shakes, bool) or not isinstance(shakes, int):
+        raise SystemExit(f"config.yaml skills.dori_dori.script.shakes는 정수여야 해요: {shakes!r}")
     if amplitude <= 0 or shakes < 1 or shake_s <= 0:
         raise SystemExit("config.yaml skills.dori_dori.script: amplitude > 0, shakes >= 1, shake_s > 0 이어야 해요")
     if amplitude > DORI_MAX_AMPLITUDE:
         log.warning("코드 도리도리 진폭 %.1f → %.0f로 자름 (안전 상한)", amplitude, DORI_MAX_AMPLITUDE)
         amplitude = DORI_MAX_AMPLITUDE
+    if not DORI_SHAKE_S[0] <= shake_s <= DORI_SHAKE_S[1]:
+        clamped = min(max(shake_s, DORI_SHAKE_S[0]), DORI_SHAKE_S[1])
+        log.warning("코드 도리도리 shake_s %.2f → %.2f초로 자름 (안전 범위 %.2f~%.0f)", shake_s, clamped, *DORI_SHAKE_S)
+        shake_s = clamped
+    if shakes > DORI_MAX_SHAKES:
+        log.warning("코드 도리도리 shakes %d → %d로 자름 (안전 상한)", shakes, DORI_MAX_SHAKES)
+        shakes = DORI_MAX_SHAKES
     return {"joint": BODY_JOINTS.index(s["joint"]), "amplitude": amplitude, "shakes": shakes, "shake_s": shake_s}
+
+
+def dori_source_setting(sk):
+    """skills.dori_dori.source (auto | policy | script). 모델을 로드하기 전에 값과 script 설정을 검사한다."""
+    dori = sk.get("dori_dori") or {}
+    source = dori.get("source") or "auto"
+    if source not in DORI_SOURCES:
+        raise SystemExit(f"config.yaml skills.dori_dori.source는 auto | policy | script 중 하나예요: {source}")
+    if source != "policy":
+        dori_settings(dori.get("script"))
+    return source
 
 
 def dori_keyframes(home, joint, amplitude, shakes):
@@ -95,8 +125,9 @@ def build_policies(cfg):
     """(policies, models). export_dir 폴더가 없는 정책은 로드하지 않고 경고만 한다 (모델이 아직 없는 경우)."""
     sk = cfg["skills"]
     found = {}
+    dori_source = dori_source_setting(sk)   # 잘못된 설정이면 모델을 로드하기 전에 끝낸다
     for name in POLICIES:
-        if name == "dori_dori" and (sk[name].get("source") or "auto") == "script":
+        if name == "dori_dori" and dori_source == "script":
             log.info("dori_dori: source가 script라 정책을 로드하지 않아요 (코드 도리도리)")
             continue
         export_dir = Path(sk[name]["export_dir"])
@@ -135,9 +166,7 @@ class RobotSkills:
             policies, models = build_policies(cfg)
         policies, models = dict(policies), dict(models or {})
         dori_cfg = sk.get("dori_dori") or {}
-        source = dori_cfg.get("source") or "auto"
-        if source not in DORI_SOURCES:
-            raise SystemExit(f"config.yaml skills.dori_dori.source는 auto | policy | script 중 하나예요: {source}")
+        source = dori_source_setting(sk)
         if source == "policy" and "dori_dori" not in policies:
             raise SystemExit("skills.dori_dori.source가 policy인데 dori_dori 모델이 없어요: export_dir 폴더를 확인하거나 "
                              "source를 auto(모델이 없으면 코드 도리도리) 또는 script로 바꾸세요.")
