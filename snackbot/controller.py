@@ -140,6 +140,7 @@ class Controller:
         with self._lock:
             already = self.state == ESTOP
             self.state, self.phase = ESTOP, "idle"  # 이미 ESTOP이면 진행 중인 재시작도 중단
+        self.skills.estop()  # 상태 기록 뒤 한 번 더: 재시작의 release_estop과 겹쳐도 래치가 남는다
         if not already:
             self.notify("비상정지됨")
         self._publish()
@@ -150,11 +151,18 @@ class Controller:
                 return False
             self.phase = "returning"
         self.skills.release_estop()
+        with self._lock:
+            still = self.state == ESTOP and self.phase == "returning"
+        if not still:  # release 도중 비상정지가 들어왔다: 다시 세우고 홈 복귀하지 않는다
+            self.skills.estop()
+            return False
         self.skills.go_home()
         with self._lock:
             ok = self.state == ESTOP and self.phase == "returning"
             if ok:
                 self.state, self.phase, self.retries, self.skill = IDLE, "idle", 0, None
+        if not ok:
+            self.skills.estop()
         if ok:
             self.notify("재시작: 대기 상태로 돌아왔어요")
         self._publish()
@@ -209,8 +217,13 @@ class Controller:
         if d["skill"] == "dori_dori":
             with self._lock:
                 if self.state != WORKING:
-                    return "estop"
-                self.state, self.phase = REFUSING, "idle"
+                    aborted = True
+                else:
+                    aborted = False
+                    self.state, self.phase = REFUSING, "idle"
+            if aborted:
+                self._log_cycle("estop", ms, d, r)
+                return "estop"
             self._publish()
             self._log_cycle("refuse", ms, d, r)
             return "refuse"
@@ -231,25 +244,30 @@ class Controller:
 
     def _judge(self, n_before, ms, d, r):
         with self._lock:
-            if self.state != WORKING:
-                return "estop"
+            aborted = self.state != WORKING
+        if aborted:
+            self._log_cycle("estop", ms, d, r)
+            return "estop"
         seen = None
         if self.vision:
             self._set_phase("counting")
             seen = self._count(ms)
         success = seen < n_before if seen is not None else r.grasped
         with self._lock:
-            if self.state != WORKING:
-                return "estop"
-            if success:
-                self.count += 1
-                self.retries = 0
-                if seen is None:
-                    self.remaining = max(0, n_before - 1)
-            else:
-                self.retries += 1
-            waiting = not success and self.retries > self.decision["max_retry"]
-            self.phase = "waiting_operator" if waiting else "idle"
+            aborted = self.state != WORKING
+            if not aborted:
+                if success:
+                    self.count += 1
+                    self.retries = 0
+                    if seen is None:
+                        self.remaining = max(0, n_before - 1)
+                else:
+                    self.retries += 1
+                waiting = not success and self.retries > self.decision["max_retry"]
+                self.phase = "waiting_operator" if waiting else "idle"
+        if aborted:
+            self._log_cycle("estop", ms, d, r)
+            return "estop"
         if waiting:
             self.notify("도와주세요! 확인한 뒤 재개를 눌러 주세요.")
         elif not success:
@@ -261,9 +279,12 @@ class Controller:
 
     def _finish(self, ms, d):
         with self._lock:
-            if self.state != WORKING:
-                return "estop"
-            self.state, self.phase = DONE, "idle"
+            aborted = self.state != WORKING
+            if not aborted:
+                self.state, self.phase = DONE, "idle"
+        if aborted:
+            self._log_cycle("estop", ms, d)
+            return "estop"
         self._publish()
         self._log_cycle("done", ms, d)
         with self._lock:

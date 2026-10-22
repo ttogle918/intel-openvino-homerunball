@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 
 from conftest import FirstRng
@@ -215,7 +216,7 @@ def test_estop_during_dori_dori_is_not_overwritten(cfg):
     sk.ctrl = c
     c.chat("10개 옮겨줘")
     c.count = cfg["decision"]["force_refuse"]
-    c.step()
+    assert c.step() == "estop"
     assert sk.runs[-1] == "dori_dori"
     assert c.state == "ESTOP" and sk.estopped
     assert c.step() is None
@@ -275,6 +276,50 @@ def test_loop_exception_goes_to_waiting_operator(cfg):
         while time.monotonic() < deadline and c.phase != "waiting_operator":
             time.sleep(0.01)
         assert c.phase == "waiting_operator"
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not (c.history and c.history[-1]["role"] == "system"):
+            time.sleep(0.01)
         assert c.history[-1]["role"] == "system"
     finally:
         c.stop()
+
+
+def test_estop_during_release_estop_stays_latched(cfg):
+    class SlowRelease(FakeSkills):
+        def __init__(self):
+            super().__init__()
+            self.home_latched = []
+
+        def release_estop(self):
+            time.sleep(0.2)
+            self.estopped = False
+
+        def go_home(self):
+            self.home_latched.append(self.estopped)
+            super().go_home()
+
+    sk = SlowRelease()
+    c, _ = make(cfg, sk)
+    c.chat("2개 옮겨줘")
+    c.command("estop")
+    t = threading.Thread(target=lambda: c.command("restart"))
+    t.start()
+    time.sleep(0.05)
+    c.command("estop")
+    t.join(timeout=5)
+    assert c.state == "ESTOP" and sk.estopped
+    assert all(sk.home_latched)  # go_home이 불렸다면 정지된 채여야 한다
+
+
+def test_estop_interrupted_cycles_are_logged_once(cfg, tmp_path):
+    sk = EstopDuringRun()
+    c, _ = make(cfg, sk, log_dir=tmp_path)
+    sk.ctrl = c
+    c.chat("3개 옮겨줘")
+    assert c.step() == "estop"
+    c.command("restart")
+    c.chat("10개 옮겨줘")
+    c.count = cfg["decision"]["force_refuse"]
+    assert c.step() == "estop"
+    lines = next(tmp_path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()
+    assert [json.loads(x)["result"] for x in lines] == ["estop", "estop"]
