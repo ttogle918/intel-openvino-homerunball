@@ -2,12 +2,16 @@
 'use strict';
 const $ = (s) => document.querySelector(s);
 const MOCK_FORCED = new URLSearchParams(location.search).has('mock');
+const TEST_DEFAULT = [   // info.tests가 없을 때 (예전 서버·목업)
+  { skill: 'oranda_pickup', label: '오란다 1회', enabled: true, reason: '' },
+  { skill: 'dori_dori', label: '도리도리 1회', enabled: true, reason: '' },
+  { skill: 'home', label: '홈으로', enabled: true, reason: '' }];
 
 const S = { state: 'IDLE', phase: 'idle', count: 0, remaining: null, vision_method: null, skill: null,
   th: { safe_max: 3, force_refuse: 6 }, name: '과자', got: false, cycles: [], mock: false,
-  twin: { mode: 'replay', urdf: 'twin/so101/so101_new_calib.urdf' }, replays: [] };
+  twin: { mode: 'replay', urdf: 'twin/so101/so101_new_calib.urdf' }, replays: [], tests: TEST_DEFAULT };
 
-const STATE_KO = { IDLE: '대기', WORKING: '작업 중', REFUSING: '거부 중', DONE: '완료', ESTOP: '비상정지' };
+const STATE_KO = { IDLE: '대기', WORKING: '작업 중', REFUSING: '거부 중', DONE: '완료', ESTOP: '비상정지', TESTING: '테스트' };
 const PHASE_KO = { idle: '쉬는 중', counting: '개수 세는 중', thinking: '생각 중', speaking: '말하는 중', acting: '옮기는 중', returning: '제자리로', waiting_operator: '도움 필요' };
 const METHOD_KO = { yolo: 'YOLO', vlm: 'VLM', opencv: 'OpenCV', fake: '테스트 값' };
 const STEP_ORDER = ['counting', 'thinking', 'speaking', 'acting', 'returning'];
@@ -17,10 +21,13 @@ function renderState() {
   document.body.dataset.state = S.state;
   document.body.dataset.phase = S.phase;
   $('#stateBadge').textContent = STATE_KO[S.state] || S.state;
-  $('#phaseLabel').textContent = PHASE_KO[S.phase] || S.phase;
+  const testing = S.state === 'TESTING';
+  $('#phaseLabel').textContent = testing && S.phase === 'acting' ? '실행 중' : PHASE_KO[S.phase] || S.phase;
   const idx = STEP_ORDER.indexOf(S.phase);
+  const stepping = S.state === 'WORKING' || testing;
+  const first = testing ? STEP_ORDER.indexOf('acting') : 0;   // 테스트는 옮기기 → 복귀만
   document.querySelectorAll('#steps li').forEach((li, i) => {
-    li.className = idx < 0 || S.state !== 'WORKING' ? '' : i < idx ? 'done' : i === idx ? 'on' : '';
+    li.className = idx < 0 || !stepping || i < first ? '' : i < idx ? 'done' : i === idx ? 'on' : '';
   });
 
   const { safe_max, force_refuse } = S.th;
@@ -54,6 +61,11 @@ function renderState() {
   $('#btnResume').disabled = !(st === 'REFUSING' || S.phase === 'waiting_operator');
   $('#btnRestart').disabled = st !== 'ESTOP';
   $('#btnEstop').disabled = !S.got || st === 'IDLE' || st === 'DONE' || (st === 'ESTOP' && S.phase !== 'returning');
+  document.querySelectorAll('#testBtns .btn-test').forEach((b) => {   // 대기일 때만, 모델 없는 버튼은 꺼 둔다
+    const t = S.tests.find((x) => x.skill === b.dataset.skill) || {};
+    b.disabled = !S.got || st !== 'IDLE' || t.enabled === false;
+    b.title = t.enabled === false ? (t.reason || '모델 없음') : '';
+  });
 }
 
 function renderInfo(m) {
@@ -67,6 +79,8 @@ function renderInfo(m) {
   Object.keys(replayData).forEach((k) => delete replayData[k]);   // 서버 재시작 뒤 새 녹화를 받도록
   S.twin = m.twin || { mode: S.mock ? 'mock' : 'replay', urdf: DEFAULT_URDF };
   S.replays = Array.isArray(m.replays) ? m.replays : [];
+  S.tests = Array.isArray(m.tests) && m.tests.length ? m.tests : TEST_DEFAULT;
+  buildTestButtons();
   buildTiles(m.ui && m.ui.tiles);
   S.replays.forEach((skill) => loadReplay(skill).then((d) => {   // 미리 받아 두면 acting 순간 바로 튼다
     if (d && !lastQ && S.twin.mode === 'replay' && d.q && d.q.length) setJoints(d.q[0]);
@@ -185,6 +199,17 @@ $('#chatForm').addEventListener('submit', (e) => {
 $('#btnResume').onclick = () => sendWS({ type: 'command', name: 'resume' });
 $('#btnRestart').onclick = () => sendWS({ type: 'command', name: 'restart' });
 $('#btnEstop').onclick = () => sendWS({ type: 'command', name: 'estop' });
+function buildTestButtons() {   // info.tests → "스킬 테스트" 버튼. 활성/비활성은 renderState가 정한다
+  const box = $('#testBtns');
+  box.innerHTML = '';
+  S.tests.forEach((t) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn btn-test'; b.dataset.skill = t.skill; b.disabled = true;
+    b.textContent = t.label || t.skill;
+    b.onclick = () => sendWS({ type: 'command', name: 'test', skill: t.skill });
+    box.appendChild(b);
+  });
+}
 
 /* ---------- tiles: 2×2 (카메라 · 3D · iframe). 설계: docs/superpowers/specs/2026-10-22-digital-twin-design.md 9장 ---------- */
 const DEFAULT_TILES = [
@@ -530,11 +555,25 @@ function createMock(emit) {
     }
   }
   function begin() { const t = ++tok; work(t); }
+  async function runTest(skill, fromChat) {   // 스킬 1회 실행 흉내: TESTING (acting → returning) → IDLE
+    const t = ++tok, t0 = Date.now();
+    if (skill === 'home') {
+      pushState({ state: 'TESTING', phase: 'returning', skill }); await sleep(1200); if (t !== tok) return;
+    } else {
+      pushState({ state: 'TESTING', phase: 'acting', skill }); await sleep(skill === 'dori_dori' ? 1800 : 2600); if (t !== tok) return;
+      if (skill === 'oranda_pickup') { pushState({ phase: 'returning' }); await sleep(1100); if (t !== tok) return; }
+    }
+    const how = { oranda_pickup: '놓기 감지로 끝남 · 쥠 성공', dori_dori: '코드 동작 완료', home: '완료' }[skill];
+    const label = { oranda_pickup: '오란다', dori_dori: '도리도리', home: '홈으로' }[skill];
+    const sec = ((Date.now() - t0) / 1000).toFixed(1);
+    say('system', fromChat ? `도리도리 · ${how} · ${sec}초` : `테스트 · ${label}: ${how} · ${sec}초`);
+    pushState({ state: 'IDLE', phase: 'idle', skill: null });
+  }
 
   const api = {
     start() {
       emit({ type: 'info', target: { name: '오란다' }, models: { vision: 'YOLO-World · OpenVINO · GPU', llm: 'API · openrouter', stt: 'Whisper · OpenVINO · CPU', act: 'ACT · OpenVINO · GPU' },
-        ui: { tiles: DEFAULT_TILES }, twin: { mode: 'mock', urdf: DEFAULT_URDF }, replays: [] });
+        ui: { tiles: DEFAULT_TILES }, twin: { mode: 'mock', urdf: DEFAULT_URDF }, replays: [], tests: TEST_DEFAULT });
       pushState({});
       say('system', '시뮬레이터가 연결되었어요');
       sleep(1800).then(() => { if (dead) return; say('user', '과자 옮겨줘'); return sleep(700); })
@@ -548,7 +587,9 @@ function createMock(emit) {
         sleep(700).then(() => {
           if (dead) return;
           if (st.state === 'REFUSING' && /조금|더|힘내|고마|부탁|간식|해줘|달래/.test(text)) { say('robot', '으으… 알겠어요, 조금만 더요.'); resumeFn && resumeFn(); }
+          else if (st.state === 'IDLE' && /도리도리|고개/.test(text)) { say('robot', '도리도리~ 이렇게요?'); runTest('dori_dori', true); }
           else if (st.state === 'IDLE' && /옮|시작|해줘|치워/.test(text)) { say('robot', '네네~ 시작할게요!'); begin(); }
+          else if (st.state === 'TESTING') say('robot', '지금 테스트 중이에요. 끝나면 시켜 주세요!');
           else if (st.state === 'ESTOP') say('robot', '…(멈춰 있어요)');
           else if (st.state === 'WORKING') say('robot', '지금 일하는 중이에요. 말 걸지 마세요, 팔 떨려요.');
           else say('robot', /안녕/.test(text) ? '안녕하세요… 저는 오늘도 출근했어요.' : '그건 제 월급 밖의 일이에요.');
@@ -561,6 +602,10 @@ function createMock(emit) {
           tok++; n = 0; say('system', '재시작했어요'); pushState({ state: 'IDLE', phase: 'idle', count: 0, remaining: TOTAL, skill: null });
           say('robot', '다시 출근했어요. 뭐 시키실 거예요?');
         } else if (m.name === 'resume' && resumeFn) { say('system', '진행자가 재개했어요'); resumeFn(); }
+        else if (m.name === 'test') {
+          if (st.state === 'IDLE' && TEST_DEFAULT.some((x) => x.skill === m.skill)) runTest(m.skill, false);
+          else say('system', st.state === 'TESTING' ? '이미 테스트 중이에요' : '대기 상태에서만 테스트할 수 있어요');
+        }
       }
     },
   };
@@ -568,5 +613,6 @@ function createMock(emit) {
 }
 
 /* ---------- start (모든 선언 뒤) ---------- */
+buildTestButtons();
 if (MOCK_FORCED) startMock(); else connect();
 })();
