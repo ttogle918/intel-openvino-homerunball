@@ -36,6 +36,7 @@
 - `docs/DECISION_LOGIC.md` — 횟수 가드 규칙, LLM 프롬프트, JSON 스키마, fallback
 - `docs/DATASET_GUIDE.md` — ACT 데이터셋 녹화 규칙과 체크리스트
 - `docs/DEMO_RUNBOOK.md` — 시연 당일 준비와 장애 대응
+- `docs/VOICE_PROVIDERS.md` — STT·TTS 선택 이유와 검토한 후보
 - `docs/memo/` — 의논 기록
 
 ## 파일 구조 (목표)

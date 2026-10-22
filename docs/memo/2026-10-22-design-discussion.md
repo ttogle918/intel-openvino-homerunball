@@ -247,3 +247,5 @@
 - 측정 (이 개발 PC, Windows TTS 한국어 문장 5개): small CPU 1.2~1.8초/문장, GPU 0.43~0.49초(첫 로드 25초, CACHE_DIR `models/ov_cache`로 2~4초), 서버 워밍업 CPU 약 5.6초.
 - small 채택 이유: 5개 중 4개 정확하고 "힘내 줘"→"힘내죠"여도 달래기 키워드('힘내', '부탁')가 남는다. base(85MB)는 0.4초로 빠르지만 "오랜다", "보리아", "한 번만 더"→"한 번 더"(달래기 키워드 손실)라 탈락.
 - 기본은 CPU. GPU로 바꾸면 config의 device와 label을 같이 바꾼다.
+- TTS: 결제를 연결하지 않은 새 프로젝트의 무료 등급 Gemini 키로 `gemini-2.5-flash-preview-tts` 동작, TTS → STT 왕복 검사 통과 (문장당 TTS 약 4초). 3.8 TTS 모델은 말투 지시문까지 읽어서 제외. 대사 소리가 나기 시작하면 동작을 시작하도록 맞춘다 (사용자 결정 A안).
+- 후보 비교와 선택 이유 전체: `docs/VOICE_PROVIDERS.md`.
