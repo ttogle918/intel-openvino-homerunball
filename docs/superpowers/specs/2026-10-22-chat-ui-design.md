@@ -317,6 +317,21 @@ target:
 
 시간이 부족하면 M7 → M6 → M5 → (M3의 counter 체인) 순으로 자른다. M4까지 B 판정 + 채팅 시작 + r 키만으로 시연이 성립한다.
 
+## 11.5 확인된 사실 (2026-10-22, dori-dori 결과물과 06 실습)
+
+`traind-model/dori-dori-model/` (physical-ai-studio 결과물, git 제외):
+
+- 사용 파일: `exports/openvino/` = `act.xml`, `act.bin`, `manifest.json` (onnx·torch 내보내기와 `model.ckpt`도 있음)
+- 입력: `state` (6), `images.tower cam`, `images.follow cam` (각 3×720×1280). **카메라 이름이 `tower cam` / `follow cam`** (띄어쓰기 포함). 7.4절의 `front` / wrist 가정을 이 이름으로 바꾼다.
+- 전처리: letterbox 384×384 (manifest의 preprocessor). 출력: action (100, 6). `chunk_size = n_action_steps = 100`.
+
+`06_physical_ai_agent_workspace/01_llm_robot_agent/robot_tools.py`의 실행 방식 (physicalai 0.3.0 시그니처 확인됨):
+
+- 스킬마다 runtime.yaml: `RobotRuntime.from_config(path)` → `with runtime:` → `runtime.run(duration_s=...)` → `runtime.last_run_reason`. runtime.yaml 안의 모델 경로는 그 폴더 기준.
+- **M4는 이 방식을 기반으로 한다.** 7.1~7.2의 "루프 직접 작성" 대신 `run(stop_event=...)`과 `callbacks`로 그리퍼 정지 조건·비상정지를 거는 방법을 먼저 확인한다.
+- **카메라 점유:** 런타임이 실행 중에는 카메라를 잡고 있다. `/stream/front`와 개수 세기(A)는 런타임 밖에서 사진을 찍고 바로 놓는 방식(06의 `look_at_table`)으로 바꿀지 M4에서 정한다.
+- 로컬 LLM 후보: Ollama `qwen3:4b-instruct` (06에서 도구 호출 비교 결과 가장 좋음) → config의 `ollama` provider로 연결 가능.
+
 ## 12. 미확인 사항 (M0에서 확인)
 
 - physicalai 런타임 설치 경로: PyPI `physicalai[so101-plugin]` (실습 자료) vs Studio가 고정한 git 커밋. 실제 시그니처(`SO101`, `InferenceModel.select_action` 입력 형식, uint8 HWC 허용 여부)

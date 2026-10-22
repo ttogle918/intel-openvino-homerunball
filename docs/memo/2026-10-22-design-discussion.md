@@ -24,6 +24,7 @@
 | 17 | 그리퍼 정지 조건 | "열림"이 아니라 "닫힘 → 열림" 전이 |
 | 18 | 남은 일·미확인 | git 인덱스 정리, physicalai 시그니처 등 |
 | 19 | 파이썬 패키지 | 루트 `.py`들을 `snackbot/`으로, 화면은 `frontend/` |
+| 20 | 구현 계획과 dori-dori 결과물 | 계획 2개로 분리 (소프트웨어 → 로봇), M4는 06의 RobotRuntime 방식 |
 
 ---
 
@@ -219,3 +220,15 @@
 - `config.yaml`, `.env`는 현장에서 고치는 값이라 루트에 둔다.
 - **의존 방향은 그대로:** `server → controller → (brain, vision, skills, voice)`. controller는 FastAPI를 모르고 `--no-ui`면 서버 없이 돈다. 패키지는 위치만 묶는다.
 - `tools/`는 `python -m tools.save_pose home`처럼 실행해 `snackbot` 모듈을 재사용한다.
+
+## 20. 구현 계획과 dori-dori 결과물
+
+**결정:** 구현 계획을 둘로 나눈다. 이번 계획(`docs/superpowers/plans/2026-10-22-snackbot-software.md`)은 로봇 없이 끝까지 도는 소프트웨어, 다음 계획(M4)은 로봇 노트북에서 physicalai 연결. 계획은 Opus, 구현은 Sonnet 에이전트.
+
+**상세**
+- 이 PC에 physicalai가 없어 실제 시그니처를 확인할 수 없다. 추측으로 로봇 코드를 쓰지 않는다는 규칙 때문에 나눴다.
+- 개발 PC는 `project/.venv` (작은 패키지만). openvino-genai·ultralytics·torch는 설치하지 않고 lazy import.
+- dori-dori 결과물(`traind-model/dori-dori-model/exports/openvino`)의 카메라 이름은 `tower cam` / `follow cam`, 해상도 1280×720, chunk 100. `front` / wrist 가정을 바꿔야 한다.
+- 06 실습은 스킬마다 runtime.yaml + `RobotRuntime.from_config` → `run(duration_s)`로 정책을 돌린다 (0.3.0 시그니처 확인됨). M4는 이 방식을 기반으로 하고, 그리퍼 정지 조건·비상정지는 `stop_event`/`callbacks`로 거는 방법을 먼저 확인한다.
+- 런타임이 카메라를 잡고 있는 동안 화면 영상·개수 세기를 어떻게 할지는 M4 숙제.
+- `traind-model/`은 약 1GB라 git에서 제외했다.
