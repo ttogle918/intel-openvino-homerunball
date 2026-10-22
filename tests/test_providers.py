@@ -1,5 +1,6 @@
 import io
 import json
+import sys
 import wave
 from types import SimpleNamespace
 
@@ -7,7 +8,8 @@ import httpx
 import pytest
 
 from snackbot.providers import (
-    AnthropicProvider, Chain, Member, OpenAICompat, ProviderError, build_chain, wav_to_float32,
+    AnthropicProvider, Chain, Member, OpenAICompat, OpenVINOProvider, ProviderError, build_chain,
+    wav_to_float32,
 )
 
 
@@ -155,3 +157,29 @@ def test_wav_to_float32():
         w.setframerate(16000)
         w.writeframes((16384).to_bytes(2, "little", signed=True) * 4)
     assert wav_to_float32(buf.getvalue()) == [0.5] * 4
+
+
+def test_build_chain_skips_entry_missing_model():
+    providers = {"ollama": {"type": "openai_compat", "base_url": "http://x"}}
+    entries = [{"provider": "ollama"}, {"provider": "ollama", "model": "m"}]
+    assert [m.name for m in build_chain(entries, providers, env={}).members] == ["ollama:m"]
+
+
+def test_build_chain_skips_provider_missing_type():
+    providers = {"bad": {"base_url": "http://x"}, "ok": {"type": "openai_compat", "base_url": "http://x"}}
+    entries = [{"provider": "bad", "model": "m"}, {"provider": "ok", "model": "m"}]
+    assert [m.name for m in build_chain(entries, providers, env={}).members] == ["ok:m"]
+
+
+def test_build_chain_skips_anthropic_when_sdk_missing(monkeypatch):
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+    providers = {"claude": {"type": "anthropic", "api_key_env": "K"}}
+    entries = [{"provider": "claude", "model": "m"}]
+    assert not build_chain(entries, providers, env={"K": "x"}).members
+
+
+def test_openvino_vlm_requires_image():
+    p = OpenVINOProvider("x", kind="vlm")
+    p._pipe = object()
+    with pytest.raises(ProviderError):
+        p.complete([{"role": "user", "content": "q"}], image=None)

@@ -100,6 +100,8 @@ class OpenVINOProvider:
     def complete(self, messages, max_tokens=300, image=None):
         pipe = self._pipeline()
         if self.kind == "vlm":
+            if image is None:
+                raise ProviderError("vlm에는 image가 필요")
             import cv2
             import numpy as np
             import openvino as ov
@@ -183,21 +185,25 @@ def build_chain(entries, providers_cfg, env):
         if pc is None:
             log.warning("알 수 없는 provider: %s (건너뜀)", pname)
             continue
-        kind = pc["type"]
-        key_env = pc.get("api_key_env")
-        key = env.get(key_env, "") if key_env else ""
-        if kind in NEEDS_KEY and key_env and not key:
-            log.warning("%s: %s 없음 (건너뜀)", pname, key_env)
-            continue
-        timeout = float(e.get("timeout_s", 5))
-        if kind == "openai_compat":
-            provider = OpenAICompat(pc["base_url"], key, e["model"], timeout)
-        elif kind == "anthropic":
-            provider = AnthropicProvider(key, e["model"], timeout, e.get("effort"))
-        elif kind == "openvino":
-            provider = OpenVINOProvider(e["model_dir"], e.get("device", "CPU"), e.get("kind", "llm"))
-        else:
-            log.warning("알 수 없는 provider type: %s (건너뜀)", kind)
+        try:
+            kind = pc["type"]
+            key_env = pc.get("api_key_env")
+            key = env.get(key_env, "") if key_env else ""
+            if kind in NEEDS_KEY and key_env and not key:
+                log.warning("%s: %s 없음 (건너뜀)", pname, key_env)
+                continue
+            timeout = float(e.get("timeout_s", 5))
+            if kind == "openai_compat":
+                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout)
+            elif kind == "anthropic":
+                provider = AnthropicProvider(key, e["model"], timeout, e.get("effort"))
+            elif kind == "openvino":
+                provider = OpenVINOProvider(e["model_dir"], e.get("device", "CPU"), e.get("kind", "llm"))
+            else:
+                log.warning("알 수 없는 provider type: %s (건너뜀)", kind)
+                continue
+        except Exception as ex:
+            log.warning("%s 준비 실패 (건너뜀): %s", pname, ex)
             continue
         members.append(Member(f"{pname}:{e.get('model') or e.get('model_dir')}", provider))
     return Chain(members)
