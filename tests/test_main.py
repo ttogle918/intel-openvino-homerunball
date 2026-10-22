@@ -29,8 +29,10 @@ def test_build_with_fake_counter_reports_vision(cfg):
 
 def test_build_real_robot_requires_poses(cfg, tmp_path):
     cfg["poses_file"] = str(tmp_path / "none.yaml")
+    import sys
     with pytest.raises(SystemExit, match="home_pose"):
         build(cfg, {}, dry_run=False)
+    assert "physicalai" not in sys.modules
 
 
 @pytest.fixture
@@ -141,7 +143,7 @@ def test_main_connect_failure_still_closes_and_exits(monkeypatch):
     with pytest.raises(SystemExit, match="입력이 안 맞아요"):
         m.main(["--no-ui"])
     assert "start" not in events
-    assert "close" in events and "voice.close" in events
+    assert events.count("close") == 1 and "controller.stop" in events and "voice.close" in events
 
 
 def test_main_connect_ctrl_c_still_closes(monkeypatch):
@@ -153,7 +155,36 @@ def test_main_connect_ctrl_c_still_closes(monkeypatch):
 
     _patch_main(monkeypatch, events, interrupted)
     m.main(["--no-ui"])
-    assert "close" in events and "voice.close" in events
+    assert events.count("close") == 1 and "controller.stop" in events and "voice.close" in events
+
+
+def test_main_cleanup_continues_when_one_step_fails(monkeypatch):
+    import snackbot.__main__ as m
+    events = []
+    _patch_main(monkeypatch, events, lambda: None)
+
+    def bad_close():
+        raise RuntimeError("boom")
+
+    parts = m.build(None, None)
+    parts["skills"].close = bad_close
+    m.main(["--no-ui"])
+    assert "voice.close" in events
+
+
+def test_build_real_robot_no_policies_warning(real_cfg, capsys):
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        assert "정책 모델이 없어요" in capsys.readouterr().err
+    finally:
+        parts["voice"].close()
+
+
+def test_flush_input_never_raises(monkeypatch):
+    import snackbot.__main__ as m
+    monkeypatch.setattr(m.sys, "platform", "linux")
+    monkeypatch.setattr(m.sys, "stdin", None)
+    m.flush_input()
 
 
 def wait_for(cond, timeout=2.0):

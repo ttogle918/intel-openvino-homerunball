@@ -42,7 +42,9 @@ def build(cfg, env, dry_run=True):
         if len(loaded) < len(POLICIES):
             missing = [n for n in POLICIES if n not in skills.policies]
             act += f" ({'·'.join(loaded) + '만' if loaded else '정책 없음'}, {'·'.join(missing)} 모델 없음)"
-        if "oranda_pickup" not in skills.policies:
+        if not skills.policies:
+            print("경고: 정책 모델이 없어요: home 이동만 확인 가능", file=sys.stderr, flush=True)
+        elif "oranda_pickup" not in skills.policies:
             print("경고: 과자 옮기기 모델이 없어 작업 시작은 안 돼요: dori_dori·home만 확인 가능", file=sys.stderr, flush=True)
         chain = cfg["vision"].get("chain") or []
         if any(e.get("type") == "fake" for e in chain):
@@ -273,6 +275,27 @@ def _read_keys(controller, quit_fn, submit, clear=None, clock=time.monotonic):
                 log.exception("키 처리 실패: %r", one)
 
 
+def flush_input():
+    """연결 중에 눌린 키가 키 스레드 시작 뒤 실행되지 않게 입력 버퍼를 비운다. 실패해도 무시."""
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            while msvcrt.kbhit():
+                msvcrt.getwch()
+        elif sys.stdin.isatty():
+            import termios
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+    except Exception:
+        pass
+
+
+def _safely(fn, what):
+    try:
+        fn()
+    except Exception:
+        log.exception("정리 실패: %s", what)
+
+
 def console_printer(event):
     kind = event["type"]
     if kind == "state":
@@ -323,6 +346,7 @@ def main(argv=None):
             connect()  # 실제 로봇: 연결 + 정책 warmup. 실패(SystemExit)해도 finally에서 close()
         controller.start()
         if sys.stdin.isatty():
+            flush_input()
             threading.Thread(target=key_loop, args=(controller, quit_fn), name="keys", daemon=True).start()
         if args.no_ui:
             controller.wait_stopped()
@@ -344,9 +368,9 @@ def main(argv=None):
         pass
     finally:
         restore_terminal()
-        controller.stop()
-        parts["skills"].close()
-        parts["voice"].close()
+        _safely(controller.stop, "controller.stop")
+        _safely(parts["skills"].close, "skills.close")
+        _safely(parts["voice"].close, "voice.close")
 
 
 if __name__ == "__main__":
