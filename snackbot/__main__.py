@@ -13,10 +13,11 @@ import time
 from pathlib import Path
 
 from .brain import Brain
-from .config import load_config, load_env
+from .config import load_config, load_env, ui_tiles
 from .controller import Controller
 from .providers import build_chain
 from .stt import build_stt
+from .twin import DEFAULT_URDF, list_replays, make_converter
 from .vision import build_vision
 from .voice import make_voice
 
@@ -64,8 +65,16 @@ def build(cfg, env, dry_run=True):
         "act": act,
     }}
     camera = cfg["vision"].get("camera", "front")
+    twin = cfg.get("twin") or {}
+    replays_dir = cfg.get("replays_dir", "replays")
+    info["ui"] = {"tiles": ui_tiles(cfg)}
+    info["twin"] = {"mode": "replay" if dry_run else "live", "urdf": twin.get("urdf", DEFAULT_URDF)}
+    info["replays"] = list_replays(replays_dir)
     return {"controller": controller, "skills": skills, "voice": voice, "stt": stt, "info": info,
-            "frame_fn": lambda: skills.latest_frame(camera)}
+            "frame_fn": lambda cam=None: skills.latest_frame(cam or camera),
+            "cameras": list(cfg.get("cameras") or {}), "box_camera": camera,
+            "joints_fn": getattr(skills, "latest_joints", None), "joints_hz": max(1.0, float(twin.get("rate_hz") or 15)),
+            "convert": make_converter(cfg), "replays_dir": replays_dir}
 
 
 def handle_key(ch, controller, quit_fn, submit=None, clear=None):
@@ -358,7 +367,10 @@ def main(argv=None):
             srv = cfg.get("server", {})
             host, port = args.host or srv.get("host", "127.0.0.1"), args.port or srv.get("port", 8000)
             app = create_app(controller, parts["info"], frame_fn=parts["frame_fn"], stt=parts["stt"],
-                             static_dir=root / "frontend")
+                             static_dir=root / "frontend", cameras=parts.get("cameras", ()),
+                             box_camera=parts.get("box_camera"), joints_fn=parts.get("joints_fn"),
+                             joints_hz=parts.get("joints_hz", 15.0), convert=parts.get("convert"),
+                             replays_dir=parts.get("replays_dir"))
             server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning",
                                                   timeout_graceful_shutdown=2))
             print(f"UI: http://{host}:{port}", flush=True)

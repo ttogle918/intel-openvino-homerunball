@@ -45,3 +45,23 @@ def load_calibration(path):
     """SO101 캘리브레이션: 관절 이름 → {id, drive_mode, homing_offset, range_min, range_max}. YAML 또는 JSON."""
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+DEFAULT_TILES = ["tower cam", "side cam", "follow cam", "twin"]
+
+
+def ui_tiles(cfg):
+    """config ui.tiles → 화면 칸 목록 (2×2 순서). 각 칸:
+    {"kind": "camera", "name", "available"} | {"kind": "twin", "name": "3D"} | {"kind": "iframe", "name", "url"}.
+    config cameras에 없는 이름의 카메라 칸은 available=False ("카메라 없음"으로 그린다)."""
+    raw = (cfg.get("ui") or {}).get("tiles") or DEFAULT_TILES
+    cameras = cfg.get("cameras") or {}
+    tiles = []
+    for tile in raw:
+        if tile == "twin":
+            tiles.append({"kind": "twin", "name": "3D"})
+        elif isinstance(tile, dict) and tile.get("iframe"):
+            tiles.append({"kind": "iframe", "name": str(tile.get("name", "화면")), "url": str(tile["iframe"])})
+        else:
+            tiles.append({"kind": "camera", "name": str(tile), "available": str(tile) in cameras})
+    return tiles

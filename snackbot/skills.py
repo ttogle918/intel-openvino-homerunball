@@ -1,7 +1,8 @@
-"""행동 계층. 이번 계획에는 DrySkills(로봇 없이 sleep)만 있다.
-실제 로봇(physicalai)은 다음 계획(M4)에서 같은 인터페이스로 추가한다:
+"""행동 계층의 로봇 없는 구현 DrySkills (sleep). 실제 로봇은 snackbot/robot.py RobotSkills, 같은 인터페이스:
   tray · new_task(n) · run(name, on_phase=None) -> RunResult · go_home()
   estop() · release_estop() · latest_frame(cam) -> RGB uint8 HxWx3 · close()
+녹화 재생 데이터(replays/<스킬>/episode.json)가 있으면 그 스킬의 동작 시간은 에피소드 길이다
+(화면이 phase acting 순간 같은 에피소드를 재생하므로 영상과 단계 표시가 함께 끝난다).
 """
 import random
 import threading
@@ -12,8 +13,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .twin import episode_duration, load_episode
+
 SNACK_RGB = (200, 120, 40)     # 황갈색 (OpenCV counter 기본 HSV 범위 안)
 OTHER_RGB = (180, 180, 180)    # 다른 과자 (채도가 낮아 세지 않음)
+REPLAY_SKILLS = ("oranda_pickup", "dori_dori")
 
 
 @dataclass
@@ -37,6 +41,15 @@ def synth_tray(n):
     return img
 
 
+def synth_view(name):
+    """vision 카메라가 아닌 config 카메라의 dry-run 화면 (이름표)."""
+    img = np.full((480, 640, 3), 52, np.uint8)
+    cv2.putText(img, "DRY-RUN", (40, 200), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (200, 200, 200), 3)
+    label = str(name).encode("ascii", "replace").decode()
+    cv2.putText(img, label, (40, 290), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (240, 170, 60), 3)
+    return img
+
+
 class DrySkills:
     """로봇 없이 시간만 보낸다. 가짜 트레이(tray)의 개수를 관리한다."""
 
@@ -47,15 +60,23 @@ class DrySkills:
         self.samples = Path(dry.get("samples_dir", "tests/samples"))
         self.rng = rng or random.Random(dry.get("seed"))
         self.tray = cfg["target"]["initial_count"]
+        self.camera = (cfg.get("vision") or {}).get("camera", "front")
+        self.cameras = set(cfg.get("cameras") or {})
         self._estop = threading.Event()
         self._cache = {}
+        replays = Path(cfg.get("replays_dir", "replays"))
+        self.replay_s = {}
+        for name in REPLAY_SKILLS:
+            ep = load_episode(replays / name)
+            if ep is not None:
+                self.replay_s[name] = episode_duration(ep)
 
     def new_task(self, n):
         self.tray = n
 
     def run(self, name, on_phase=None):
         t0 = time.monotonic()
-        if not self._wait(self.act_s):
+        if not self._wait(self.replay_s.get(name, self.act_s)):
             return RunResult("estop", False, _ms(t0))
         if name != "oranda_pickup":
             return RunResult("timeout", False, _ms(t0))
@@ -89,6 +110,11 @@ class DrySkills:
         self._estop.clear()
 
     def latest_frame(self, cam=None):
+        """vision 카메라(또는 cam 없음·모르는 이름)는 트레이 사진, config의 다른 카메라는 이름표 화면."""
+        if cam is not None and cam != self.camera and cam in self.cameras:
+            if cam not in self._cache:
+                self._cache[cam] = synth_view(cam)
+            return self._cache[cam]
         path = self.samples / f"tray_{self.tray}.jpg"
         if path.exists():
             if path not in self._cache:

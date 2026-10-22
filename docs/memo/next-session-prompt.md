@@ -3,7 +3,7 @@
 > 새 Claude Code 세션(작업 폴더 `C:\Users\ttogl\workspace\openvino_course_2610\project`)에 아래 코드 블록을 그대로 붙여넣는다.
 
 ```text
-과자 옮기기 로봇(snackbot) 해커톤 프로젝트를 이어서 한다. 소프트웨어 전체(dry-run, FastAPI+UI, LLM/STT/TTS provider)와 로봇 연결(M4) 코드 6개 Task가 끝났고, 지금은 노트북 실기 확인 단계다.
+과자 옮기기 로봇(snackbot) 해커톤 프로젝트를 이어서 한다. 소프트웨어 전체, 로봇 연결(M4) 코드, 4분할 화면·3D 디지털 트윈·녹화 재생·실행 기록(트윈 계획 Task 1~7)이 끝났다. 트윈 작업의 전체 최종 리뷰 결과 반영부터 이어서 한다.
 
 ## 먼저 읽을 것 (이 순서로)
 1. CLAUDE.md
@@ -18,14 +18,17 @@
 ## 현재 상태 (2026-10-22 기준)
 - git 저장소 루트는 project/의 상위 폴더(openvino_course_2610). 브랜치 feat/robot-m4. 로컬 main = feat/robot-m4 (병합은 fast-forward).
 - M4 Task 1~6 코드 완료, 리뷰 완료. `python -m snackbot`(실제 로봇)은 코드가 있으나 실기는 아직 안 했다.
-- 테스트 275개: `.venv/Scripts/python -m pytest -q`
+- 디지털 트윈 (설계 docs/superpowers/specs/2026-10-22-digital-twin-design.md, 계획 docs/superpowers/plans/2026-10-22-digital-twin.md): Task 1~7 커밋 완료(3aa5cef..57b98fd), Task별 리뷰 모두 승인, 브라우저(dry-run)에서 4분할·3D·녹화 재생·비상정지 정지·목업 확인. **전체 최종 리뷰(opus) 결과: ../.superpowers/sdd/twin-final-review.md** — 여기 MUST-FIX와 progress.md의 "Twin Task" Minor 목록을 수정 에이전트 하나로 반영한 뒤, 진행 보고서(docs/PROGRESS_REPORT.html) 갱신, 병합, push 준비.
+- 가짜 재생 데이터가 project/replays/ (git 제외)에 있다 (dry-run 화면 확인용). 진짜 데이터는 노트북에서 `python -m tools.fetch_replays`.
+- 다음 기능 설계 확정, 구현 전: docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md (UI 스킬 1회 실행 버튼 = 실제 로봇 추론 1회, 코드 도리도리). 사용자가 구현을 요청하면 writing-plans → subagent-driven-development.
+- 테스트 331개: `.venv/Scripts/python -m pytest -q` (test_server WinError 10014는 이 PC의 간헐 실패 → 재실행)
 - STT = OpenVINO Whisper small 로컬. 이 PC에 openvino-genai 2026.4.1이 설치돼 있고 models/whisper-small, models/whisper-base가 있다. 예비 STT는 Gemini(실제 호출 확인).
 - TTS = Gemini 2.5 flash preview tts, 결제 없는 프로젝트의 무료 등급 키. 문장당 약 4초. 대사 소리가 나기 시작하면 동작을 시작한다(sync_timeout 10초).
 - 대화 LLM = Claude → NVIDIA → 규칙.
 - 비상정지: 콘솔·웹 재시작에 세션 번호 확인, 재시작은 동작이 멈춘 뒤에만, RobotSkills 비상정지 세대 번호, 토크 유지(physicalai 소스로 확인).
 - 원격:
   - origin = 강의 저장소. 더 push하지 않는다.
-  - homerunball = github.com/ttogle918/intel-openvino-homerunball. 1회 push 완료(2afa38e). push 절차(바뀜):
+  - homerunball = github.com/ttogle918/intel-openvino-homerunball. 마지막 push 0e5f5ee (팀 메모까지, 트윈 구현은 아직 안 올라감). push 절차:
       git fetch . feat/robot-m4:main
       S=$(git subtree split --prefix=project main)
       homerunball-export 브랜치를 체크아웃한 임시 worktree(scratchpad)에서 `git merge $S`  (README 때문에 split이 바로 이어지지 않아 매번 merge 필요)
@@ -34,11 +37,11 @@
   - 사진 docs/ACT 학습 모습.jpg 는 올리지 않는다(untracked 유지).
 
 ## 바로 할 일
-1. 노트북 실기 확인 결과 반영 (런북 2-2절): 포트, 카메라 번호, 그리퍼 방향·기준값, 포즈(home/lift) 저장, home 이동, dori_dori.
-2. 과자 모델(oranda_pickup)이 나오면 manifest의 images 이름 → skills.oranda_pickup.camera_map, grasp_min 확정, oranda_pickup 실기.
-3. 전체 흐름 실기(`python -m snackbot`), UI 🎤·음성 재생 확인.
-4. (사용자 결정 대기) 로봇이 안 될 때 대비책: 3D 디지털 트윈 패널 — three.js + urdf-loader + TheRobotStudio SO-ARM100 저장소 Simulation/SO101/so101_new_calib.urdf (Apache-2.0), 녹화 궤적 재생. 시작하기 전에 사용자에게 먼저 물어본다.
-5. 다음 homerunball push 준비(위 절차, push는 사용자가 실행).
+1. 트윈 최종 리뷰(twin-final-review.md) MUST-FIX + Minor 반영 (수정 에이전트 하나, 비상정지·서버 쪽은 opus 재확인) → 전체 pytest.
+2. 진행 보고서 갱신 → 병합 → homerunball push 준비(위 절차, push는 사용자가 실행).
+3. (사용자 요청 시) 스킬 테스트 버튼·코드 도리도리 구현.
+4. 노트북 실기 확인 (런북 2-2·2-3절): 포트, 카메라(tools.cameras, 시리얼 중복이면 번호), 캘리브레이션, 그리퍼 방향·기준값, 포즈, home, dori_dori, 3D 영점(twin.sign/offset_deg), 녹화 받기(tools.fetch_replays).
+5. 과자 모델(oranda_pickup)이 나오면 camera_map, grasp_min 확정, 실기. 전체 흐름 실기, UI 🎤·음성 확인.
 
 ## 작업 방식 (지켜줘)
 - superpowers:subagent-driven-development 방식: 구현은 sonnet 에이전트, 리뷰는 sonnet(비상정지·동시성은 opus). 스크립트:

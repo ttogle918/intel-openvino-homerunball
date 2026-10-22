@@ -18,3 +18,7 @@ traind-model/
 
 # Claude Design 미리보기 이미지
 frontend/.thumbnail
+
+# 녹화 재생 데이터 (tools.fetch_replays · 실행 기록 복사), 카메라 찾기 사진 (tools.cameras)
+/replays/
+/cameras/

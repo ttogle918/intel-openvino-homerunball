@@ -31,6 +31,7 @@
 
 ## 문서
 - `docs/superpowers/specs/2026-10-22-chat-ui-design.md` — **현재 설계 기준** (아래 문서와 충돌하면 이 문서 우선)
+- `docs/superpowers/specs/2026-10-22-digital-twin-design.md` — 4분할 화면·3D 트윈·녹화 재생·실행 기록 (UI·트윈 부분은 위 문서보다 우선)
 - `docs/UI_DESIGN_PROMPT.md` — Claude Design 프롬프트 + 서버 연동 계약
 - `docs/ARCHITECTURE.md` — 전체 구조, 시퀀스, 상태, 모듈 다이어그램 (Mermaid)
 - `docs/DECISION_LOGIC.md` — 횟수 가드 규칙, LLM 프롬프트, JSON 스키마, fallback
@@ -49,7 +50,7 @@
 │   ├── __main__.py     # 진입점: --dry-run, --no-ui
 │   ├── config.py       # config.yaml + .env 로드
 │   ├── controller.py   # 상태 머신 IDLE/WORKING/REFUSING/DONE/ESTOP, 루프 스레드, 명령
-│   ├── server.py       # FastAPI: /ws, /stt, /stream/front, frontend/ 서빙
+│   ├── server.py       # FastAPI: /ws, /stt, /stream/{cam}, /api/replay/{skill}, /replays, frontend/ 서빙
 │   ├── providers.py    # openai_compat / anthropic / openvino 어댑터 + fallback 체인
 │   ├── brain.py        # decide() 작업 판단, chat() 의도·대사
 │   ├── vision.py       # counter 체인 (A단계)
@@ -57,16 +58,23 @@
 │   ├── voice.py        # TTS (Gemini), 합성·재생 두 스레드, 대사 소리 시작 알림
 │   ├── skills.py       # DrySkills (dry-run), RunResult
 │   ├── motion.py       # 그리퍼 감시, 보간 이동, 정지 신호 (physicalai 없이 테스트)
+│   ├── twin.py         # 3D 트윈: 관절 normalized→라디안, 재생 에피소드(episode.json) 읽기
+│   ├── recorder.py     # 실행 기록: 정책 phase 관절값·프레임 → logs/runs/ (백그라운드 저장)
 │   └── robot.py        # 실제 로봇: RobotRuntime 하나 + 동작 출처 교체, 비상정지 세대, warmup
-├── frontend/           # Claude Design 결과물 (index.html, app.js, style.css)
+├── frontend/           # Claude Design 결과물 (index.html, app.js, style.css) + twin.js(3D)
+│   ├── vendor/         # three@0.186.1, urdf-loader@0.13.1 고정 파일 (import map)
+│   └── twin/so101/     # SO-101 URDF + STL (Apache-2.0)
 ├── tools/
 │   ├── fetch_calibration.py   # Studio runtime-config → calibration/follower.yaml (GET만)
 │   ├── robot_probe.py         # 관절값 보기(watch), home/lift 포즈 저장(save)
+│   ├── fetch_replays.py       # Studio 녹화 에피소드 → replays/<스킬>/ (GET만, dry-run 재생용)
+│   ├── cameras.py             # 카메라 목록·시리얼·사진 1장 → config cameras 예시
 │   └── export_yolo_world.py   # YOLO-World → OpenVINO (개수 세기 A단계)
 ├── tests/
 │   └── samples/        # 트레이 사진 (dry-run용)
 ├── models/             # 로컬 모델 (git 제외)
 ├── logs/               # 사이클별 JSONL 로그 (git 제외)
+├── replays/            # dry-run 재생 데이터 replays/<스킬>/episode.json (git 제외)
 └── docs/
 ```
 
@@ -95,6 +103,8 @@ cp .env.example .env                                      # 쓸 API 키만 채�
 .venv/bin/python -m tools.robot_probe watch           # 관절값 보기 (토크 끔, 그리퍼 기준값 정하기)
 .venv/bin/python -m tools.robot_probe save home       # 현재 팔 자세를 home_pose로 (lift도 같은 방법)
 .venv/bin/python -m snackbot.robot home               # 홈으로 이동 (스킬 하나만: dori_dori | oranda_pickup)
+.venv/bin/python -m tools.cameras                     # 카메라 번호·시리얼·사진 (cameras/)
+.venv/bin/python -m tools.fetch_replays --studio http://192.168.0.6:7860 --skill oranda_pickup   # 녹화 받기
 ```
 - 모델 폴더(`skills.<이름>.export_dir`)가 없는 정책은 건너뛴다 (과자 모델 없이 `home`·`dori_dori` 확인 가능).
 - 의존 방향: `server → controller → (brain, vision, skills, voice)`. controller는 FastAPI를 모른다.

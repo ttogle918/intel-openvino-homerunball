@@ -19,6 +19,7 @@ import numpy as np
 
 from .config import load_calibration
 from .motion import GRIPPER, GripperWatch, MoveSource, StopAny, Switch, Tap, remap_frames
+from .recorder import RunRecorder
 from .skills import RunResult
 
 log = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ class _Aborted:
 
 
 class RobotSkills:
-    def __init__(self, cfg, poses, make_runtime=None, policies=None, models=None):
+    def __init__(self, cfg, poses, make_runtime=None, policies=None, models=None, recorder=None):
         sk = cfg["skills"]
         missing = [k for k in ("home_pose", "lift_pose") if k not in poses]
         if missing:
@@ -108,6 +109,7 @@ class RobotSkills:
         self.lift = np.asarray(poses["lift_pose"], np.float32)
         self.camera = cfg["vision"].get("camera", "tower cam")
         self.tap, self.switch = Tap(), Switch()
+        self.recorder = recorder if recorder is not None else RunRecorder(cfg)
         self.runtime = (make_runtime or (lambda s, t: build_runtime(cfg, s, t)))(self.switch, self.tap)
         self.tray = 0
         self._estop = threading.Event()
@@ -127,6 +129,8 @@ class RobotSkills:
             self.runtime.connect()
             obs = self.runtime.robot.get_observation()
             frames = {name: cam.read() for name, cam in self.runtime.cameras.items()}
+        with self.tap.lock:   # 3D 화면이 첫 틱 전에도 지금 자세를 그리도록
+            self.tap.joints = np.asarray(obs.joint_positions, np.float32).copy()
         for name, policy in self.policies.items():
             model = self.models.get(name)
             if model is None:
@@ -152,6 +156,17 @@ class RobotSkills:
             raise ValueError(f"알 수 없는 스킬: {name}")
         if name not in self.policies:
             raise RuntimeError(f"{name} 정책이 로드되지 않았어요 (config.yaml skills.{name}.export_dir 폴더 확인)")
+        result = None
+        try:
+            result = self._run(name, on_phase)
+            return result
+        finally:
+            try:
+                self.recorder.stop(result)   # 정책 phase를 기록했으면 결과와 함께 episode.json (백그라운드)
+            except Exception as e:
+                log.warning("실행 기록 마무리 실패: %s", e)
+
+    def _run(self, name, on_phase):
         t0 = time.monotonic()
         gen = self._current_gen()
         if self.ensure_home(gen) == "estop":
@@ -160,8 +175,7 @@ class RobotSkills:
             self.watch.reset()
             self.tap.watch = self.watch
             try:
-                reason = self._phase(self.policies[name], self.max_time[name], gen, done=self.watch.done,
-                                     camera_map=self.camera_maps[name])
+                reason = self._policy(name, gen, done=self.watch.done)
             finally:
                 self.tap.watch = None
             if reason == "estop" or _Aborted(self, gen).is_set():
@@ -176,11 +190,27 @@ class RobotSkills:
             if self._move([lift, self.home], gen) == "estop":
                 return RunResult("estop", self.watch.grasped, _ms(t0))
             return RunResult(stop_reason, self.watch.grasped, _ms(t0))
-        if self._phase(self.policies[name], self.max_time[name], gen, camera_map=self.camera_maps[name]) == "estop":
+        if self._policy(name, gen) == "estop":
             return RunResult("estop", False, _ms(t0))
         if self._move([self.home], gen) == "estop":
             return RunResult("estop", False, _ms(t0))
         return RunResult("timeout", False, _ms(t0))
+
+    def _policy(self, name, gen, done=None):
+        """정책 phase 하나. 이 구간만 실행 기록에 남긴다 (보간 이동은 제외)."""
+        self.recorder.start(name)
+        self.tap.recorder = self.recorder
+        try:
+            return self._phase(self.policies[name], self.max_time[name], gen, done=done,
+                               camera_map=self.camera_maps[name])
+        finally:
+            self.tap.recorder = None
+
+    def latest_joints(self):
+        """3D 화면용 최근 관절값 (normalized 6개 list). 연결 전이면 None. 제어 스레드를 막지 않게 Tap 캐시만 복사한다."""
+        with self.tap.lock:
+            joints = self.tap.joints
+            return None if joints is None else joints.tolist()
 
     def ensure_home(self, gen=None):
         gen = self._current_gen() if gen is None else gen
@@ -270,6 +300,7 @@ class RobotSkills:
                 self.runtime.disconnect()
             except Exception as e:
                 log.warning("런타임 해제 실패: %s", e)
+        self.recorder.wait(5)   # 마지막 실행 기록을 마저 쓴다
 
 
 def main(argv=None):

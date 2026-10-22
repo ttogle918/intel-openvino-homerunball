@@ -1,3 +1,19 @@
+import socket
+import sys
+
+if sys.platform == "win32":     # 루프백을 가로채는 소프트웨어 때문에 socketpair가 가끔 WinError 10014로 실패한다
+    _socketpair = socket.socketpair
+
+    def _retry_socketpair(*a, **k):
+        for i in range(5):
+            try:
+                return _socketpair(*a, **k)
+            except OSError as e:
+                if getattr(e, "winerror", None) != 10014 or i == 4:
+                    raise
+
+    socket.socketpair = _retry_socketpair
+
 import copy
 from pathlib import Path
 
@@ -21,4 +37,6 @@ def cfg(tmp_path):
     c["dry_run"]["act_s"] = 0
     c["dry_run"]["samples_dir"] = str(tmp_path / "samples")
     c["logging"]["dir"] = str(tmp_path / "logs")
+    c["replays_dir"] = str(tmp_path / "replays")
+    c["recording"]["dir"] = str(tmp_path / "runs")
     return c

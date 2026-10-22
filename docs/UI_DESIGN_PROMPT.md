@@ -61,7 +61,10 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대�
 서버 → 화면
 
 연결 직후 한 번 (옮길 과자, 모델 정보):
-{"type":"info","target":{"name":"오란다"},"models":{"vision":"YOLO-World · OpenVINO · GPU","llm":"API · openrouter","stt":"Whisper · OpenVINO · CPU","act":"ACT · OpenVINO · GPU"}}
+{"type":"info","target":{"name":"오란다"},"models":{"vision":"YOLO-World · OpenVINO · GPU","llm":"API · openrouter","stt":"Whisper · OpenVINO · CPU","act":"ACT · OpenVINO · GPU"},"ui":{"tiles":[{"kind":"camera","name":"tower cam","available":true},{"kind":"camera","name":"side cam","available":true},{"kind":"camera","name":"follow cam","available":true},{"kind":"twin","name":"3D"}]},"twin":{"mode":"replay","urdf":"twin/so101/so101_new_calib.urdf"},"replays":["dori_dori"]}
+- ui.tiles: 2×2 칸 순서. kind: camera(available=false면 "카메라 없음") | twin | iframe({"kind":"iframe","name":"Studio","url":"http://..."})
+- twin.mode: live(실제 로봇, joints 메시지) | replay(dry-run, phase acting 순간 /api/replay/<skill> 재생)
+- replays: 재생 데이터가 있는 스킬
 
 상태가 바뀔 때마다 (연결 직후에도 한 번):
 {"type":"state","state":"WORKING","phase":"acting","count":2,"remaining":3,"skill":"oranda_pickup","vision_method":"yolo","thresholds":{"safe_max":3,"force_refuse":6}}
@@ -80,13 +83,22 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대�
 - result: success | fail | refuse | done | estop
 - ms의 키는 일부 빠질 수 있음
 
+3D 팔 관절 (실제 로봇에서만, 값이 바뀔 때마다 · 연결 직후 마지막 값 한 번):
+{"type":"joints","q":[0.0123,-0.4012,0.8890,0.1000,0.0000,0.3500]}
+- q: 라디안 6개, 순서 shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper (URDF 관절 이름)
+
 화면 → 서버
 {"type":"chat","text":"과자 옮겨줘"}
 {"type":"command","name":"resume"}   // name: resume | estop | restart
 
 ### 카메라 영상
-GET /stream/front → MJPEG (<img src="/stream/front">로 표시). 검출 박스는 서버가 영상에 그려서 보낸다.
+GET /stream/<카메라 이름> → MJPEG (<img src="/stream/tower%20cam">). config cameras에 없는 이름은 404.
+vision 카메라에는 검출 박스를 서버가 그려 보낸다. GET /stream/front 는 vision 카메라 (예전 화면용).
 끊기면 "카메라 없음" 표시. 목업 모드에서는 회색 자리표시.
+
+### 녹화 재생 (dry-run)
+GET /api/replay/<skill> → {"skill","source","fps","q":[[라디안 6개],...],"duration","cameras":{"tower cam":{"url":"/replays/<skill>/tower_cam.mp4","start":12.3,"end":18.9},"follow cam":{"frames":["/replays/<skill>/frames/follow_cam/000000.jpg",...],"fps":10}}}
+- 없으면 404. 영상은 start~end 구간만 튼다. q는 영상 시계(currentTime − start)에 맞춰 3D에 적용한다.
 
 ### 음성 입력
 POST /stt

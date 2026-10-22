@@ -4,7 +4,8 @@ const $ = (s) => document.querySelector(s);
 const MOCK_FORCED = new URLSearchParams(location.search).has('mock');
 
 const S = { state: 'IDLE', phase: 'idle', count: 0, remaining: null, vision_method: null, skill: null,
-  th: { safe_max: 3, force_refuse: 6 }, name: '과자', got: false, cycles: [], mock: false };
+  th: { safe_max: 3, force_refuse: 6 }, name: '과자', got: false, cycles: [], mock: false,
+  twin: { mode: 'replay', urdf: 'twin/so101/so101_new_calib.urdf' }, replays: [] };
 
 const STATE_KO = { IDLE: '대기', WORKING: '작업 중', REFUSING: '거부 중', DONE: '완료', ESTOP: '비상정지' };
 const PHASE_KO = { idle: '쉬는 중', counting: '개수 세는 중', thinking: '생각 중', speaking: '말하는 중', acting: '옮기는 중', returning: '제자리로', waiting_operator: '도움 필요' };
@@ -62,6 +63,14 @@ function renderInfo(m) {
     d.querySelector('dd').textContent = mod[d.dataset.k] || '–';
     d.querySelector('dd').title = mod[d.dataset.k] || '';
   });
+  clearReplay();
+  Object.keys(replayData).forEach((k) => delete replayData[k]);   // 서버 재시작 뒤 새 녹화를 받도록
+  S.twin = m.twin || { mode: S.mock ? 'mock' : 'replay', urdf: DEFAULT_URDF };
+  S.replays = Array.isArray(m.replays) ? m.replays : [];
+  buildTiles(m.ui && m.ui.tiles);
+  S.replays.forEach((skill) => loadReplay(skill).then((d) => {   // 미리 받아 두면 acting 순간 바로 튼다
+    if (d && !lastQ && S.twin.mode === 'replay' && d.q && d.q.length) setJoints(d.q[0]);
+  }));
   renderState();
 }
 
@@ -103,15 +112,20 @@ function clearChat() { log.innerHTML = '<div class="chat-empty" id="chatEmpty">�
 function handle(m) {
   switch (m.type) {
     case 'info': renderInfo(m); break;
-    case 'state':
+    case 'state': {
+      const prev = { state: S.state, phase: S.phase, skill: S.skill };
       S.got = true;
       S.state = m.state; S.phase = m.phase || 'idle';
       S.count = m.count ?? 0; S.remaining = m.remaining ?? null;
       S.vision_method = m.vision_method || null; S.skill = m.skill || null;
       if (m.thresholds) S.th = { safe_max: m.thresholds.safe_max, force_refuse: m.thresholds.force_refuse };
-      renderState(); break;
+      renderState();
+      onReplayState(prev);
+      break;
+    }
     case 'message': addMsg(m); break;
     case 'cycle': S.cycles.push(m); if (S.cycles.length > 50) S.cycles.shift(); renderCycles(); break;
+    case 'joints': if (!replay && Array.isArray(m.q)) setJoints(m.q); break;
   }
 }
 
@@ -130,12 +144,15 @@ function startMock() {
   mock = createMock(handle);
   setConn(true, '시뮬레이터');
   mock.start();
+  startSway();
 }
 function stopMock() {
   if (!mock) return;
-  mock.stop(); mock = null; S.mock = false; $('#mockTag').hidden = true; resetUI();
+  mock.stop(); mock = null; S.mock = false; lastQ = null; $('#mockTag').hidden = true; stopSway(); resetUI();
+  tiles.forEach((t) => { if (t.spec.kind === 'camera') loadStream(t); });
 }
 function resetUI() {
+  clearReplay();
   clearChat(); S.cycles = []; S.got = false; S.state = 'IDLE'; S.phase = 'idle'; S.count = 0; S.remaining = null; S.vision_method = null;
   renderCycles(); renderState();
 }
@@ -153,8 +170,6 @@ function connect() {
     clearTimeout(retryT); retryT = setTimeout(connect, 2000);
   }
 }
-if (MOCK_FORCED) startMock(); else connect();
-
 function sendWS(obj) {
   if (mock) return mock.recv(obj);
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
@@ -171,14 +186,235 @@ $('#btnResume').onclick = () => sendWS({ type: 'command', name: 'resume' });
 $('#btnRestart').onclick = () => sendWS({ type: 'command', name: 'restart' });
 $('#btnEstop').onclick = () => sendWS({ type: 'command', name: 'estop' });
 
-/* ---------- camera ---------- */
-const cam = $('#camImg');
-function camOn() { cam.hidden = false; $('#camEmpty').hidden = true; }
-function camOff() { cam.hidden = true; $('#camEmpty').hidden = false; }
-cam.onload = camOn;
-cam.onerror = () => { camOff(); $('#camEmptyText').textContent = '카메라 없음'; setTimeout(loadCam, 3000); };
-function loadCam() { if (S.mock) { camOff(); $('#camEmptyText').textContent = '카메라 자리표시 (목업)'; setTimeout(loadCam, 2000); return; } cam.src = '/stream/front?t=' + Date.now(); }
-if (MOCK_FORCED) { camOff(); $('#camEmptyText').textContent = '카메라 자리표시 (목업)'; setTimeout(loadCam, 2000); } else loadCam();
+/* ---------- tiles: 2×2 (카메라 · 3D · iframe). 설계: docs/superpowers/specs/2026-10-22-digital-twin-design.md 9장 ---------- */
+const DEFAULT_TILES = [
+  { kind: 'camera', name: 'tower cam', available: true }, { kind: 'camera', name: 'side cam', available: true },
+  { kind: 'camera', name: 'follow cam', available: true }, { kind: 'twin', name: '3D' }];
+const DEFAULT_URDF = 'twin/so101/so101_new_calib.urdf';
+const tilesEl = $('#tiles');
+let tiles = [], tilesKey = '', twin = null, twinTile = null, lastQ = null;
+
+function showOnly(t, shown, text) {
+  [t.img, t.video, t.frame].forEach((e) => { if (e) e.hidden = e !== shown; });
+  t.empty.hidden = !!shown;
+  if (!shown && text) t.emptyText.textContent = text;
+}
+
+function loadStream(t) {
+  clearTimeout(t.retryT);
+  if (t.replay) return;
+  if (S.mock) { t.img.removeAttribute('src'); showOnly(t, null, '카메라 자리표시 (목업)'); return; }
+  if (t.spec.available === false) { showOnly(t, null, '카메라 없음'); return; }
+  t.img.src = '/stream/' + encodeURIComponent(t.spec.name) + '?t=' + Date.now();
+}
+
+function makeTile(spec) {
+  const el = document.createElement('div');
+  el.className = 'tile';
+  el.dataset.kind = spec.kind;
+  el.innerHTML = '<div class="cam-empty"><div class="stripes"></div><span></span></div><div class="tile-label"><i></i><b></b></div>';
+  el.querySelector('.tile-label b').textContent = spec.name || '';
+  const t = { spec, el, empty: el.querySelector('.cam-empty'), emptyText: el.querySelector('.cam-empty span'), replay: null, retryT: 0 };
+  if (spec.kind === 'camera') {
+    t.img = document.createElement('img');
+    t.video = document.createElement('video');
+    t.frame = document.createElement('img');
+    t.img.alt = ''; t.frame.alt = '';
+    t.video.muted = true; t.video.playsInline = true; t.video.preload = 'auto';
+    el.prepend(t.img, t.video, t.frame);
+    showOnly(t, null, '연결 중…');
+    t.img.onload = () => { if (!t.replay) showOnly(t, t.img); };
+    t.img.onerror = () => {
+      if (t.replay || !t.img.getAttribute('src')) return;
+      showOnly(t, null, '카메라 없음');
+      t.retryT = setTimeout(() => loadStream(t), 3000);
+    };
+    loadStream(t);
+  } else if (spec.kind === 'twin') {
+    t.host = document.createElement('div');
+    t.host.className = 'twin-host';
+    el.prepend(t.host);
+    showOnly(t, null, '3D 불러오는 중…');
+    twinTile = t;
+    loadTwin(t);
+  } else if (spec.kind === 'iframe') {
+    const f = document.createElement('iframe');
+    f.src = spec.url; f.title = spec.name || ''; f.loading = 'lazy'; f.referrerPolicy = 'no-referrer';
+    el.prepend(f);
+    t.empty.hidden = true;
+  }
+  return t;
+}
+
+function buildTiles(specs) {
+  const list = Array.isArray(specs) && specs.length ? specs : DEFAULT_TILES;
+  const key = JSON.stringify(list);
+  if (key === tilesKey) return;   // 재접속 때 같은 info면 3D를 다시 불러오지 않는다
+  tilesKey = key;
+  clearReplay();
+  tiles.forEach((t) => { clearTimeout(t.retryT); if (t.img) t.img.removeAttribute('src'); });
+  if (twin) { twin.dispose(); twin = null; }
+  twinTile = null;
+  tilesEl.innerHTML = '';
+  tiles = list.map(makeTile);
+  tiles.forEach((t) => tilesEl.appendChild(t.el));
+  tilesEl.dataset.n = String(tiles.length);
+}
+
+function loadTwin(t) {
+  const urdf = (S.twin && S.twin.urdf) || DEFAULT_URDF;
+  import('./twin.js')
+    .then((mod) => mod.createTwin(t.host, urdf))
+    .then((api) => {
+      if (twinTile !== t) { api.dispose(); return; }
+      twin = api;
+      t.empty.hidden = true;
+      if (lastQ) twin.setJoints(lastQ);
+    })
+    .catch((e) => { console.warn('3D 로드 실패', e); if (twinTile === t) showOnly(t, null, '3D 없음'); });
+}
+
+function setJoints(q) { lastQ = q; if (twin) twin.setJoints(q); }
+
+let swayRaf = 0;
+function startSway() {   // 목업: 홈 자세 근처에서 천천히 흔든다
+  cancelAnimationFrame(swayRaf);
+  const t0 = performance.now();
+  const step = () => {
+    const t = (performance.now() - t0) / 1000;
+    setJoints([0.35 * Math.sin(t * 0.8), -0.3 + 0.15 * Math.sin(t * 1.1), 0.4 + 0.15 * Math.sin(t * 0.9),
+      0.3 * Math.sin(t * 1.3), 0.5 * Math.sin(t * 0.6), 0.4 + 0.3 * Math.sin(t * 2)]);
+    swayRaf = requestAnimationFrame(step);
+  };
+  swayRaf = requestAnimationFrame(step);
+}
+function stopSway() { cancelAnimationFrame(swayRaf); swayRaf = 0; }
+
+/* ---------- dry-run 재생: phase acting 이 되는 순간 그 스킬의 녹화(영상·프레임 + 관절 궤적)를 함께 튼다 ---------- */
+const replayData = {};
+let replay = null;
+
+function loadReplay(skill) {
+  if (replayData[skill]) return Promise.resolve(replayData[skill]);
+  return fetch('/api/replay/' + encodeURIComponent(skill))
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (d) replayData[skill] = d; return d; })
+    .catch(() => null);
+}
+
+function onReplayState(prev) {
+  if (S.state === 'ESTOP') { pauseReplay(); return; }
+  if (S.phase === 'acting' && S.skill && (prev.phase !== 'acting' || prev.skill !== S.skill)) {
+    if (S.twin.mode === 'replay' && S.replays.includes(S.skill)) startReplay(S.skill);
+    return;
+  }
+  if (S.phase === 'counting' || S.state === 'IDLE' || S.state === 'DONE') clearReplay();
+}
+
+function startReplay(skill) {
+  if (replayData[skill]) { beginReplay(skill, replayData[skill]); return; }
+  loadReplay(skill).then((d) => {
+    if (d && S.phase === 'acting' && S.skill === skill && !replay) beginReplay(skill, d);
+  });
+}
+
+function beginReplay(skill, data) {
+  clearReplay();
+  const r = { skill, data, t0: performance.now(), created: performance.now(), clock: null, raf: 0, paused: false, tiles: [] };
+  replay = r;
+  tiles.forEach((t) => {
+    if (t.spec.kind !== 'camera') return;
+    const cam = data.cameras && data.cameras[t.spec.name];
+    if (!cam) return;
+    clearTimeout(t.retryT);
+    t.replay = r; t.cam = cam; t.ended = false; t.frameIdx = -1;
+    t.img.removeAttribute('src');
+    r.tiles.push(t);
+    if (cam.url) {
+      const v = t.video;
+      const start = cam.start || 0;
+      v.onerror = () => replayFallback(r, t);
+      v.onloadedmetadata = () => { v.currentTime = start; };
+      v.onseeked = () => { if (replay === r && !r.paused && v.paused && !t.ended) v.play().catch(() => replayFallback(r, t)); };
+      v.onplaying = () => {
+        if (r.clock && r.clock.video === v && !r.clock.started) {
+          r.clock.started = true;
+          r.t0 = performance.now() - (v.currentTime - start) * 1000;
+        }
+      };
+      v.src = cam.url;
+      showOnly(t, v);
+      if (!r.clock) r.clock = { video: v, start, tile: t, started: false };   // 첫 영상이 시계
+    } else if (cam.frames && cam.frames.length) {
+      showOnly(t, t.frame);
+    }
+  });
+  r.raf = requestAnimationFrame(() => replayTick(r));
+}
+
+function replayTick(r) {
+  if (replay !== r || r.paused) return;
+  const now = performance.now();
+  const c = r.clock;
+  if (c && !c.started) {
+    if (now - r.created > 3000) replayFallback(r, c.tile);   // 영상이 3초 안에 안 나오면 그 칸만 샘플로, 시계는 벽시계
+    r.t0 = now;                                              // 영상이 나올 때까지 0초에 머문다
+  }
+  const v = r.clock && r.clock.started && !r.clock.video.paused ? r.clock.video : null;
+  const t = v ? Math.max(0, v.currentTime - r.clock.start) : (now - r.t0) / 1000;
+  const q = r.data.q || [];
+  if (q.length) setJoints(q[Math.min(q.length - 1, Math.floor(t * r.data.fps))]);
+  r.tiles.forEach((tile) => {
+    const cam = tile.cam;
+    if (!cam || tile.replay !== r) return;
+    if (cam.url) {
+      if (!tile.ended && cam.end > 0 && tile.video.currentTime >= cam.end) { tile.video.pause(); tile.ended = true; }
+    } else if (cam.frames) {
+      const i = Math.min(cam.frames.length - 1, Math.floor(t * cam.fps));
+      if (i !== tile.frameIdx) { tile.frameIdx = i; tile.frame.src = cam.frames[i]; }
+    }
+  });
+  const videosDone = r.tiles.every((x) => x.replay !== r || !x.cam || !x.cam.url || x.ended);
+  if (t >= (r.data.duration || 0) && videosDone) return;   // 끝: 마지막 장면에서 멈춰 둔다
+  r.raf = requestAnimationFrame(() => replayTick(r));
+}
+
+function releaseVideo(t) {
+  const v = t.video;
+  v.onerror = v.onloadedmetadata = v.onseeked = v.onplaying = null;
+  v.pause(); v.removeAttribute('src'); v.load();
+}
+
+function replayFallback(r, t) {   // 그 칸만 샘플(스트림)로 돌린다 (코덱 등 재생 실패)
+  if (t.replay !== r) return;
+  t.replay = null; t.cam = null;
+  releaseVideo(t);
+  if (r.clock && r.clock.video === t.video) r.clock = null;
+  loadStream(t);
+}
+
+function pauseReplay() {   // 비상정지: 영상·3D를 그 자리에서 멈춘다
+  const r = replay;
+  if (!r || r.paused) return;
+  r.paused = true;
+  cancelAnimationFrame(r.raf);
+  r.tiles.forEach((t) => { if (t.replay === r) t.video.pause(); });
+}
+
+function clearReplay() {
+  const r = replay;
+  if (!r) return;
+  replay = null;
+  cancelAnimationFrame(r.raf);
+  r.tiles.forEach((t) => {
+    if (t.replay !== r) return;
+    t.replay = null; t.cam = null;
+    releaseVideo(t);
+    t.frame.removeAttribute('src');
+    loadStream(t);
+  });
+  if (S.twin.mode !== 'live' && r.data.q && r.data.q.length) setJoints(r.data.q[0]);
+}
 
 /* ---------- voice ---------- */
 const micBtn = $('#micBtn'), vs = $('#voiceStatus');
@@ -297,7 +533,8 @@ function createMock(emit) {
 
   const api = {
     start() {
-      emit({ type: 'info', target: { name: '오란다' }, models: { vision: 'YOLO-World · OpenVINO · GPU', llm: 'API · openrouter', stt: 'Whisper · OpenVINO · CPU', act: 'ACT · OpenVINO · GPU' } });
+      emit({ type: 'info', target: { name: '오란다' }, models: { vision: 'YOLO-World · OpenVINO · GPU', llm: 'API · openrouter', stt: 'Whisper · OpenVINO · CPU', act: 'ACT · OpenVINO · GPU' },
+        ui: { tiles: DEFAULT_TILES }, twin: { mode: 'mock', urdf: DEFAULT_URDF }, replays: [] });
       pushState({});
       say('system', '시뮬레이터가 연결되었어요');
       sleep(1800).then(() => { if (dead) return; say('user', '과자 옮겨줘'); return sleep(700); })
@@ -329,4 +566,7 @@ function createMock(emit) {
   };
   return api;
 }
+
+/* ---------- start (모든 선언 뒤) ---------- */
+if (MOCK_FORCED) startMock(); else connect();
 })();
