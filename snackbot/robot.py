@@ -114,6 +114,7 @@ class RobotSkills:
         self._estop_gen = 0
         self._gen_lock = threading.Lock()
         self._io = threading.Lock()
+        self._cam_failed = set()
 
     def _current_gen(self):
         with self._gen_lock:
@@ -137,6 +138,9 @@ class RobotSkills:
                 key = str(e.args[0]).splitlines()[0] if e.args else e
                 raise SystemExit(f"정책 {name} 입력이 안 맞아요: {key} — manifest.json의 images.<이름>과 "
                                  "config cameras / camera_map 확인") from e
+            except Exception as e:   # 차원·해상도 불일치 등
+                raise SystemExit(f"정책 {name} 첫 추론이 실패했어요: {type(e).__name__}: {str(e)[:200]} — "
+                                 "state 차원, 카메라 해상도, export_dir 확인") from e
             model.reset()
             log.info("%s warmup 완료: chunk %s", name, getattr(chunk, "shape", "?"))
 
@@ -192,8 +196,8 @@ class RobotSkills:
     def _move(self, targets, gen):
         src = MoveSource(targets, self.move_s * self.fps)
         result = self._phase(src, len(targets) * self.move_s + 2.0, gen, done=src.done)
-        if result == "done":
-            self._settle(targets[-1], gen)
+        if result == "done" and self._settle(targets[-1], gen) == "estop":
+            return "estop"
         return result
 
     def _settle(self, target, gen):
@@ -204,11 +208,13 @@ class RobotSkills:
                 current = np.asarray(self.runtime.robot.get_observation().joint_positions, np.float32)
             err = float(np.max(np.abs(current - np.asarray(target, np.float32))))
             if err <= self.home_tolerance:
-                return
-            if time.monotonic() >= deadline or aborted.is_set():
+                return "done"
+            if aborted.is_set():
+                return "estop"
+            if time.monotonic() >= deadline:
                 log.warning("이동 뒤에도 목표에서 %.1f 벗어나 있어요 (허용 %.1f): 걸렸는지 확인하세요",
                             err, self.home_tolerance)
-                return
+                return "done"
             time.sleep(0.1)
 
     def _phase(self, source, duration_s, gen, done=None, camera_map=None):
@@ -216,8 +222,10 @@ class RobotSkills:
         aborted = _Aborted(self, gen)
         if aborted.is_set():
             return "estop"
-        self.switch.active, self.switch.camera_map = source, camera_map
-        with self._io:
+        with self._io:   # 동작 출처 교체도 락 안: 이전 run이 끝나(shutdown의 disconnect) 기 전에는 바꾸지 않는다
+            if aborted.is_set():
+                return "estop"
+            self.switch.active, self.switch.camera_map = source, camera_map
             self.runtime.run(duration_s=duration_s, stop_event=StopAny(aborted, done))
         if self.runtime.last_run_reason == "interrupted":   # Ctrl+C → 비상정지로 취급
             self.estop()
@@ -243,8 +251,13 @@ class RobotSkills:
                 data = self.runtime.cameras[cam].read_latest().data
                 with self.tap.lock:
                     self.tap.frames[cam] = data
+                self._cam_failed.discard(cam)
             except Exception as e:
-                log.warning("카메라 %s 읽기 실패: %s", cam, e)
+                if cam not in self._cam_failed:   # 상태가 바뀔 때 한 번만 (스트림 주기마다 찍지 않는다)
+                    self._cam_failed.add(cam)
+                    log.warning("카메라 %s 읽기 실패: %s", cam, e)
+                else:
+                    log.debug("카메라 %s 읽기 실패: %s", cam, e)
             finally:
                 self._io.release()
         with self.tap.lock:

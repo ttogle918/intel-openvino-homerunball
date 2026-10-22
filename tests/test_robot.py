@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import threading
+
 import numpy as np
 import pytest
 
@@ -30,7 +32,7 @@ class FakeRobot:
 
 class FakePolicy:
     def __init__(self):
-        self.on_update = None
+        self.on_update, self.disconnects = None, 0
 
     def connect(self, *, bus, session_id):
         pass
@@ -41,7 +43,7 @@ class FakePolicy:
         return np.array(robot_state.joint_positions, np.float32)
 
     def disconnect(self):
-        pass
+        self.disconnects += 1
 
     def to_model_input(self, obs, frames):
         return {"state": obs.joint_positions, "frames": sorted(frames)}
@@ -348,3 +350,88 @@ def test_idle_camera_read_failure_warns(rcfg, caplog):
     with caplog.at_level("WARNING"):
         s.latest_frame()
     assert "boom" in caplog.text
+
+
+def test_connect_exits_with_policy_name_on_other_input_errors(rcfg):
+    class BadShape(FakeModel):
+        def predict_action_chunk(self, inputs):
+            raise ValueError("state shape (1, 6) != (1, 7)")
+
+    with pytest.raises(SystemExit, match="dori_dori.*ValueError.*shape"):
+        make(rcfg, models={"oranda_pickup": FakeModel(), "dori_dori": BadShape()})
+
+
+def test_go_home_waits_for_old_run_and_old_policy_is_disconnected(rcfg):
+    """space -> h: 이전 run이 _io를 잡은 동안 go_home이 동작 출처를 바꿔 끼우면 안 된다."""
+    s, rt, _ = make(rcfg, gripper=[80] * 100)
+    policy = s.policies["oranda_pickup"]
+    seen, out = {}, {}
+
+    def go_home_thread():
+        out["home"] = s.go_home()
+
+    t = threading.Thread(target=go_home_thread)
+
+    def on_update(step):
+        if step != 1:
+            return
+        s.estop()
+        s.release_estop()
+        t.start()
+        t.join(timeout=0.3)   # 고쳐졌으면 go_home은 _io에서 막혀 있어 끝나지 않는다
+        seen["blocked"] = t.is_alive()
+        seen["active_is_policy"] = s.switch.active is policy
+
+    policy.on_update = on_update
+    assert s.run("oranda_pickup").stop_reason == "estop"
+    t.join(timeout=5)
+    assert seen == {"blocked": True, "active_is_policy": True}
+    assert policy.disconnects == 1
+    assert out["home"] == "done" and rt.runs == ["FakePolicy", "MoveSource"]
+
+
+def _fast_clock(monkeypatch, on_sleep=lambda: None):
+    ticks = iter(range(10**6))
+    monkeypatch.setattr("snackbot.robot.time", SimpleNamespace(
+        monotonic=lambda: next(ticks) * 0.3, sleep=lambda _s: on_sleep()))
+
+
+def test_settle_warns_when_arm_does_not_reach_target(rcfg, caplog, monkeypatch):
+    _fast_clock(monkeypatch)
+    s, _, _ = make(rcfg, joints=[30, 0, 0, 0, 0, 80])
+    s.home_tolerance = -1   # 항상 도착하지 못한 것으로 본다
+    with caplog.at_level("WARNING"):
+        assert s.go_home() == "done"
+    assert "벗어나 있어요" in caplog.text
+
+
+def test_estop_during_settle_returns_estop_without_warning(rcfg, caplog, monkeypatch):
+    holder = {}
+    _fast_clock(monkeypatch, on_sleep=lambda: holder["s"].estop())
+    s, _, _ = make(rcfg, joints=[30, 0, 0, 0, 0, 80])
+    holder["s"] = s
+    s.home_tolerance = -1
+    with caplog.at_level("WARNING"):
+        assert s.go_home() == "estop"
+    assert "벗어나 있어요" not in caplog.text
+
+
+def test_camera_failure_warns_once_until_recovered(rcfg, caplog):
+    s, rt, _ = make(rcfg)
+    cam, good = rt.cameras["tower cam"], rt.cameras["tower cam"].read_latest
+    state = {"fail": True}
+
+    def flaky():
+        if state["fail"]:
+            raise OSError("boom")
+        return good()
+
+    cam.read_latest = flaky
+    with caplog.at_level("WARNING"):
+        s.latest_frame(); s.latest_frame()
+        assert caplog.text.count("boom") == 1
+        state["fail"] = False
+        s.latest_frame()
+        state["fail"] = True
+        s.latest_frame()
+        assert caplog.text.count("boom") == 2
