@@ -87,3 +87,12 @@ def test_frames_per_camera(cfg):
     side = s.latest_frame("side cam")                     # config의 다른 카메라: 이름표 화면
     assert side.shape == (480, 640, 3) and not np.array_equal(side, tray)
     assert side is s.latest_frame("side cam")
+
+
+def test_go_home_short_wait_and_estop(cfg):
+    cfg["dry_run"]["act_s"] = 0.2
+    s = DrySkills(cfg)
+    t0 = time.monotonic()
+    assert s.go_home() == "done" and time.monotonic() - t0 >= 0.09
+    s.estop()
+    assert s.go_home() == "estop"

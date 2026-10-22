@@ -2,6 +2,8 @@ import json
 import threading
 import time
 
+import pytest
+
 from conftest import FirstRng
 from snackbot.brain import Brain
 from snackbot.controller import Controller
@@ -774,3 +776,188 @@ def test_no_arg_restart_follows_estop_during_wait(cfg):
     t.join(5)
     assert out == [False] and c.state == "ESTOP" and sk.estopped and sk.homed == 0
     assert "재시작이 취소됐어요" in c.history[-1]["text"]
+
+
+# --- 스킬 1회 실행 (TESTING) ---
+def _states(ev):
+    return [(e["state"], e["phase"]) for e in ev if e["type"] == "state"]
+
+
+def test_test_command_only_requests_and_step_test_runs_once(cfg):
+    c, ev = make(cfg)
+    assert c.command("test", skill="dori_dori") is True
+    assert (c.state, c.skill) == ("TESTING", "dori_dori") and c.skills.runs == []   # 명령은 요청만
+    assert c.step_test() == "timeout"
+    assert (c.state, c.phase, c.skill) == ("IDLE", "idle", None)
+    assert c.skills.runs == ["dori_dori"]
+    assert c.history[-1]["role"] == "system"
+    assert c.history[-1]["text"].startswith("테스트 · 도리도리: 시간 초과로 끝남 · ")
+    assert c.step_test() is None                                  # 대기 중인 테스트 없음
+    assert ("TESTING", "acting") in _states(ev) and _states(ev)[-1] == ("IDLE", "idle")
+
+
+def test_test_oranda_message_has_grasp_and_returning_phase(cfg):
+    c, ev = make(cfg)
+    c.command("test", skill="oranda_pickup")
+    assert c.step_test() == "gripper_open"
+    text = c.history[-1]["text"]
+    assert text.startswith("테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · ") and text.endswith("초")
+    assert ("TESTING", "returning") in _states(ev)
+
+
+def test_test_home_uses_go_home_without_acting(cfg):
+    c, ev = make(cfg)
+    c.command("test", skill="home")
+    assert c.step_test() == "done"
+    assert c.skills.homed == 1 and c.skills.runs == []
+    assert c.history[-1]["text"].startswith("테스트 · 홈으로: 완료 · ")
+    assert ("TESTING", "returning") in _states(ev) and ("TESTING", "acting") not in _states(ev)
+
+
+def test_test_message_includes_record_folder(cfg):
+    class Recorded(FakeSkills):
+        def run(self, name, on_phase=None):
+            return RunResult("script", False, 1, record="logs/runs/20261022-120000_dori_dori")
+
+    c, _ = make(cfg, Recorded())
+    c.command("test", skill="dori_dori")
+    c.step_test()
+    text = c.history[-1]["text"]
+    assert text.startswith("테스트 · 도리도리: 코드 동작 완료 · ")
+    assert text.endswith(" · 기록 logs/runs/20261022-120000_dori_dori")
+
+
+def test_test_refused_outside_idle_with_reason(cfg):
+    c, _ = make(cfg)
+    c.chat("2개 옮겨줘")                                           # WORKING
+    assert c.command("test", skill="dori_dori") is False
+    assert c.state == "WORKING" and "작업 중" in c.history[-1]["text"]
+    c.command("estop")
+    assert c.command("test", skill="home") is False and "비상정지 중" in c.history[-1]["text"]
+    c.command("restart")
+    assert c.command("test", skill="dori_dori") is True
+    assert c.command("test", skill="home") is False and "이미 테스트 중" in c.history[-1]["text"]
+    c2, _ = make(cfg)
+    c2.state = "REFUSING"
+    assert c2.command("test", skill="dori_dori") is False and "거부 중" in c2.history[-1]["text"]
+
+
+def test_test_unknown_skill_raises(cfg):
+    c, _ = make(cfg)
+    with pytest.raises(ValueError):
+        c.command("test", skill="dance")
+    assert c.state == "IDLE"
+
+
+def test_start_and_resume_refused_while_testing(cfg):
+    c, _ = make(cfg)
+    c.command("test", skill="dori_dori")
+    c.command("start")
+    assert c.state == "TESTING" and c.history[-1]["text"] == "테스트 중이에요. 끝난 뒤 다시 시켜 주세요"
+    c.command("resume")
+    assert c.state == "TESTING" and c.history[-1]["text"] == "테스트 중이에요. 끝난 뒤 다시 시켜 주세요"
+    c.chat("2개 옮겨줘")
+    assert c.state == "TESTING" and c.history[-1]["role"] == "robot"   # 채팅은 대답만, 작업 시작 없음
+    c.step_test()
+    assert c.state == "IDLE" and c.count == 0 and c.remaining == 0
+
+
+def test_test_does_not_touch_counts_or_cycles_and_logs_type_test(cfg, tmp_path):
+    c, ev = make(cfg, log_dir=tmp_path)
+    c.command("test", skill="oranda_pickup")
+    c.step_test()
+    assert (c.count, c.remaining, c.retries, c.cycle_n) == (0, 0, 0, 0)
+    assert not [e for e in ev if e["type"] == "cycle"]
+    rec = json.loads(next(tmp_path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()[0])
+    assert rec["type"] == "test" and rec["skill"] == "oranda_pickup" and rec["origin"] == "button"
+    assert rec["stop_reason"] == "gripper_open" and rec["grasped"] is True and rec["error"] is None
+    assert isinstance(rec["ms"], int) and rec["record"] is None
+
+
+def test_test_skill_exception_reports_and_returns_idle(cfg, caplog, tmp_path):
+    class Boom(FakeSkills):
+        def run(self, name, on_phase=None):
+            raise RuntimeError("motor")
+
+    c, _ = make(cfg, Boom(), log_dir=tmp_path)
+    c.command("test", skill="oranda_pickup")
+    with caplog.at_level("WARNING"):
+        assert c.step_test() == "error"
+    assert c.state == "IDLE" and c._run_idle.is_set()
+    assert c.history[-1]["text"] == "테스트 실패: motor"
+    assert "motor" in caplog.text
+    rec = json.loads(next(tmp_path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()[0])
+    assert rec["stop_reason"] == "error" and rec["error"] == "motor"
+
+
+def test_estop_during_test_is_immediate_and_restart_waits(cfg):
+    sk = BlockingRun()
+    c, _ = make(cfg, sk)
+    c.command("test", skill="oranda_pickup")
+    t = threading.Thread(target=c.step_test, daemon=True)
+    t.start()
+    assert sk.entered.wait(2)
+    c.command("estop")
+    assert c.state == "ESTOP" and sk.estopped                # 테스트를 기다리지 않는다
+    c.restart_wait_s = 0
+    c.command("restart")
+    assert c.state == "ESTOP" and "멈추는 중" in c.history[-1]["text"]
+    sk.release.set()
+    t.join(5)
+    assert not t.is_alive() and c.state == "ESTOP"           # 끝난 테스트가 상태를 덮지 않는다
+    assert "비상정지로 멈춤" in c.history[-1]["text"]
+    c.restart_wait_s = 5
+    c.command("restart")
+    assert c.state == "IDLE"
+
+
+def test_test_canceled_when_generation_changed_after_receipt(cfg):
+    c, _ = make(cfg)
+    g = c.generation()
+    c.command("estop")
+    c.command("restart")                                     # 접수 뒤 비상정지·재시작이 끼어들었다 (다시 IDLE)
+    assert c.command("test", skill="dori_dori", expect_gen=g) is False
+    assert c.state == "IDLE" and "테스트가 취소됐어요" in c.history[-1]["text"]
+    assert c.command("test", skill="dori_dori", expect_gen=c.generation()) is True
+
+
+def test_estop_before_loop_picks_test_drops_it(cfg):
+    c, _ = make(cfg)
+    c.command("test", skill="dori_dori")
+    c.command("estop")
+    c.command("restart")
+    assert c.step_test() is None and c.skills.runs == [] and c.state == "IDLE"
+
+
+def test_skill_estop_result_during_test_latches_estop(cfg):
+    c, _ = make(cfg, EstopReason())
+    c.command("test", skill="dori_dori")
+    assert c.step_test() == "estop"
+    assert c.state == "ESTOP"
+
+
+def test_loop_thread_runs_tests_and_skills_only_on_loop_thread(cfg):
+    class Where(FakeSkills):
+        def __init__(self):
+            super().__init__()
+            self.threads = []
+
+        def run(self, name, on_phase=None):
+            self.threads.append(threading.current_thread().name)
+            return super().run(name, on_phase)
+
+        def go_home(self):
+            self.threads.append(threading.current_thread().name)
+            return super().go_home()
+
+    sk = Where()
+    c, _ = make(cfg, sk)
+    c.start()
+    try:
+        c.command("test", skill="dori_dori")
+        assert _wait_for(lambda: c.state == "IDLE" and sk.runs == ["dori_dori"])
+        c.command("test", skill="home")
+        assert _wait_for(lambda: c.state == "IDLE" and sk.homed == 1)
+    finally:
+        c.stop()
+    assert sk.threads == ["controller", "controller"]

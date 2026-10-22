@@ -102,7 +102,8 @@ class DrySkills:
             time.sleep(min(0.05, left))
 
     def go_home(self):
-        pass
+        """홈 복귀 흉내: act_s의 절반을 기다린다 (스킬 테스트 '홈으로'·재시작). 비상정지면 "estop"."""
+        return "done" if self._wait(self.act_s / 2) else "estop"
 
     def estop(self):
         self._estop.set()
