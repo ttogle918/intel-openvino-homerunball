@@ -8,13 +8,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_repo_config_has_core_sections():
     cfg = load_config(ROOT / "config.yaml")
-    assert cfg["target"] == {"name": "오란다", "robot_name": "과자봇", "initial_count": 3}
+    assert cfg["target"] == {"name": "오란다", "robot_name": "보리", "initial_count": 3}
     assert cfg["decision"] == {"safe_max": 3, "force_refuse": 6, "max_retry": 2}
     for entry in cfg["brain"]["chain"]:
         assert entry["provider"] in cfg["providers"]
         assert entry.get("model")
     assert cfg["vision"]["chain"] == []
-    assert [e["provider"] for e in cfg["stt"]["chain"]] == ["openai"]
+    assert [e["provider"] for e in cfg["stt"]["chain"]] == ["gemini", "openai"]
 
 
 def test_load_env_reads_file_and_environment_wins(tmp_path, monkeypatch):

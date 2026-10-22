@@ -157,7 +157,7 @@ def test_chat_memory_order_roles_and_current_last(cfg):
     b.chat("내 이름이 뭐라고 했지?", "IDLE", 0, history=hist)
     m = _sent(b)
     assert [x["role"] for x in m] == ["system", "user", "assistant", "user"]
-    assert "과자봇" in m[0]["content"] and "'오란다'" in m[0]["content"]
+    assert "보리" in m[0]["content"] and "'오란다'" in m[0]["content"]
     assert "{robot_name}" not in m[0]["content"] and "{target}" not in m[0]["content"]
     assert m[1]["content"] == "내 이름은 민수야" and m[2]["content"] == "반가워요 민수님"
     assert json.loads(m[3]["content"])["text"] == "내 이름이 뭐라고 했지?"
@@ -196,4 +196,4 @@ def test_no_history_unchanged_and_default_persona(cfg):
     b = make(cfg, '{"intent": "chat", "say": "응", "n": null}')
     b.chat("d", "IDLE", 0)
     m = _sent(b)
-    assert [x["role"] for x in m] == ["system", "user"] and "과자봇" in m[0]["content"]
+    assert [x["role"] for x in m] == ["system", "user"] and "보리" in m[0]["content"]

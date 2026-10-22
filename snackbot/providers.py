@@ -17,6 +17,9 @@ log = logging.getLogger(__name__)
 NEEDS_KEY = {"openai_compat", "anthropic"}
 
 
+STT_CHAT_PROMPT = "다음 한국어 음성을 들리는 그대로 받아써. 받아쓴 문장만 출력해."
+
+
 class ProviderError(Exception):
     pass
 
@@ -24,8 +27,10 @@ class ProviderError(Exception):
 class OpenAICompat:
     """OpenRouter, NVIDIA, OpenAI, Gemini(OpenAI 호환), Groq, Ollama — base_url과 키만 다르다."""
 
-    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None, extra_body=None):
+    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None, extra_body=None,
+                 transcribe_mode="transcriptions"):
         self.model = model
+        self.transcribe_mode = transcribe_mode  # "transcriptions": /audio/transcriptions, "chat": 오디오 입력 chat
         self.extra_body = dict(extra_body or {})  # 예: 추론 모델의 생각 끄기
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.http = httpx.Client(base_url=base_url.rstrip("/"), headers=headers,
@@ -44,11 +49,23 @@ class OpenAICompat:
         return r.json()["choices"][0]["message"]["content"] or ""
 
     def transcribe(self, wav, language="ko"):
+        if self.transcribe_mode == "chat":
+            return self._transcribe_chat(wav)
         r = self.http.post("/audio/transcriptions",
                            files={"file": ("speech.wav", wav, "audio/wav")},
                            data={"model": self.model, "language": language})
         r.raise_for_status()
         return r.json()["text"]
+
+    def _transcribe_chat(self, wav):
+        audio = base64.standard_b64encode(wav).decode()
+        content = [{"type": "text", "text": STT_CHAT_PROMPT},
+                   {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}]
+        r = self.http.post("/chat/completions",
+                           json={**self.extra_body, "model": self.model,
+                                 "messages": [{"role": "user", "content": content}]})
+        r.raise_for_status()
+        return (r.json()["choices"][0]["message"]["content"] or "").strip()
 
 
 class AnthropicProvider:
@@ -208,7 +225,8 @@ def build_chain(entries, providers_cfg, env):
                 continue
             timeout = float(e.get("timeout_s", 5))
             if kind == "openai_compat":
-                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout, extra_body=e.get("extra_body"))
+                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout, extra_body=e.get("extra_body"),
+                                        transcribe_mode=e.get("transcribe", "transcriptions"))
             elif kind == "anthropic":
                 provider = AnthropicProvider(key, e["model"], timeout, e.get("effort"))
             elif kind == "openvino":

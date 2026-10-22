@@ -142,3 +142,82 @@ def test_make_voice_wiring():
     assert v.engine == "openai" and v.options["voice"] == "coral"
     v.close()
     assert make_voice({}, {}).engine == "none"
+
+
+# --- gemini engine ---
+import base64
+import io
+import logging
+import wave
+
+GPROVIDERS = {"gemini": {"type": "openai_compat", "base_url": "https://g.test/v1beta/openai",
+                         "api_key_env": "GK"}}
+GOPTS = {"engine": "gemini", "provider": "gemini", "model": "tts-m", "voice": "Leda",
+         "instructions": "보리처럼:", "timeout_s": 3}
+PCM = b"\x01\x00\x02\x00" * 50
+
+
+def _gemini_reply(rate_mime="audio/L16;codec=pcm;rate=16000"):
+    data = base64.b64encode(PCM).decode()
+    return {"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": rate_mime, "data": data}}]}}]}
+
+
+def _gvoice(handler, env=None):
+    return Voice("gemini", GOPTS, GPROVIDERS, {"GK": "gsecret"} if env is None else env,
+                 transport=httpx.MockTransport(handler))
+
+
+def test_gemini_request_and_wav(monkeypatch):
+    seen, played = [], []
+
+    def handler(req):
+        seen.append(req)
+        return httpx.Response(200, json=_gemini_reply())
+
+    monkeypatch.setattr(voice_mod, "play_wav", played.append)
+    v = _gvoice(handler)
+    v.speak("안녕")
+    v.close()
+    req = seen[0]
+    assert req.url.path == "/v1beta/models/tts-m:generateContent" and not req.url.query
+    assert req.headers["x-goog-api-key"] == "gsecret" and "authorization" not in req.headers
+    body = json.loads(req.content)
+    assert body["contents"][0]["parts"][0]["text"] == "보리처럼: 안녕"
+    cfg = body["generationConfig"]
+    assert cfg["responseModalities"] == ["AUDIO"]
+    assert cfg["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Leda"
+    with wave.open(io.BytesIO(played[0])) as w:
+        assert (w.getnchannels(), w.getsampwidth(), w.getframerate()) == (1, 2, 16000)
+        assert w.readframes(w.getnframes()) == PCM
+
+
+def test_gemini_default_rate_and_native_base_url():
+    seen = []
+
+    def handler(req):
+        seen.append(req)
+        return httpx.Response(200, json=_gemini_reply("audio/L16"))
+
+    prov = {"gemini": {**GPROVIDERS["gemini"], "native_base_url": "https://n.test/v1beta"}}
+    v = Voice("gemini", GOPTS, prov, {"GK": "k"}, transport=httpx.MockTransport(handler))
+    wav = v.synthesize("x")
+    v.close()
+    assert seen[0].url.host == "n.test"
+    with wave.open(io.BytesIO(wav)) as w:
+        assert w.getframerate() == 24000
+
+
+def test_gemini_without_key_behaves_like_none(caplog):
+    with caplog.at_level(logging.WARNING):
+        v = Voice("gemini", GOPTS, GPROVIDERS, {})
+    assert v.engine == "none"
+    assert any("gemini" in r.getMessage() for r in caplog.records)
+    v.close()
+
+
+def test_make_voice_builds_gemini():
+    v = make_voice({"voice": GOPTS, "providers": GPROVIDERS}, {"GK": "k"})
+    try:
+        assert v.engine == "gemini" and v._http is not None
+    finally:
+        v.close()

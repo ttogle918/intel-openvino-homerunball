@@ -124,7 +124,7 @@ def _merge_roles(messages):
 class Brain:
     def __init__(self, cfg, chain=None, rng=None):
         self.target = cfg["target"]["name"]
-        self.robot_name = cfg["target"].get("robot_name") or "과자봇"
+        self.robot_name = cfg["target"].get("robot_name") or "보리"
         self.decision = cfg["decision"]
         self.max_say = cfg["brain"].get("max_say_len", 80)
         self.max_tokens = cfg["brain"].get("max_tokens", 1024)

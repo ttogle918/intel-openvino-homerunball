@@ -3,7 +3,7 @@
 
 target:
   name: 오란다
-  robot_name: 과자봇        # 캐릭터 이름
+  robot_name: 보리          # 캐릭터 이름
   initial_count: 3          # B단계: 채팅에 개수가 없을 때
 
 decision:
@@ -15,7 +15,7 @@ providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 �
   openrouter: {type: openai_compat, base_url: "https://openrouter.ai/api/v1", api_key_env: OPENROUTER_API_KEY}
   nvidia:     {type: openai_compat, base_url: "https://integrate.api.nvidia.com/v1", api_key_env: NVIDIA_API_KEY}
   openai:     {type: openai_compat, base_url: "https://api.openai.com/v1", api_key_env: OPENAI_API_KEY}
-  gemini:     {type: openai_compat, base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: GEMINI_API_KEY}
+  gemini:     {type: openai_compat, base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: GEMINI_API_KEY, native_base_url: "https://generativelanguage.googleapis.com/v1beta"}
   anthropic:  {type: anthropic, api_key_env: ANTHROPIC_API_KEY}
   ollama:     {type: openai_compat, base_url: "http://localhost:11434/v1"}
   local_ov:   {type: openvino}
@@ -47,7 +47,8 @@ vision:
 
 stt:
   chain:
-    - {provider: openai, model: "gpt-4o-mini-transcribe", timeout_s: 15}
+    - {provider: gemini, model: "gemini-3.5-flash-lite", transcribe: chat, timeout_s: 15}
+    - {provider: openai, model: "gpt-4o-mini-transcribe", timeout_s: 15}   # 키가 정상일 때의 백업
   # chain:
   #   - {provider: local_ov, model_dir: "models/whisper", device: CPU, kind: whisper}
 
@@ -78,12 +79,12 @@ skills:
 poses_file: poses.yaml                     # python -m tools.robot_probe save home | save lift 가 기록
 
 voice:
-  engine: openai            # none | log | pyttsx3 | openai
-  provider: openai          # engine: openai일 때 providers의 접속 정보(키·base_url)
-  model: gpt-4o-mini-tts
-  voice: coral
-  instructions: "귀엽고 금방 지치는 투덜이 로봇. 짧고 또박또박 한국어로."
-  timeout_s: 15
+  engine: gemini            # none | log | pyttsx3 | openai | gemini
+  provider: gemini          # providers의 접속 정보(키·base_url / gemini는 native_base_url)
+  model: gemini-2.5-flash-preview-tts
+  voice: Leda               # 어리고 밝은 목소리
+  instructions: "귀엽고 금방 지치는 투덜이 로봇 보리처럼 짧고 또박또박 말해:"
+  timeout_s: 20
 
 dry_run:
   act_s: 1.0                # 스킬 하나에 걸리는 가짜 시간 (초)
