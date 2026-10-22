@@ -38,15 +38,25 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     url = f"{a.studio.rstrip('/')}/api/projects/{a.project}/environments/{a.env}/runtime-config"
-    r = httpx.get(url, timeout=10)
-    r.raise_for_status()
+    try:
+        r = httpx.get(url, timeout=10)
+        r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise SystemExit(f"Studio가 {e.response.status_code}로 답했어요. --project, --env id를 확인하세요 ({url})")
+    except httpx.HTTPError as e:
+        raise SystemExit(f"Studio에 연결하지 못했어요: {a.studio} ({type(e).__name__}). 주소·포트·같은 네트워크인지 확인하세요")
     doc = yaml.safe_load(r.text)
     follower = find_follower(doc)
     if follower is None:
         raise SystemExit("runtime-config에서 follower SO101을 찾지 못했어요")
+    cal = follower.get("calibration")
+    if not isinstance(cal, dict):
+        raise SystemExit(f"follower calibration이 관절 표(dict)가 아니라 {type(cal).__name__}예요 "
+                         "(Studio PC의 파일 경로일 수 있어요). Studio PC의 캘리브레이션 파일을 복사해 "
+                         "calibration/follower.yaml(또는 JSON)로 두세요")
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(yaml.safe_dump(follower["calibration"], sort_keys=False), encoding="utf-8")
+    out.write_text(yaml.safe_dump(cal, sort_keys=False), encoding="utf-8")
     print(f"캘리브레이션 저장: {out}")
     print(f"Studio 기준 팔로워 포트: {follower.get('port')} (노트북 포트는 config.yaml robot.port에 직접 쓴다)")
     for name, cam in ((doc.get("init_args") or {}).get("cameras") or {}).items():
