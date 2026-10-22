@@ -136,25 +136,29 @@ class Controller:
         return True
 
     def _estop(self):
+        self.skills.estop()  # 멱등: 항상 먼저 하드웨어를 세운다
         with self._lock:
-            if self.state == ESTOP:
-                return
-            self.state, self.phase = ESTOP, "idle"
-        self.skills.estop()
-        self.notify("비상정지됨")
+            already = self.state == ESTOP
+            self.state, self.phase = ESTOP, "idle"  # 이미 ESTOP이면 진행 중인 재시작도 중단
+        if not already:
+            self.notify("비상정지됨")
         self._publish()
 
     def _restart(self):
         with self._lock:
-            if self.state != ESTOP:
+            if self.state != ESTOP or self.phase == "returning":
                 return False
+            self.phase = "returning"
         self.skills.release_estop()
         self.skills.go_home()
         with self._lock:
-            self.state, self.phase, self.retries, self.skill = IDLE, "idle", 0, None
-        self.notify("재시작: 대기 상태로 돌아왔어요")
+            ok = self.state == ESTOP and self.phase == "returning"
+            if ok:
+                self.state, self.phase, self.retries, self.skill = IDLE, "idle", 0, None
+        if ok:
+            self.notify("재시작: 대기 상태로 돌아왔어요")
         self._publish()
-        return True
+        return ok
 
     # ---- 사이클 ----
     def _working(self):
@@ -196,10 +200,16 @@ class Controller:
         r = self.skills.run(d["skill"], on_phase=self._set_phase)
         ms["act"] = _ms(t0)
         if r.stop_reason == "estop":
+            with self._lock:
+                if self.state != ESTOP:
+                    self.state, self.phase = ESTOP, "idle"
+            self._publish()
             self._log_cycle("estop", ms, d, r)
             return "estop"
         if d["skill"] == "dori_dori":
             with self._lock:
+                if self.state != WORKING:
+                    return "estop"
                 self.state, self.phase = REFUSING, "idle"
             self._publish()
             self._log_cycle("refuse", ms, d, r)
@@ -229,6 +239,8 @@ class Controller:
             seen = self._count(ms)
         success = seen < n_before if seen is not None else r.grasped
         with self._lock:
+            if self.state != WORKING:
+                return "estop"
             if success:
                 self.count += 1
                 self.retries = 0
@@ -249,11 +261,14 @@ class Controller:
 
     def _finish(self, ms, d):
         with self._lock:
+            if self.state != WORKING:
+                return "estop"
             self.state, self.phase = DONE, "idle"
         self._publish()
         self._log_cycle("done", ms, d)
         with self._lock:
-            self.state, self.skill = IDLE, None
+            if self.state == DONE:
+                self.state, self.skill = IDLE, None
         self._publish()
         return "done"
 
@@ -279,6 +294,8 @@ class Controller:
     def stop(self):
         self._stop.set()
         self._wake.set()
+        if self._working():
+            self.skills.estop()  # 진행 중인 스킬 중단
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=5)
 

@@ -186,9 +186,95 @@ def test_background_thread_runs_to_done(cfg):
         c.chat("2개 옮겨줘")
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline and not any(
-                e.get("result") == "done" for e in ev if e["type"] == "cycle"):
+                e["type"] == "state" and e["state"] == "IDLE" and e["count"] == 2 for e in list(ev)):
             time.sleep(0.01)
         assert c.state == "IDLE" and c.count == 2
     finally:
         c.stop()
     assert c.stopped
+
+
+class EstopDuringRun(FakeSkills):
+    ctrl = None
+
+    def run(self, name, on_phase=None):
+        self.runs.append(name)
+        self.ctrl.command("estop")
+        return RunResult("timeout", False, 1)
+
+
+class EstopReason(FakeSkills):
+    def run(self, name, on_phase=None):
+        self.runs.append(name)
+        return RunResult("estop", False, 1)
+
+
+def test_estop_during_dori_dori_is_not_overwritten(cfg):
+    sk = EstopDuringRun()
+    c, _ = make(cfg, sk)
+    sk.ctrl = c
+    c.chat("10개 옮겨줘")
+    c.count = cfg["decision"]["force_refuse"]
+    c.step()
+    assert sk.runs[-1] == "dori_dori"
+    assert c.state == "ESTOP" and sk.estopped
+    assert c.step() is None
+    c.command("restart")
+    assert c.state == "IDLE"
+
+
+def test_estop_during_pickup_is_not_overwritten(cfg):
+    sk = EstopDuringRun()
+    c, _ = make(cfg, sk)
+    sk.ctrl = c
+    c.chat("3개 옮겨줘")
+    assert c.step() == "estop"
+    assert c.state == "ESTOP" and c.count == 0 and sk.estopped
+
+
+def test_skill_estop_result_latches_estop(cfg):
+    c, _ = make(cfg, EstopReason())
+    c.chat("3개 옮겨줘")
+    assert c.step() == "estop"
+    assert c.state == "ESTOP"
+    assert c.step() is None
+
+
+def test_estop_during_restart_homing_is_kept(cfg):
+    class HomeEstop(FakeSkills):
+        ctrl = None
+
+        def go_home(self):
+            self.ctrl.command("estop")
+
+    sk = HomeEstop()
+    c, _ = make(cfg, sk)
+    sk.ctrl = c
+    c.chat("2개 옮겨줘")
+    c.command("estop")
+    c.command("restart")
+    assert c.state == "ESTOP" and sk.estopped
+    sk.go_home = lambda: None
+    c.command("restart")
+    assert c.state == "IDLE"
+
+
+def test_loop_exception_goes_to_waiting_operator(cfg):
+    class Boom:
+        def decide(self, *a, **k):
+            raise RuntimeError("boom")
+
+        def line(self, kind):
+            return kind
+
+    c = Controller(cfg, Boom(), FakeSkills())
+    c.start()
+    try:
+        c.command("start")
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and c.phase != "waiting_operator":
+            time.sleep(0.01)
+        assert c.phase == "waiting_operator"
+        assert c.history[-1]["role"] == "system"
+    finally:
+        c.stop()
