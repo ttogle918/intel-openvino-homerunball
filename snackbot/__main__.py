@@ -68,14 +68,25 @@ def read_windows_key(getch):
     return ch
 
 
-def read_posix_key(read1):
-    """ESC로 시작하는 방향키·F키 시퀀스(ESC [ A, ESC O R 등)는 뒤 두 글자까지 읽고 버린다."""
+def _stdin_ready():
+    import select
+    return bool(select.select([sys.stdin], [], [], 0.05)[0])
+
+
+def read_posix_key(read1, ready=None):
+    """ESC로 시작하는 방향키·F키·Alt 시퀀스는 뒤따르는 입력이 있을 때만 (최대 5글자) 읽고 버린다.
+
+    반환: 키 문자 · None(버린 시퀀스/ESC 단독) · ""(read1이 EOF)."""
     ch = read1()
-    if ch == chr(27):
-        read1()
-        read1()
-        return ""
-    return ch
+    if ch != chr(27):
+        return ch
+    ready = ready or _stdin_ready
+    for _ in range(5):
+        if not ready():
+            break
+        if read1() == "":
+            return ""
+    return None
 
 
 def enter_cbreak():
@@ -114,6 +125,10 @@ def read_key():
     return read_posix_key(lambda: sys.stdin.read(1))
 
 
+KEY_OFF_MSG = "콘솔 키 비활성: UI 비상정지 버튼을 쓰세요"
+MAX_KEY_ERRORS = 10
+
+
 def key_loop(controller, quit_fn):
     try:
         enter_cbreak()
@@ -121,12 +136,26 @@ def key_loop(controller, quit_fn):
         print(f"경고: 터미널 키 입력을 켜지 못했어요 ({e}). space 비상정지 키가 꺼져 있으니 UI 버튼을 쓰세요.",
               file=sys.stderr, flush=True)
         return
+    errors = 0
     while not controller.stopped:
         try:
             ch = read_key()
         except (EOFError, OSError):
+            print(KEY_OFF_MSG, file=sys.stderr, flush=True)
             return
+        except Exception as e:
+            errors += 1
+            if errors == 1:
+                print(f"콘솔 키 오류: {e!r}", file=sys.stderr, flush=True)
+            if errors >= MAX_KEY_ERRORS:
+                print(KEY_OFF_MSG, file=sys.stderr, flush=True)
+                return
+            continue
+        errors = 0
+        if ch is None:
+            continue  # 버린 방향키/F키 시퀀스
         if ch == "" and sys.platform != "win32":
+            print(KEY_OFF_MSG, file=sys.stderr, flush=True)
             return  # EOF
         try:
             handle_key(ch, controller, quit_fn)

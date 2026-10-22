@@ -333,6 +333,21 @@ def test_cycle_ms_splits_act_and_return(cfg):
     assert "return" in ms and "act" in ms and ms["act"] >= 0 and ms["return"] >= 0
 
 
+def test_cycle_ms_split_reflects_real_phases(cfg):
+    class Timed(FakeSkills):
+        def run(self, name, on_phase=None):
+            time.sleep(0.05)
+            on_phase("returning")
+            time.sleep(0.10)
+            return RunResult("gripper_open", True, 1)
+
+    c, ev = make(cfg, Timed())
+    c.chat("1개 옮겨줘")
+    c.step()
+    ms = [e for e in ev if e["type"] == "cycle"][-1]["ms"]
+    assert 40 <= ms["act"] <= 90 and 80 <= ms["return"] <= 160
+
+
 def test_cycle_ms_without_returning_has_no_return(cfg):
     c, ev = make(cfg)
     c.chat("4개 옮겨줘")
@@ -377,3 +392,29 @@ def test_stop_estops_skills_even_when_not_working(cfg):
     c2, _ = make(cfg)
     c2.stop()
     assert not c2.skills.estopped       # IDLE 이면 건드리지 않는다
+
+
+def test_loop_exception_in_estop_hints_restart(cfg):
+    holder = {}
+
+    class Boom:
+        def decide(self, *a, **k):
+            holder["c"].command("estop")
+            raise RuntimeError("boom")
+
+        def line(self, kind):
+            return kind
+
+    c = Controller(cfg, Boom(), FakeSkills())
+    holder["c"] = c
+    c.command("start")
+    c.start()
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not any(
+                m["role"] == "system" and "오류" in m["text"] for m in c.history):
+            time.sleep(0.01)
+        texts = [m["text"] for m in c.history if "오류" in m["text"]]
+        assert texts and "재시작" in texts[-1] and "재개" not in texts[-1]
+    finally:
+        c.stop()

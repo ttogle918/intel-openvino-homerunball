@@ -189,6 +189,27 @@ def test_estop_not_delayed_by_slow_chat(cfg, tmp_path, monkeypatch):
         assert time.monotonic() - t0 < 0.5
 
 
+def test_commands_processed_in_order_per_connection(cfg, tmp_path, monkeypatch):
+    import time
+    c, app = make_app(cfg, tmp_path)
+    order = []
+
+    def slow_restart():
+        time.sleep(0.3)
+        order.append("restart")
+
+    monkeypatch.setattr(c, "_restart", slow_restart)
+    monkeypatch.setattr(c, "chat", lambda text, source="text": order.append("chat"))
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        ws.send_json({"type": "command", "name": "restart"})
+        ws.send_json({"type": "chat", "text": "안녕"})
+        deadline = time.monotonic() + 3
+        while len(order) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert order == ["restart", "chat"]
+
+
 class _Abort(BaseException):
     pass
 

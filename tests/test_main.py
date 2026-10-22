@@ -92,8 +92,94 @@ def test_handle_key_h_restarts():
 
 def test_read_posix_key_discards_escape_sequence():
     from snackbot.__main__ import read_posix_key
-    assert read_posix_key(_getch(chr(27), "O", "R")) == ""
+    left = iter([True, True, False])
+    assert read_posix_key(_getch(chr(27), "O", "R"), ready=lambda: next(left)) is None
     assert read_posix_key(_getch("r")) == "r"
+    assert read_posix_key(lambda: "") == ""     # EOF 는 빈 문자열
+
+
+def test_read_posix_key_lone_escape_consumes_nothing_more():
+    from snackbot.__main__ import read_posix_key
+    reads = iter([chr(27), " "])
+    read1 = lambda: next(reads)
+    assert read_posix_key(read1, ready=lambda: False) is None
+    assert read_posix_key(read1, ready=lambda: False) == " "
+
+
+def test_read_posix_key_caps_sequence_length():
+    from snackbot.__main__ import read_posix_key
+    n = []
+
+    def read1():
+        n.append(1)
+        return chr(27) if len(n) == 1 else "x"
+
+    assert read_posix_key(read1, ready=lambda: True) is None
+    assert len(n) == 6      # ESC + 최대 5글자
+
+
+def test_key_loop_posix_arrow_does_not_kill_loop(monkeypatch):
+    import snackbot.__main__ as m
+    calls, quits = [], []
+
+    class C:
+        stopped = False
+
+        def command(self, name):
+            calls.append(name)
+
+    it = iter([chr(27), "[", "A", " ", "q"])
+    avail = iter([True, True, False])
+    monkeypatch.setattr(m.sys, "platform", "linux")
+    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
+    monkeypatch.setattr(m, "read_key", lambda: m.read_posix_key(lambda: next(it), ready=lambda: next(avail)))
+    m.key_loop(C(), lambda: quits.append(1))
+    assert calls == ["estop"] and quits == [1]
+
+
+def test_key_loop_lone_escape_then_space_still_estops(monkeypatch):
+    import snackbot.__main__ as m
+    calls = []
+
+    class C:
+        stopped = False
+
+        def command(self, name):
+            calls.append(name)
+
+    it = iter([chr(27), " ", ""])
+    monkeypatch.setattr(m.sys, "platform", "linux")
+    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
+    monkeypatch.setattr(m, "read_key", lambda: m.read_posix_key(lambda: next(it), ready=lambda: False))
+    m.key_loop(C(), lambda: None)
+    assert calls == ["estop"]
+
+
+def test_key_loop_stops_after_repeated_errors(monkeypatch, capsys):
+    import snackbot.__main__ as m
+    n = []
+
+    def bad():
+        n.append(1)
+        raise ValueError("x")
+
+    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
+    monkeypatch.setattr(m, "read_key", bad)
+    m.key_loop(type("C", (), {"stopped": False})(), lambda: None)
+    err = capsys.readouterr().err
+    assert len(n) == 10 and "콘솔 키 오류" in err and "콘솔 키 비활성" in err
+
+
+def test_key_loop_eof_warns(monkeypatch, capsys):
+    import snackbot.__main__ as m
+
+    def eof():
+        raise EOFError
+
+    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
+    monkeypatch.setattr(m, "read_key", eof)
+    m.key_loop(type("C", (), {"stopped": False})(), lambda: None)
+    assert "콘솔 키 비활성" in capsys.readouterr().err
 
 
 def test_key_loop_survives_handler_error(monkeypatch):

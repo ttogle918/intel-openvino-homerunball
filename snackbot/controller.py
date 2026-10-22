@@ -352,7 +352,9 @@ class Controller:
                     with self._lock:
                         if self.state == WORKING:
                             self.phase = "waiting_operator"
-                    self.notify("오류가 났어요. 로그를 확인한 뒤 재개를 눌러 주세요.")
+                        estopped = self.state == ESTOP
+                    self.notify("오류가 났어요. 로그를 확인한 뒤 "
+                                + ("재시작을 눌러 주세요." if estopped else "재개를 눌러 주세요."))
                     self._publish()
             else:
                 self._wake.wait(0.2)
