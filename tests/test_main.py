@@ -10,8 +10,8 @@ def test_build_dry_run_parts(cfg):
         assert parts["info"]["type"] == "info"
         assert parts["info"]["target"] == {"name": "오란다"}
         assert parts["info"]["models"]["llm"] == "규칙"
-        assert parts["info"]["models"]["stt"] == "없음"
-        assert parts["stt"] is None
+        assert parts["info"]["models"]["stt"] == "Whisper small · OpenVINO · CPU"  # 키 없으면 gemini는 빠진다
+        assert parts["stt"] is not None  # 모델은 warmup/첫 요청 때 로드되므로 build는 가볍다
         assert parts["frame_fn"]().shape == (480, 640, 3)
     finally:
         parts["voice"].close()

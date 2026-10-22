@@ -282,6 +282,9 @@ def main(argv=None):
         if server is not None:
             server.should_exit = True
 
+    if parts["stt"] is not None:  # 모델 로드·컴파일이 느리니 서버 시작을 막지 않고 미리 데운다
+        threading.Thread(target=parts["stt"].warmup, name="stt-warmup", daemon=True).start()
+
     print("키: s 시작 · r 재개 · h 재시작 · space 비상정지 · q 종료", flush=True)
     controller.start()
     if sys.stdin.isatty():

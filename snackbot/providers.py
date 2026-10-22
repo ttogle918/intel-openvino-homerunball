@@ -7,8 +7,10 @@ import base64
 import io
 import logging
 import threading
+import time
 import wave
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -116,17 +118,33 @@ class OpenVINOProvider:
     """로컬 openvino_genai. kind: llm | vlm | whisper. 처음 호출할 때 파이프라인을 만든다.
     API는 M3에서 설치된 openvino_genai 버전으로 확인한다."""
 
-    def __init__(self, model_dir, device="CPU", kind="llm"):
+    def __init__(self, model_dir, device="CPU", kind="llm", language="ko", cache_dir=None):
         self.model_dir, self.device, self.kind = str(model_dir), device, kind
+        self.language = language
+        self.cache_dir = Path(cache_dir) if cache_dir else None
         self._pipe = None
+        self._lock = threading.Lock()
 
     def _pipeline(self):
-        if self._pipe is None:
-            import openvino_genai as ov_genai
-            cls = {"llm": ov_genai.LLMPipeline, "vlm": ov_genai.VLMPipeline,
-                   "whisper": ov_genai.WhisperPipeline}[self.kind]
-            self._pipe = cls(self.model_dir, self.device)
-        return self._pipe
+        with self._lock:  # 워밍업 스레드와 첫 요청이 겹쳐도 파이프라인은 하나만 만든다
+            if self._pipe is None:
+                import openvino_genai as ov_genai
+                cls = {"llm": ov_genai.LLMPipeline, "vlm": ov_genai.VLMPipeline,
+                       "whisper": ov_genai.WhisperPipeline}[self.kind]
+                if self.cache_dir is not None:
+                    self.cache_dir.mkdir(parents=True, exist_ok=True)
+                    self._pipe = cls(self.model_dir, self.device, CACHE_DIR=str(self.cache_dir))
+                else:
+                    self._pipe = cls(self.model_dir, self.device)
+            return self._pipe
+
+    def warmup(self):
+        """파이프라인을 만들고(whisper는 무음 한 번 generate까지) 걸린 초를 돌려준다."""
+        t0 = time.monotonic()
+        pipe = self._pipeline()
+        if self.kind == "whisper":
+            pipe.generate([0.0] * 8000, language=f"<|{self.language}|>", task="transcribe")
+        return time.monotonic() - t0
 
     def complete(self, messages, max_tokens=300, image=None):
         pipe = self._pipeline()
@@ -143,7 +161,8 @@ class OpenVINOProvider:
         prompt = pipe.get_tokenizer().apply_chat_template(messages, add_generation_prompt=True)
         return _text(pipe.generate(prompt, max_new_tokens=max_tokens))
 
-    def transcribe(self, wav, language="ko"):
+    def transcribe(self, wav, language=None):
+        language = language or self.language
         return _text(self._pipeline().generate(wav_to_float32(wav), language=f"<|{language}|>",
                                                task="transcribe"))
 
@@ -230,12 +249,13 @@ def build_chain(entries, providers_cfg, env):
             elif kind == "anthropic":
                 provider = AnthropicProvider(key, e["model"], timeout, e.get("effort"))
             elif kind == "openvino":
-                provider = OpenVINOProvider(e["model_dir"], e.get("device", "CPU"), e.get("kind", "llm"))
+                provider = OpenVINOProvider(e["model_dir"], e.get("device", "CPU"), e.get("kind", "llm"),
+                                            e.get("language", "ko"), e.get("cache_dir"))
             else:
                 log.warning("알 수 없는 provider type: %s (건너뜀)", kind)
                 continue
         except Exception as ex:
             log.warning("%s 준비 실패 (건너뜀): %s", pname, ex)
             continue
-        members.append(Member(f"{pname}:{e.get('model') or e.get('model_dir')}", provider))
+        members.append(Member(e.get("label") or f"{pname}:{e.get('model') or e.get('model_dir')}", provider))
     return Chain(members)

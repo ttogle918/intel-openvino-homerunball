@@ -47,10 +47,11 @@ vision:
 
 stt:
   chain:
-    - {provider: gemini, model: "gemini-3.5-flash-lite", transcribe: chat, timeout_s: 15}
-    - {provider: openai, model: "gpt-4o-mini-transcribe", timeout_s: 15}   # 키가 정상일 때의 백업
-  # chain:
-  #   - {provider: local_ov, model_dir: "models/whisper", device: CPU, kind: whisper}
+    # device를 GPU로 바꾸면 label도 같이 바꾼다 (UI 모델 정보에 표시됨)
+    - {provider: local_ov, kind: whisper, model_dir: "models/whisper-small", device: CPU, language: ko,
+       cache_dir: "models/ov_cache", label: "Whisper small · OpenVINO · CPU"}
+    - {provider: gemini, model: "gemini-3.5-flash-lite", transcribe: chat, timeout_s: 15}   # 크레딧 있을 때 예비
+  #  - {provider: openai, model: "gpt-4o-mini-transcribe", timeout_s: 15}   # 키가 정상일 때의 백업
 
 robot:
   port: /dev/ttyACM0                       # [ ] 노트북의 팔로워 포트 (ls /dev/ttyACM*). Studio 학습 PC는 /dev/ttyACM1이었다
