@@ -26,6 +26,7 @@
 | 19 | 파이썬 패키지 | 루트 `.py`들을 `snackbot/`으로, 화면은 `frontend/` |
 | 20 | 구현 계획과 dori-dori 결과물 | 계획 2개로 분리 (소프트웨어 → 로봇), M4는 06의 RobotRuntime 방식 |
 | 21 | 음성(STT/TTS) provider | STT는 OpenVINO Whisper 로컬, TTS는 Gemini, 대화는 Claude 우선 · 이름 보리 |
+| 22 | 스킬 1회 실행 · 코드 도리도리 | UI 버튼(TESTING, 루프 스레드)으로 스킬 1회, 모델이 없으면 코드 도리도리, LLM도 `dori_dori` 의도로 호출 |
 
 ---
 
@@ -249,3 +250,13 @@
 - 기본은 CPU. GPU로 바꾸면 config의 device와 label을 같이 바꾼다.
 - TTS: 결제를 연결하지 않은 새 프로젝트의 무료 등급 Gemini 키로 `gemini-2.5-flash-preview-tts` 동작, TTS → STT 왕복 검사 통과 (문장당 TTS 약 4초). 3.8 TTS 모델은 말투 지시문까지 읽어서 제외. 대사 소리가 나기 시작하면 동작을 시작하도록 맞춘다 (사용자 결정 A안).
 - 후보 비교와 선택 이유 전체: `docs/VOICE_PROVIDERS.md`.
+
+## 22. 스킬 1회 실행 · 코드 도리도리
+
+**결정:** 화면 버튼 `오란다 1회` · `도리도리 1회` · `홈으로`로 학습한 정책을 한 번만 실제로 돌려 본다 (새 상태 TESTING, 대기에서만, 횟수·피로도 미반영). dori_dori 모델이 없거나 쓰기 싫으면 코드가 홈에서 몸통을 좌우로 흔든다 (`skills.dori_dori.source: auto | policy | script`). 대화 LLM도 `dori_dori` 의도로 같은 1회 실행을 부른다 (tool-use API가 아니라 기존 JSON intent, 모든 provider에서 같게).
+
+**상세**
+- 설계: `docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md`, 구현 계획: `docs/superpowers/plans/2026-10-22-skill-test.md`.
+- 로봇을 움직이는 스레드는 controller 루프 하나로 유지한다 (요청 슬롯 + 깨우기). 비상정지는 테스트를 기다리지 않는다.
+- 코드 도리도리는 진폭 상한 30, 관절 범위 클램프, 실행 기록에 정책 phase처럼 남는다.
+- 키워드 fallback에서는 작업 시작(`start_task`)이 도리도리보다 우선한다 ("도리도리 하지 말고 옮겨줘" → 작업 시작). 사용자 결정.

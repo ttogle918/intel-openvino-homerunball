@@ -36,12 +36,14 @@
 - 비상정지 버튼은 어떤 상태에서도 같은 자리에 보여야 함
 
 ## 상태와 단계
-state: IDLE(대기) | WORKING(작업 중) | REFUSING(거부 중) | DONE(완료) | ESTOP(비상정지)
+state: IDLE(대기) | WORKING(작업 중) | REFUSING(거부 중) | DONE(완료) | ESTOP(비상정지) | TESTING(테스트: 스킬 1회 실행)
 phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대사 소리 시작 대기) | acting(옮기는 중) | returning(제자리로) | waiting_operator(도움 필요)
 - 버튼 활성화
   - 재개: REFUSING이거나 phase가 waiting_operator일 때만
   - 재시작: ESTOP일 때만
   - 비상정지: IDLE / DONE이 아닐 때, ESTOP이라도 phase가 returning(재시작으로 홈 복귀 중)이면 켠다
+  - 스킬 테스트(info.tests의 버튼들): IDLE일 때만, 그리고 그 버튼의 enabled가 true일 때만 (false면 reason을 툴팁으로). TESTING 중엔 모두 끄고 비상정지는 켠다
+- 단계 표시줄은 WORKING과 TESTING에서 켠다. TESTING은 acting(실행 중) → returning(복귀)만 쓴다 (`홈으로`는 returning만)
 - ESTOP일 때는 화면 전체를 빨간 테두리 등으로 확실히 표시
 
 ## 기술 조건 (반드시 지킬 것)
@@ -53,6 +55,7 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대�
 - WebSocket이 끊기면 "연결 끊김" 표시 후 2초마다 자동 재연결.
 - 목업 모드: URL에 ?mock 이 있거나 WebSocket 연결이 안 되면, app.js 안의 시뮬레이터가 아래 메시지를 흉내 낸다.
   서버 없이 열어도 전체 흐름(대기 → 작업 → 지침 → 거부 → 재개 → 완료)이 자동으로 재생되어야 함.
+  스킬 테스트 버튼도 목업에서 가짜 흐름(TESTING → 결과 system 메시지 → IDLE)을 보여 준다.
 
 ## 서버 연동 계약
 
@@ -61,14 +64,15 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대�
 서버 → 화면
 
 연결 직후 한 번 (옮길 과자, 모델 정보):
-{"type":"info","target":{"name":"오란다"},"models":{"vision":"YOLO-World · OpenVINO · GPU","llm":"API · openrouter","stt":"Whisper · OpenVINO · CPU","act":"ACT · OpenVINO · GPU"},"ui":{"tiles":[{"kind":"camera","name":"tower cam","available":true},{"kind":"camera","name":"side cam","available":true},{"kind":"camera","name":"follow cam","available":true},{"kind":"twin","name":"3D"}]},"twin":{"mode":"replay","urdf":"twin/so101/so101_new_calib.urdf"},"replays":["dori_dori"]}
+{"type":"info","target":{"name":"오란다"},"models":{"vision":"YOLO-World · OpenVINO · GPU","llm":"API · openrouter","stt":"Whisper · OpenVINO · CPU","act":"ACT · OpenVINO · GPU"},"ui":{"tiles":[{"kind":"camera","name":"tower cam","available":true},{"kind":"camera","name":"side cam","available":true},{"kind":"camera","name":"follow cam","available":true},{"kind":"twin","name":"3D"}]},"twin":{"mode":"replay","urdf":"twin/so101/so101_new_calib.urdf"},"replays":["dori_dori"],"tests":[{"skill":"oranda_pickup","label":"오란다 1회","enabled":true,"reason":""},{"skill":"dori_dori","label":"도리도리 1회","enabled":true,"reason":""},{"skill":"home","label":"홈으로","enabled":true,"reason":""}]}
 - ui.tiles: 2×2 칸 순서. kind: camera(available=false면 "카메라 없음") | twin | iframe({"kind":"iframe","name":"Studio","url":"http://..."})
 - twin.mode: live(실제 로봇, joints 메시지) | replay(dry-run, phase acting 순간 /api/replay/<skill> 재생)
 - replays: 재생 데이터가 있는 스킬
+- tests: 스킬 테스트 버튼 (순서대로). enabled=false면 reason("모델 없음")
 
 상태가 바뀔 때마다 (연결 직후에도 한 번):
 {"type":"state","state":"WORKING","phase":"acting","count":2,"remaining":3,"skill":"oranda_pickup","vision_method":"yolo","thresholds":{"safe_max":3,"force_refuse":6}}
-- skill: oranda_pickup | dori_dori | done | null
+- skill: oranda_pickup | dori_dori | done | home(TESTING의 홈으로) | null
 - vision_method: estimate | yolo | vlm | opencv | fake
 
 대화 (연결 직후 최근 50개를 순서대로 다시 보냄):
@@ -77,6 +81,7 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대�
 {"type":"message","role":"system","text":"비상정지됨","ts":1729580002.0}
 - role: user | robot | system
 - source(user일 때만): text | voice (voice면 🎤 표시)
+- 스킬 테스트 결과는 system 메시지 한 줄: "테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초 · 기록 logs/runs/…" (채팅으로 시킨 도리도리는 "도리도리 · …"). 테스트는 cycle 메시지를 보내지 않는다
 
 사이클 결과 (한 사이클이 끝날 때마다):
 {"type":"cycle","n":5,"result":"success","ms":{"vision":820,"llm":1100,"act":14200,"return":3100}}
@@ -90,6 +95,7 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대�
 화면 → 서버
 {"type":"chat","text":"과자 옮겨줘"}
 {"type":"command","name":"resume"}   // name: resume | estop | restart
+{"type":"command","name":"test","skill":"oranda_pickup"}   // skill: oranda_pickup | dori_dori | home (스킬 1회 실행, IDLE에서만 받는다)
 
 ### 카메라 영상
 GET /stream/<카메라 이름> → MJPEG (<img src="/stream/tower%20cam">). config cameras에 없는 이름은 404.
