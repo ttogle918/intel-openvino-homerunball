@@ -1,7 +1,9 @@
 """실제 로봇 (physicalai 0.3.x). DrySkills와 같은 인터페이스.
 
 RobotRuntime 하나를 시작할 때 연결해 두고, run()마다 동작 출처(Switch.active)를 바꿔 낀다:
-정책 A(oranda_pickup) · 정책 B(dori_dori) · MoveSource(자세 이동).
+정책 A(oranda_pickup) · 정책 B(dori_dori) · MoveSource(자세 이동, 코드 도리도리).
+- dori_dori: skills.dori_dori.source = auto(모델이 있으면 정책, 없으면 코드) | policy | script.
+  코드 도리도리는 홈에서 한 관절만 ±amplitude를 오가는 MoveSource 키프레임이다 (정책 phase처럼 실행 기록).
 - 정지: run(stop_event=StopAny(...))로 다음 틱에 멈춘다.
 - 비상정지: 런타임을 끊지 않는다 → 서보가 마지막 목표를 토크 켠 채 유지한다.
   estop()마다 세대 번호가 올라가, release_estop()이 바로 끼어도 진행 중이던 run은 estop으로 끝난다.
@@ -11,6 +13,7 @@ RobotRuntime 하나를 시작할 때 연결해 두고, run()마다 동작 출처
 python -m snackbot.robot oranda_pickup | dori_dori | home   # 스킬 하나만 실행 (현장 점검용)
 """
 import logging
+import math
 import threading
 import time
 from pathlib import Path
@@ -21,13 +24,78 @@ from .config import load_calibration
 from .motion import GRIPPER, GripperWatch, MoveSource, StopAny, Switch, Tap, remap_frames
 from .recorder import RunRecorder
 from .skills import RunResult
+from .twin import JOINTS
 
 log = logging.getLogger(__name__)
 POLICIES = ("oranda_pickup", "dori_dori")
+DORI_SOURCES = ("auto", "policy", "script")
+DORI_MAX_AMPLITUDE = 30.0                 # 코드 도리도리 진폭 안전 상한 (normalized)
+DORI_SHAKE_S = (0.15, 3.0)                # 한쪽 시간 안전 범위(초): 아래는 속도 상한, 위는 경로 길이 상한
+DORI_MAX_SHAKES = 10
+DORI_DEFAULTS = {"joint": "shoulder_pan", "amplitude": 15, "shakes": 2, "shake_s": 0.35}
+BODY_JOINTS = JOINTS[:GRIPPER]            # 그리퍼를 뺀 몸통 관절 5개
 
 
 def _ms(t0):
     return int((time.monotonic() - t0) * 1000)
+
+
+def _finite(value, what):
+    """숫자(bool 제외)이고 유한하면 float, 아니면 SystemExit."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise SystemExit(f"config.yaml skills.dori_dori.script.{what}는 유한한 숫자여야 해요: {value!r}")
+    return float(value)
+
+
+def dori_settings(conf):
+    """skills.dori_dori.script → {joint(관절 번호), amplitude, shakes, shake_s}.
+    잘못된 값은 시작할 때 SystemExit. 진폭(<=30), 한쪽 시간(0.15~3초), 횟수(1~10)는 안전 범위로 자른다 (경고)."""
+    if conf is not None and not isinstance(conf, dict):
+        raise SystemExit(f"config.yaml skills.dori_dori.script는 {{joint, amplitude, shakes, shake_s}} 형태여야 해요: {conf!r}")
+    s = {**DORI_DEFAULTS, **(conf or {})}
+    if s["joint"] not in BODY_JOINTS:
+        raise SystemExit(f"config.yaml skills.dori_dori.script.joint는 {', '.join(BODY_JOINTS)} 중 하나예요: {s['joint']!r}")
+    amplitude, shake_s = _finite(s["amplitude"], "amplitude"), _finite(s["shake_s"], "shake_s")
+    shakes = s["shakes"]
+    if isinstance(shakes, bool) or not isinstance(shakes, int):
+        raise SystemExit(f"config.yaml skills.dori_dori.script.shakes는 정수여야 해요: {shakes!r}")
+    if amplitude <= 0 or shakes < 1 or shake_s <= 0:
+        raise SystemExit("config.yaml skills.dori_dori.script: amplitude > 0, shakes >= 1, shake_s > 0 이어야 해요")
+    if amplitude > DORI_MAX_AMPLITUDE:
+        log.warning("코드 도리도리 진폭 %.1f → %.0f로 자름 (안전 상한)", amplitude, DORI_MAX_AMPLITUDE)
+        amplitude = DORI_MAX_AMPLITUDE
+    if not DORI_SHAKE_S[0] <= shake_s <= DORI_SHAKE_S[1]:
+        clamped = min(max(shake_s, DORI_SHAKE_S[0]), DORI_SHAKE_S[1])
+        log.warning("코드 도리도리 shake_s %.2f → %.2f초로 자름 (안전 범위 %.2f~%.0f)", shake_s, clamped, *DORI_SHAKE_S)
+        shake_s = clamped
+    if shakes > DORI_MAX_SHAKES:
+        log.warning("코드 도리도리 shakes %d → %d로 자름 (안전 상한)", shakes, DORI_MAX_SHAKES)
+        shakes = DORI_MAX_SHAKES
+    return {"joint": BODY_JOINTS.index(s["joint"]), "amplitude": amplitude, "shakes": shakes, "shake_s": shake_s}
+
+
+def dori_source_setting(sk):
+    """skills.dori_dori.source (auto | policy | script). 모델을 로드하기 전에 값과 script 설정을 검사한다."""
+    dori = sk.get("dori_dori") or {}
+    source = dori.get("source") or "auto"
+    if source not in DORI_SOURCES:
+        raise SystemExit(f"config.yaml skills.dori_dori.source는 auto | policy | script 중 하나예요: {source}")
+    if source != "policy":
+        dori_settings(dori.get("script"))
+    return source
+
+
+def dori_keyframes(home, joint, amplitude, shakes):
+    """홈에서 joint만 +A, −A를 shakes번 오간 뒤 홈. 다른 관절은 홈 값, 값은 −100..100으로 자른다."""
+    home = np.asarray(home, np.float32)
+    frames = []
+    for _ in range(shakes):
+        for sign in (1, -1):
+            k = home.copy()
+            k[joint] = np.clip(home[joint] + sign * amplitude, -100, 100)
+            frames.append(k)
+    frames.append(home.copy())
+    return frames
 
 
 def load_so101():
@@ -57,7 +125,15 @@ def build_policies(cfg):
     """(policies, models). export_dir 폴더가 없는 정책은 로드하지 않고 경고만 한다 (모델이 아직 없는 경우)."""
     sk = cfg["skills"]
     found = {}
+    dori_source = dori_source_setting(sk)   # 잘못된 설정이면 모델을 로드하기 전에 끝낸다
+    if dori_source == "policy" and not Path(sk["dori_dori"]["export_dir"]).is_dir():
+        # 어떤 모델도 로드하기 전에 끝낸다 (oranda GPU 컴파일을 기다리지 않게)
+        raise SystemExit("skills.dori_dori.source가 policy인데 dori_dori 모델이 없어요: export_dir 폴더를 확인하거나 "
+                         "source를 auto(모델이 없으면 코드 도리도리) 또는 script로 바꾸세요.")
     for name in POLICIES:
+        if name == "dori_dori" and dori_source == "script":
+            log.info("dori_dori: source가 script라 정책을 로드하지 않아요 (코드 도리도리)")
+            continue
         export_dir = Path(sk[name]["export_dir"])
         if export_dir.is_dir():
             found[name] = export_dir
@@ -92,7 +168,21 @@ class RobotSkills:
             raise SystemExit(f"{', '.join(missing)} 없음: python -m tools.robot_probe save home / save lift 로 먼저 저장하세요.")
         if policies is None:
             policies, models = build_policies(cfg)
-        self.policies, self.models = policies, models or {}
+        policies, models = dict(policies), dict(models or {})
+        dori_cfg = sk.get("dori_dori") or {}
+        source = dori_source_setting(sk)
+        if source == "policy" and "dori_dori" not in policies:
+            raise SystemExit("skills.dori_dori.source가 policy인데 dori_dori 모델이 없어요: export_dir 폴더를 확인하거나 "
+                             "source를 auto(모델이 없으면 코드 도리도리) 또는 script로 바꾸세요.")
+        self.dori_source = "policy" if source != "script" and "dori_dori" in policies else "script"
+        self.dori = None
+        if self.dori_source == "script":   # 모델이 있어도 쓰지 않는다 (warmup도 하지 않는다)
+            self.dori = dori_settings(dori_cfg.get("script"))
+            policies.pop("dori_dori", None)
+            models.pop("dori_dori", None)
+            log.info("dori_dori: 코드 도리도리 (%s ±%.0f, %d번, 한쪽 %.2f초)", BODY_JOINTS[self.dori["joint"]],
+                     self.dori["amplitude"], self.dori["shakes"], self.dori["shake_s"])
+        self.policies, self.models = policies, models
         self.watch = None
         if "oranda_pickup" in self.policies:   # 그리퍼 기준값은 oranda_pickup이 있을 때만 필요
             gripper = sk["gripper"]
@@ -154,7 +244,7 @@ class RobotSkills:
     def run(self, name, on_phase=None):
         if name not in POLICIES:
             raise ValueError(f"알 수 없는 스킬: {name}")
-        if name not in self.policies:
+        if name not in self.policies and not (name == "dori_dori" and self.dori_source == "script"):
             raise RuntimeError(f"{name} 정책이 로드되지 않았어요 (config.yaml skills.{name}.export_dir 폴더 확인)")
         result = None
         try:
@@ -162,7 +252,10 @@ class RobotSkills:
             return result
         finally:
             try:
-                self.recorder.stop(result)   # 정책 phase를 기록했으면 결과와 함께 episode.json (백그라운드)
+                # 정책(또는 코드 도리도리) phase를 기록했으면 결과와 함께 episode.json (백그라운드)
+                folder = self.recorder.stop(result)
+                if result is not None and folder is not None:
+                    result.record = Path(folder).as_posix()
             except Exception as e:
                 log.warning("실행 기록 마무리 실패: %s", e)
 
@@ -171,6 +264,10 @@ class RobotSkills:
         gen = self._current_gen()
         if self.ensure_home(gen) == "estop":
             return RunResult("estop", False, _ms(t0))
+        if name == "dori_dori" and self.dori_source == "script":
+            if self._script_dori(gen) == "estop":
+                return RunResult("estop", False, _ms(t0))
+            return RunResult("script", False, _ms(t0))
         if name == "oranda_pickup":
             self.watch.reset()
             self.tap.watch = self.watch
@@ -206,6 +303,21 @@ class RobotSkills:
         finally:
             self.tap.recorder = None
 
+    def _script_dori(self, gen):
+        """코드 도리도리: 홈에서 한 관절만 ±amplitude를 shakes번 오간 뒤 홈 (끝 키프레임이 홈이라 도착만 확인한다).
+        정책 phase처럼 실행 기록에 남긴다. 결과: done | estop."""
+        d = self.dori
+        keyframes = dori_keyframes(self.home, d["joint"], d["amplitude"], d["shakes"])
+        self.recorder.start("dori_dori")
+        self.tap.recorder = self.recorder
+        try:
+            reason = self._move(keyframes, gen, segment_s=d["shake_s"])
+        finally:
+            self.tap.recorder = None
+        if reason == "timeout":   # 끝(홈)에 닿기 전에 시간이 다 됐다: 홈으로 마저 간다
+            reason = self._move([self.home], gen)
+        return reason
+
     def latest_joints(self):
         """3D 화면용 최근 관절값 (normalized 6개 list). 연결 전이면 None. 제어 스레드를 막지 않게 Tap 캐시만 복사한다."""
         with self.tap.lock:
@@ -223,9 +335,11 @@ class RobotSkills:
     def go_home(self):
         return self._move([self.home], self._current_gen())
 
-    def _move(self, targets, gen):
-        src = MoveSource(targets, self.move_s * self.fps)
-        result = self._phase(src, len(targets) * self.move_s + 2.0, gen, done=src.done)
+    def _move(self, targets, gen, segment_s=None):
+        """targets를 차례로 선형 보간 이동. 구간마다 segment_s초 (기본 skills.move_s)."""
+        seg = self.move_s if segment_s is None else float(segment_s)
+        src = MoveSource(targets, seg * self.fps)
+        result = self._phase(src, len(targets) * seg + 2.0, gen, done=src.done)
         if result == "done" and self._settle(targets[-1], gen) == "estop":
             return "estop"
         return result

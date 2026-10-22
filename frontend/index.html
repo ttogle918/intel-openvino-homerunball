@@ -116,9 +116,15 @@
     </section>
 
     <section class="ctrl">
-      <div class="ctrl-small">
-        <button class="btn btn-resume" id="btnResume" disabled>재개</button>
-        <button class="btn btn-restart" id="btnRestart" disabled>재시작</button>
+      <div class="ctrl-left">
+        <div class="ctrl-small">
+          <button class="btn btn-resume" id="btnResume" disabled>재개</button>
+          <button class="btn btn-restart" id="btnRestart" disabled>재시작</button>
+        </div>
+        <div class="ctrl-test" role="group" aria-label="스킬 테스트">
+          <span class="ctrl-test-label">스킬 테스트 · 1회 실행</span>
+          <div class="ctrl-test-btns" id="testBtns"></div>
+        </div>
       </div>
       <button class="btn-estop" id="btnEstop" disabled><span class="octo"></span><b>비상정지</b></button>
     </section>

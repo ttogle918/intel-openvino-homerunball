@@ -22,9 +22,10 @@ REPLAY_SKILLS = ("oranda_pickup", "dori_dori")
 
 @dataclass
 class RunResult:
-    stop_reason: str   # gripper_open | timeout | estop
+    stop_reason: str   # gripper_open | timeout | estop | script(코드 도리도리)
     grasped: bool
     ms: int
+    record: str | None = None   # 실행 기록 폴더 (실제 로봇에서 기록했을 때만, posix 경로)
 
 
 def _ms(t0):
@@ -101,7 +102,8 @@ class DrySkills:
             time.sleep(min(0.05, left))
 
     def go_home(self):
-        pass
+        """홈 복귀 흉내: act_s의 절반을 기다린다 (스킬 테스트 '홈으로'·재시작). 비상정지면 "estop"."""
+        return "done" if self._wait(self.act_s / 2) else "estop"
 
     def estop(self):
         self._estop.set()

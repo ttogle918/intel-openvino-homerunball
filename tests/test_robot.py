@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 
+import sys
 import threading
 
 import numpy as np
 import pytest
 
-from snackbot.robot import RobotSkills
+from snackbot.robot import RobotSkills, build_policies, dori_keyframes, dori_settings
 from snackbot.twin import load_episode
 
 POSES = {"home_pose": [0, 0, 0, 0, 0, 80], "lift_pose": [0, -20, 10, 0, 0, 80]}
@@ -476,3 +477,189 @@ def test_latest_joints_none_before_connect_then_cached_copy(rcfg):
     assert s.latest_joints() == POSES["home_pose"]
     s.run("dori_dori")
     assert s.latest_joints() == pytest.approx(POSES["home_pose"])
+
+
+# --- 코드 도리도리 ---
+def make_script(cfg, joints=POSES["home_pose"], policies=None):
+    """dori_dori 정책 없이 만든다 (source auto → 코드 도리도리)."""
+    robot, holder = FakeRobot(joints), {}
+
+    def make_runtime(switch, tap):
+        holder["rt"] = FakeRuntime(switch, tap, robot)
+        return holder["rt"]
+
+    s = RobotSkills(cfg, POSES, make_runtime=make_runtime,
+                    policies={"oranda_pickup": FakePolicy()} if policies is None else policies)
+    s.connect()
+    return s, holder["rt"], robot
+
+
+def test_dori_keyframes_shake_selected_joint_around_home():
+    home = [5, 1, 2, 3, 4, 80]
+    frames = dori_keyframes(home, 0, 15, 2)
+    assert [float(f[0]) for f in frames] == [20, -10, 20, -10, 5]
+    assert all(np.allclose(f[1:], home[1:]) for f in frames)   # 다른 관절은 홈 그대로
+
+
+def test_dori_keyframes_clamped_to_joint_range():
+    frames = dori_keyframes([90, 0, 0, 0, 0, 80], 0, 20, 1)
+    assert [float(f[0]) for f in frames] == [100, 70, 90]
+
+
+def test_dori_settings_defaults_cap_and_errors(caplog):
+    assert dori_settings(None) == {"joint": 0, "amplitude": 15.0, "shakes": 2, "shake_s": 0.35}
+    with caplog.at_level("WARNING"):
+        s = dori_settings({"joint": "wrist_roll", "amplitude": 50})
+    assert s["joint"] == 4 and s["amplitude"] == 30.0 and "30" in caplog.text
+    for bad in ({"joint": "gripper"}, {"joint": "elbow"}, {"amplitude": 0}, {"shakes": 0},
+                {"shake_s": -1}, {"amplitude": "big"}, {"amplitude": None}):
+        with pytest.raises(SystemExit):
+            dori_settings(bad)
+
+
+def test_dori_source_auto_uses_policy_when_loaded(rcfg):
+    s, rt, _ = make(rcfg)
+    assert s.dori_source == "policy" and s.dori is None
+    assert s.run("dori_dori").stop_reason == "timeout" and rt.runs == ["FakePolicy", "MoveSource"]
+
+
+def test_dori_source_auto_without_model_runs_script_from_home(rcfg):
+    s, rt, robot = make_script(rcfg)
+    assert s.dori_source == "script" and "dori_dori" not in s.policies
+    r = s.run("dori_dori")
+    assert (r.stop_reason, r.grasped) == ("script", False)
+    assert rt.runs == ["MoveSource"]                      # 이미 홈: 이동 없이 바로 스크립트 (끝 키프레임이 홈)
+    pan = [float(a[0]) for a in robot.history]
+    assert max(pan) == pytest.approx(15) and min(pan) == pytest.approx(-15)
+    steps = int(rcfg["skills"]["dori_dori"]["script"]["shake_s"] * s.fps)
+    assert len(robot.history) == 5 * steps               # 키프레임 5개 (+A −A +A −A 홈) × 구간 스텝
+    assert at(robot, POSES["home_pose"])
+
+
+def test_dori_source_script_ignores_loaded_policy(rcfg):
+    rcfg["skills"]["dori_dori"]["source"] = "script"
+    s, rt, _ = make(rcfg)
+    assert s.dori_source == "script" and "dori_dori" not in s.policies
+    assert s.run("dori_dori").stop_reason == "script" and rt.runs == ["MoveSource"]
+
+
+def test_dori_source_policy_without_model_or_unknown_source_exits(rcfg):
+    rcfg["skills"]["dori_dori"]["source"] = "policy"
+    with pytest.raises(SystemExit, match="source"):
+        make_script(rcfg)
+    rcfg["skills"]["dori_dori"]["source"] = "magic"
+    with pytest.raises(SystemExit, match="auto"):
+        make(rcfg)
+
+
+def test_build_policies_policy_without_dori_model_exits_before_any_load(rcfg, tmp_path):
+    oranda = tmp_path / "oranda"
+    oranda.mkdir()
+    rcfg["skills"]["oranda_pickup"]["export_dir"] = str(oranda)       # oranda 모델은 있다 (로드 대상)
+    rcfg["skills"]["dori_dori"].update(export_dir=str(tmp_path / "none"), source="policy")
+    sys.modules.pop("physicalai", None)
+    with pytest.raises(SystemExit, match="dori_dori"):
+        build_policies(rcfg)
+    assert "physicalai" not in sys.modules                           # 어떤 모델도 로드하기 전에 끝났다
+
+
+def test_build_policies_skips_dori_model_when_source_is_script(rcfg, tmp_path):
+    export = tmp_path / "dori"
+    export.mkdir()
+    rcfg["skills"]["dori_dori"].update(export_dir=str(export), source="script")
+    rcfg["skills"]["oranda_pickup"]["export_dir"] = str(tmp_path / "none")
+    assert build_policies(rcfg) == ({}, {})              # 폴더가 있어도 로드하지 않는다
+    assert "physicalai" not in sys.modules
+
+
+def test_script_dori_needs_no_gripper_values(cfg):
+    cfg["skills"]["gripper"]["grasp_min"] = None
+    s = RobotSkills(cfg, POSES, make_runtime=lambda sw, t: None, policies={})
+    assert s.dori_source == "script" and s.watch is None
+
+
+def test_script_dori_moves_home_first_when_away(rcfg):
+    s, rt, robot = make_script(rcfg, joints=[30, 0, 0, 0, 0, 80])
+    assert s.run("dori_dori").stop_reason == "script"
+    assert rt.runs == ["MoveSource", "MoveSource"] and at(robot, POSES["home_pose"])
+
+
+def test_estop_during_script_dori_stops_without_home(rcfg):
+    s, rt, robot = make_script(rcfg)
+    tick = s.tap.on_tick
+
+    def on_tick(event):
+        tick(event)
+        if len(robot.history) == 7:
+            s.estop()
+
+    s.tap.on_tick = on_tick
+    assert s.run("dori_dori").stop_reason == "estop"
+    assert rt.runs == ["MoveSource"] and len(robot.history) == 7   # 다음 틱에 멈추고 홈으로 가지 않는다
+    assert rt.connected
+
+
+def test_script_dori_phase_is_recorded(rcfg):
+    s, _, robot = make_script(rcfg)
+    r = s.run("dori_dori")
+    s.recorder.wait(5)
+    ep = load_episode(s.recorder.last_folder)
+    assert ep["skill"] == "dori_dori" and len(ep["joints"]) == len(robot.history)
+    assert ep["stop_reason"] == "script" and r.record == s.recorder.last_folder.as_posix()
+    assert s.tap.recorder is None
+
+
+def test_run_result_record_only_when_recorded(rcfg):
+    s, _, _ = make(rcfg)
+    r = s.run("dori_dori")
+    assert r.record == s.recorder.last_folder.as_posix()
+    rcfg["recording"]["enabled"] = False
+    s2, _, _ = make(rcfg)
+    assert s2.run("dori_dori").record is None
+
+
+def test_dori_settings_rejects_unsafe_values(caplog):
+    bad = ({"shake_s": 0}, {"shake_s": float("inf")}, {"shake_s": float("nan")}, {"amplitude": float("nan")},
+           {"amplitude": float("inf")}, {"amplitude": True}, {"shakes": 2.9}, {"shakes": True}, {"shakes": "2"},
+           {"joint": 0}, {"joint": None})
+    for conf in bad:
+        with pytest.raises(SystemExit):
+            dori_settings(conf)
+    for script in ("shoulder_pan", ["joint"], 3):
+        with pytest.raises(SystemExit):
+            dori_settings(script)
+
+
+def test_dori_settings_clamps_speed_and_length(caplog):
+    with caplog.at_level("WARNING"):
+        s = dori_settings({"shake_s": 0.01, "shakes": 100})
+    assert s["shake_s"] == 0.15 and s["shakes"] == 10 and "0.15" in caplog.text
+    assert dori_settings({"shake_s": 1e5})["shake_s"] == 3.0
+    assert dori_settings({"shake_s": 0.15, "shakes": 10})["shakes"] == 10
+
+
+def test_bad_dori_script_config_exits_before_loading_models(rcfg, tmp_path):
+    export = tmp_path / "dori"
+    export.mkdir()
+    rcfg["skills"]["dori_dori"].update(export_dir=str(export), source="script", script={"shake_s": float("nan")})
+    rcfg["skills"]["oranda_pickup"]["export_dir"] = str(tmp_path / "none")
+    with pytest.raises(SystemExit, match="shake_s"):
+        build_policies(rcfg)
+    assert "physicalai" not in sys.modules
+    rcfg["skills"]["dori_dori"].update(source="magic", script={})
+    with pytest.raises(SystemExit, match="auto"):
+        build_policies(rcfg)
+
+
+def test_script_dori_goes_home_after_timeout(rcfg, monkeypatch):
+    s, rt, robot = make_script(rcfg)
+    calls = []
+    real = s._move
+
+    def fake_move(targets, gen, segment_s=None):
+        calls.append(len(targets))
+        return "timeout" if len(calls) == 1 and segment_s else real(targets, gen, segment_s)
+
+    monkeypatch.setattr(s, "_move", fake_move)
+    assert s._script_dori(s._current_gen()) == "done"
+    assert calls == [5, 1] and at(robot, POSES["home_pose"])

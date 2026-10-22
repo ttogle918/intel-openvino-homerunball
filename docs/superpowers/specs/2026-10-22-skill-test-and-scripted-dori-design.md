@@ -1,6 +1,8 @@
 # 설계: UI 스킬 1회 실행(추론 테스트) · 코드 도리도리
 
-작성 2026-10-22. 상태: **설계 확정, 구현 전**. 기존 기준: `2026-10-22-chat-ui-design.md`(상태·명령), `2026-10-22-digital-twin-design.md`(4분할·재생·실행 기록), M4 구현 결정(chat-ui-design 11.6절).
+작성 2026-10-22. 상태: **구현 완료 (2026-10-23)**. 기존 기준: `2026-10-22-chat-ui-design.md`(상태·명령), `2026-10-22-digital-twin-design.md`(4분할·재생·실행 기록), M4 구현 결정(chat-ui-design 11.6절).
+
+구현 계획: `docs/superpowers/plans/2026-10-22-skill-test.md`.
 
 ## 1. 목표
 
@@ -94,3 +96,31 @@ skills:
 ## 7. 현장 확인
 - 코드 도리도리 진폭·속도는 실제 팔에서 작게 시작해 조정 (`amplitude` 10 → 15 → 20).
 - 오란다 1회 테스트로 `grasp_min`, `closed_below`, `open_above`, `max_time_s`가 맞는지 보고 조정.
+
+## 8. 추가 (2026-10-22, 사용자 요청): LLM이 도리도리를 도구로 호출
+
+- 대화 LLM이 **채팅 의도(intent)로 도리도리를 고를 수 있다.** 대화 체인(Claude → NVIDIA → 규칙)의 모든 provider에서 같게 동작하도록 Anthropic tool-use API가 아니라 기존 JSON intent 방식을 쓴다 (절대 규칙 3: LLM 출력은 허용된 값만).
+  - `allowed_intents("IDLE")` = `["start_task", "chat", "dori_dori"]` (그 밖의 상태에는 넣지 않는다).
+  - `CHAT_SYSTEM` 프롬프트에 도구 설명 한 줄: `dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)`.
+  - LLM 실패 시 키워드 fallback: `도리도리`, `고개 저어`, `고개를 저어` → `dori_dori` (IDLE에서만).
+  - LLM이 `dori_dori`를 골라도 상태가 IDLE이 아니면 무시되고 chat으로 처리된다 (기존 허용 목록 규칙).
+- **실행 경로는 버튼과 하나:** `controller.chat`에서 intent가 `dori_dori`면 대사를 낸 뒤 `command("test", skill="dori_dori")`와 같은 내부 경로(`_request_test`)로 1회 실행한다. 즉 TESTING 상태, 대기 상태에서만, 횟수·피로도 미반영, 결과 시스템 메시지, 비상정지 즉시 — 버튼과 완전히 같다.
+- 결과 메시지의 출처 표시: 버튼은 `테스트 · …`, LLM은 `도리도리 · …`.
+- 테스트: brain(IDLE 허용 목록, 다른 상태에서 무시, 키워드 fallback), controller(chat → 1회 실행 → IDLE 복귀, 다른 상태에서는 실행 안 함), 프롬프트에 도구 설명 포함.
+
+## 9. 구현 결정 (계획에서 정한 것)
+
+- 코드 도리도리의 끝 키프레임이 홈이므로 따로 홈 이동(move_s)을 하지 않고 도착만 확인한다(`_settle`). 시간이 다 돼 홈에 못 닿았을 때만 홈 이동.
+- `source: script`면 dori_dori 모델을 아예 로드하지 않는다 (시작 시간·warmup 절약). `script.joint`는 그리퍼를 뺀 몸통 관절 5개 중 하나. 잘못된 `source`·`script` 값은 시작할 때 SystemExit. 검증: `shake_s`는 0.15~3초로 제한, `shakes`는 정수 1~10, `amplitude`는 0보다 크고 30 상한(넘으면 경고 후 30), 숫자가 아니거나 NaN·무한대면 SystemExit (모델 로드 전에 검사).
+- `RunResult.record`: 실행 기록 폴더(posix 경로). 결과 메시지의 `기록 …`에 쓴다.
+- TESTING에 들어가는 순간(요청 수락) 세션 번호를 올린다. 비상정지는 아직 시작 안 한 테스트 요청을 버린다.
+- 스킬이 스스로 `estop`으로 끝나면(예: Ctrl+C) 상태도 ESTOP (사이클과 같다).
+- `홈으로` 테스트의 단계는 `returning`만 (재생 없음). `오란다 1회`·`도리도리 1회`는 `acting`부터.
+- DrySkills.go_home은 `act_s/2` 기다리고 `done | estop`을 돌려준다 (dry-run 재시작도 그만큼 걸린다).
+- TESTING 중 채팅은 대답만(허용 intent `chat`, 대사 "지금 테스트 중이에요. 끝나면 시켜 주세요!"). `s`·`r`·UI 시작/재개는 시스템 메시지 "테스트 중이에요. 끝난 뒤 다시 시켜 주세요".
+- LLM 도리도리는 채팅을 접수한 순간의 세션 번호로 요청한다 (LLM을 기다리는 사이 비상정지·재시작이 끼면 취소). DONE에서는 허용하지 않는다 (IDLE만).
+- 키워드 fallback에서 `start_task`가 `dori_dori`보다 우선한다 ("도리도리 하지 말고 옮겨줘" → 작업 시작). 사용자 결정.
+- 결과 문구: 버튼 `테스트 · <이름>: <결과> · [쥠 성공|쥠 없음 ·] <초>초[ · 기록 <폴더>]` (`<이름>`은 target 이름 · 도리도리 · 홈으로, 쥠은 오란다만), LLM `도리도리 · <결과> · …`, 예외는 둘 다 `테스트 실패: <오류>`. 결과 이름: 놓기 감지로 끝남 / 시간 초과로 끝남 / 비상정지로 멈춤 / 코드 동작 완료 / 완료.
+- JSONL 테스트 줄: `{"ts","type":"test","skill","origin":"button|llm","stop_reason"(예외면 "error"),"grasped","ms","record","error"}`. 사이클 번호·`cycle` 이벤트 없음. 사이클 줄은 그대로 (`type` 없음).
+- 버튼 이름표: `<target 이름> 1회` · `도리도리 1회` · `홈으로` (`info.tests`). dry-run은 모두 활성.
+- 화면: 제어 칸을 넓혀 재개·재시작을 한 줄로, 그 아래 스킬 테스트 줄. 테스트 중 단계 표시줄은 옮기기·복귀만, acting 단계 이름은 "실행 중".

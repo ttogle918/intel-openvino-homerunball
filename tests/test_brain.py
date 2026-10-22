@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from conftest import FirstRng
 from snackbot.brain import (
@@ -88,11 +89,12 @@ def test_parse_json():
 
 
 def test_allowed_intents():
-    assert allowed_intents("IDLE") == ["start_task", "chat"]
+    assert allowed_intents("IDLE") == ["start_task", "chat", "dori_dori"]
     assert allowed_intents("DONE") == ["start_task", "chat"]
     assert allowed_intents("REFUSING") == ["resume", "chat"]
     assert allowed_intents("WORKING") == ["chat"]
     assert allowed_intents("ESTOP") == ["chat"]
+    assert allowed_intents("TESTING") == ["chat"]
 
 
 def test_keyword_intent():
@@ -203,3 +205,46 @@ def test_no_history_unchanged_and_default_persona(cfg):
     b.chat("d", "IDLE", 0)
     m = _sent(b)
     assert [x["role"] for x in m] == ["system", "user"] and "보리" in m[0]["content"]
+
+
+def test_keyword_dori_only_when_allowed():
+    idle = allowed_intents("IDLE")
+    for text in ("도리도리 해 봐", "고개 저어 봐", "고개를 저어 줘"):
+        assert keyword_intent(text, idle) == "dori_dori"
+    assert keyword_intent("도리도리 해 봐", allowed_intents("WORKING")) == "chat"
+    assert keyword_intent("도리도리 해 봐", allowed_intents("DONE")) == "chat"
+
+
+def test_chat_rules_dori_in_idle_only_and_testing_line(cfg):
+    b = make(cfg)
+    assert b.chat("도리도리 해 봐", "IDLE", 0) == {"intent": "dori_dori", "say": "도리도리~ 이렇게요?",
+                                                "n": None, "source": "rules"}
+    assert b.chat("도리도리 해 봐", "WORKING", 1)["intent"] == "chat"
+    r = b.chat("옮겨줘", "TESTING", 0)
+    assert r["intent"] == "chat" and r["say"] == "지금 테스트 중이에요. 끝나면 시켜 주세요!"
+
+
+def test_chat_llm_dori_tool_only_in_idle(cfg):
+    r = make(cfg, '{"intent": "dori_dori", "say": "싫어요~", "n": null}').chat("너 싫지?", "IDLE", 0)
+    assert r == {"intent": "dori_dori", "say": "싫어요~", "n": None, "source": "fake"}
+
+
+@pytest.mark.parametrize("state", ["DONE", "WORKING", "REFUSING", "TESTING", "ESTOP"])
+def test_chat_llm_dori_ignored_outside_idle(cfg, state):
+    assert "dori_dori" not in allowed_intents(state)
+    r = make(cfg, '{"intent": "dori_dori", "say": "싫어요~", "n": null}').chat("너 싫지?", state, 2)
+    assert r["intent"] == "chat" and r["say"] == "싫어요~"
+
+
+def test_keyword_start_beats_dori():
+    idle = allowed_intents("IDLE")
+    assert keyword_intent("도리도리 하지 말고 옮겨줘", idle) == "start_task"
+    assert keyword_intent("도리도리 그만하고 시작해", idle) == "start_task"
+
+
+def test_chat_prompt_describes_dori_tool(cfg):
+    fake = Scripted('{"intent": "chat", "say": "네", "n": null}')
+    Brain(cfg, chain=Chain([Member("f", fake)]), rng=FirstRng()).chat("안녕", "IDLE", 0)
+    system = fake.messages[0]["content"]
+    assert "- dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)" in system
+    assert json.loads(fake.messages[-1]["content"])["allowed"] == ["start_task", "chat", "dori_dori"]

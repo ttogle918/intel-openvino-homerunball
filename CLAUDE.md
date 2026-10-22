@@ -14,13 +14,13 @@
 |---|---|---|
 | 인식 | 끝·성공 판정 | B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (YOLO-World/VLM/OpenCV) |
 | 판단 | 다음 행동과 대사, 채팅 의도 | 코드 가드 + LLM (provider 체인), TTS 출력 |
-| 행동 | 동작 실행 | ACT 정책 2개 (OpenVINO): `oranda_pickup`, `dori_dori` |
+| 행동 | 동작 실행 | ACT 정책 2개 (OpenVINO): `oranda_pickup`, `dori_dori` (모델이 없으면 코드 도리도리) |
 
 ## 절대 규칙
 1. **횟수는 코드가 센다.** LLM은 프롬프트로 받은 숫자를 해석만 한다.
 2. **ACT 정책 하나 = 동작 하나.** ACT는 기억이 없으므로 순서·횟수는 controller가 관리한다.
 3. **LLM 출력은 허용된 값만.** skill은 `oranda_pickup | dori_dori | done`, 채팅 intent는 상태별 허용 목록
-   (`start_task | chat | resume`) 안에서만. 벗어나면 규칙으로 결정한다.
+   (`start_task | chat | resume | dori_dori`) 안에서만. 벗어나면 규칙으로 결정한다. `dori_dori`(도리도리 1회)는 대기 상태에서만.
 4. **STT는 UI 🎤 누르고 말하기.** 인식된 문장은 채팅과 같은 경로(`controller.chat`)로 들어간다.
 5. **파인튜닝 없음.** 개수 세기는 제로샷(YOLO-World 텍스트 클래스, VLM)과 OpenCV. 외부에서 받은 OpenVINO 검출 모델은 같은 자리에 꽂을 수 있다.
 6. **physicalai / LeRobot 코어 수정 금지.** 설치된 버전의 API를 확인하고 그대로 사용한다.
@@ -32,6 +32,7 @@
 ## 문서
 - `docs/superpowers/specs/2026-10-22-chat-ui-design.md` — **현재 설계 기준** (아래 문서와 충돌하면 이 문서 우선)
 - `docs/superpowers/specs/2026-10-22-digital-twin-design.md` — 4분할 화면·3D 트윈·녹화 재생·실행 기록 (UI·트윈 부분은 위 문서보다 우선)
+- `docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md` — 스킬 1회 실행(TESTING)·코드 도리도리·LLM 도리도리
 - `docs/UI_DESIGN_PROMPT.md` — Claude Design 프롬프트 + 서버 연동 계약
 - `docs/ARCHITECTURE.md` — 전체 구조, 시퀀스, 상태, 모듈 다이어그램 (Mermaid)
 - `docs/DECISION_LOGIC.md` — 횟수 가드 규칙, LLM 프롬프트, JSON 스키마, fallback
@@ -49,7 +50,7 @@
 ├── snackbot/           # 파이썬 패키지 (하위 폴더 없음)
 │   ├── __main__.py     # 진입점: --dry-run, --no-ui
 │   ├── config.py       # config.yaml + .env 로드
-│   ├── controller.py   # 상태 머신 IDLE/WORKING/REFUSING/DONE/ESTOP, 루프 스레드, 명령
+│   ├── controller.py   # 상태 머신 IDLE/WORKING/REFUSING/DONE/ESTOP/TESTING, 루프 스레드, 명령
 │   ├── server.py       # FastAPI: /ws, /stt, /stream/{cam}, /api/replay/{skill}, /replays, frontend/ 서빙
 │   ├── providers.py    # openai_compat / anthropic / openvino 어댑터 + fallback 체인
 │   ├── brain.py        # decide() 작업 판단, chat() 의도·대사
@@ -118,3 +119,5 @@ cp .env.example .env                                      # 쓸 API 키만 채�
 | `space` | 비상정지 |
 | `h` | 재시작 (비상정지 해제 → 홈 복귀 → 대기) |
 | `q` | 종료 |
+
+UI에는 **스킬 테스트** 버튼(`오란다 1회` · `도리도리 1회` · `홈으로`)도 있다. 대기 상태에서만 눌리고, 실제 로봇이면 진짜 팔이 움직인다 (콘솔 키는 없다). 채팅·🎤 "도리도리 해 봐"도 같은 1회 실행이다.

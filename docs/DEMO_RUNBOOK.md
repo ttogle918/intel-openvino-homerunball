@@ -88,6 +88,26 @@ gantt
 - [ ] `.venv/bin/python -m snackbot` 화면에서 3D 팔이 실제 팔을 따라 움직이는지 본다 (`robot.calibration` 파일이 있으면 그 범위로 변환)
 - [ ] 관절이 반대로 돌면 `twin.sign`의 그 자리를 `-1`, 영점이 어긋나면 `twin.offset_deg`(도)로 맞춘다. 순서: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper. (URDF 0 라디안이 SO101 tick 2048과 맞는지는 현장에서 처음 확인한다)
 
+## 2-4. 스킬 1회 실행 · 코드 도리도리 (설계: `docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md`)
+
+화면 아래 제어 칸의 **스킬 테스트** 줄: `오란다 1회` · `도리도리 1회` · `홈으로`. **대기 상태에서만** 눌린다.
+- 실제 로봇 모드(`python -m snackbot`)에서는 **진짜 팔이 움직인다** (정책을 실제로 추론). 누르기 전에 팔 주변을 비운다. 비상정지(space·UI)는 테스트 중에도 즉시 → `재시작`(`h`)으로 대기 복귀
+- 결과는 채팅창 시스템 메시지 한 줄: `테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초 · 기록 logs/runs/…` (실행 기록이 꺼져 있으면 기록 경로는 없다). 횟수·피로도·성공률에는 들어가지 않고, `logs/cycles-*.jsonl`에 `"type": "test"`로 남는다 (발표 통계에서 빼기 쉽게)
+- 모델이 없는 정책의 버튼은 꺼져 있다 (마우스를 올리면 "모델 없음"). dry-run에서는 같은 버튼이 녹화 재생으로 대신한다
+- 채팅·🎤로 "도리도리 해 봐" (대기 중)도 같은 1회 실행이다. 결과 메시지는 `도리도리 · …`
+- 테스트 중에는 채팅 작업 지시·`s`·`r`이 거부된다 ("테스트 중이에요")
+- 한 문장에 둘 다 있으면 작업 시작이 먼저다: "도리도리 하지 말고 옮겨줘"는 도리도리가 아니라 작업 시작 (키워드 fallback 기준. 사용자 결정)
+
+**코드 도리도리** — `skills.dori_dori.source`가 `auto`이고 dori_dori 모델 폴더가 없으면, 또는 `script`면 코드가 홈 자세에서 `script.joint`(기본 몸통 `shoulder_pan`)만 좌우로 흔든다
+- [ ] 처음엔 작게: `amplitude` 10 → 15 → 20 (홈 기준 normalized, **최대 30**, 넘으면 경고 후 30). `shake_s`(한쪽으로 가는 시간, 초, 0.15~3으로 제한)는 0.35에서 시작해 너무 빠르면 늘린다. `shakes`는 왕복 횟수 (정수 1~10). 숫자가 아니거나 NaN·무한대면 모델을 로드하기 전에 시작이 멈춘다
+- [ ] 확인: `.venv/bin/python -m snackbot.robot dori_dori` → `RunResult(stop_reason='script', ...)` 뒤 홈. 또는 UI `도리도리 1회`
+- [ ] 화면 '제어' 칸에 `· 도리도리: 코드 동작`이 보이면 코드 도리도리다
+- [ ] 모델을 꼭 쓰려면 `source: policy` (모델 폴더가 없으면 시작할 때 안내와 함께 멈춘다). 모델이 있어도 코드 도리도리를 쓰려면 `source: script` (모델을 로드하지 않아 시작이 빨라진다)
+
+**오란다 1회로 그리퍼 기준값 맞추기 (과자 모델이 나오면)**
+- [ ] `오란다 1회` 결과가 `놓기 감지로 끝남 · 쥠 성공`인지 본다
+- [ ] `시간 초과로 끝남`이면 `skills.gripper.open_above`·`closed_below`·`open_hold_s` 또는 `skills.oranda_pickup.max_time_s`를, 과자를 쥐었는데 `쥠 없음`이면 `grasp_min`을 조정한다 (`python -m tools.robot_probe watch` 값 참고)
+
 ## 3. 진행자 대본 예시
 1. "이 로봇은 과자 공장 직원입니다. 오란다만 골라내요." → 시작
 2. 1~3회: 로봇이 옮기면서 점점 투덜댐
@@ -105,6 +125,8 @@ gantt
 | LLM 응답이 느림 | 디바이스 부하 | 더 작은 모델 또는 fallback 대사 모드 |
 | 대사가 안 나옴 | 오디오 장치 | 콘솔 대사를 화면에 띄워 대체 |
 | 로봇 이상 동작 | — | **space 비상정지** (UI 비상정지 버튼도 같음) → `h` 또는 UI 재시작 (홈 복귀 후 대기) → 채팅으로 다시 시작 |
+| 도리도리 정책이 이상하게 움직임 | 학습 부족, 카메라 위치 | `config.yaml` `skills.dori_dori.source: script` (코드 도리도리, 2-4절) |
+| 스킬 테스트 버튼이 안 눌림 | 대기 상태가 아님, 모델 없음 | 작업이 끝나거나 비상정지 → 재시작 뒤 대기에서. 꺼진 버튼은 모델 폴더(`export_dir`) 확인 |
 | 카메라 칸이 "카메라 없음" | 장치 번호가 바뀜, 다른 프로그램이 점유 | Studio 닫기, `python -m tools.cameras`로 확인 후 `cameras.<이름>.device` (시리얼 권장) |
 | 3D 칸이 "3D 없음" | `frontend/vendor/`·`frontend/twin/so101/` 파일 누락, WebGL 꺼짐 | 브라우저 콘솔 확인. 나머지 화면·로봇은 그대로 동작 |
 | 로봇·카메라가 안 됨 | 하드웨어 문제 | `python -m snackbot --dry-run`: 옮기기·도리도리 차례에 녹화 재생 (2-3절 녹화 받기) |

@@ -2,6 +2,8 @@
 
 한 사이클(step): (A단계면 개수 세기) → brain.decide → 대사 → 스킬 실행 → 성공 판정.
 성공 판정: A단계면 개수 감소, 아니면(또는 counter 실패 시) 그리퍼 쥠(grasped).
+스킬 테스트(TESTING): command("test", skill=)는 대기(IDLE)에서만 받아 요청 슬롯에 넣고, 루프 스레드가 step_test()로
+한 번 실행한다. 횟수·피로도·사이클 통계에는 넣지 않는다 (설계: docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md).
 """
 import json
 import logging
@@ -12,10 +14,21 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-IDLE, WORKING, REFUSING, DONE, ESTOP = "IDLE", "WORKING", "REFUSING", "DONE", "ESTOP"
+IDLE, WORKING, REFUSING, DONE, ESTOP, TESTING = "IDLE", "WORKING", "REFUSING", "DONE", "ESTOP", "TESTING"
+TEST_SKILLS = ("oranda_pickup", "dori_dori", "home")
+TEST_LABELS = {"dori_dori": "도리도리", "home": "홈으로"}   # oranda_pickup은 target 이름
+STOP_REASON_KO = {"gripper_open": "놓기 감지로 끝남", "timeout": "시간 초과로 끝남", "estop": "비상정지로 멈춤",
+                  "script": "코드 동작 완료", "done": "완료"}
 
 
 _RESTART_CANCELED = "재시작이 취소됐어요: 그 사이 비상정지가 들어왔어요"
+_TEST_BUSY = "테스트 중이에요. 끝난 뒤 다시 시켜 주세요"
+_TEST_CANCELED = "테스트가 취소됐어요: 그 사이 비상정지나 상태 변경이 있었어요"
+_TEST_REFUSED = {WORKING: "작업 중에는 스킬 테스트를 할 수 없어요",
+                 REFUSING: "거부 중에는 스킬 테스트를 할 수 없어요. 재개하거나 재시작한 뒤에 하세요",
+                 DONE: "작업을 마무리하는 중이에요. 잠시 뒤 다시 눌러 주세요",
+                 ESTOP: "비상정지 중이에요. 재시작한 뒤 테스트하세요",
+                 TESTING: "이미 테스트 중이에요"}
 
 
 def _ms(t0):
@@ -25,6 +38,7 @@ def _ms(t0):
 class Controller:
     def __init__(self, cfg, brain, skills, vision=None, voice=None, log_dir=None, clock=time.time):
         self.decision = cfg["decision"]
+        self.target_name = cfg["target"]["name"]
         self.initial_count = cfg["target"]["initial_count"]
         self.camera = cfg["vision"].get("camera", "front")
         sync = (cfg.get("voice") or {}).get("sync_timeout_s")
@@ -34,6 +48,7 @@ class Controller:
         self._run_idle.set()
         self._restart_wait_hook = None  # 테스트용: 재시작이 동작 종료를 기다리기 시작할 때 부른다
         self._gen = 0  # 세션 번호: estop/start/resume/restart 때 올라간다 (이전 세션의 결정을 버리는 용도)
+        self._pending_test = None  # (skill, gen, origin, say): 루프 스레드가 step_test()로 꺼내 실행한다
         self.brain, self.skills, self.voice, self.clock = brain, skills, voice, clock
         self.vision = vision if vision is not None and vision.enabled else None
         self.state, self.phase = IDLE, "idle"
@@ -96,8 +111,14 @@ class Controller:
             hist = list(self.history)  # 현재 발화를 넣기 전 스냅샷 (brain이 현재 발화는 따로 붙인다)
         self._message("user", text, source)
         with self._lock:
-            state, count = self.state, self.count
+            state, count, gen = self.state, self.count, self._gen
         r = self.brain.chat(text, state, count, history=hist)
+        if r["intent"] == "dori_dori":
+            # 버튼과 같은 경로 (대기 상태에서만, 횟수·피로도 미반영). LLM을 기다리는 사이 세션이 바뀌었으면 취소.
+            # 거부되면 대사 없이 거부 이유만 남는다
+            # 대사는 job에 실어 루프 스레드(step_test)가 내고, 소리가 시작된 뒤 움직인다 (사이클과 같다)
+            self._request_test("dori_dori", expect_gen=gen, origin="llm", say=r["say"])
+            return
         self._message("robot", r["say"])
         if r["intent"] == "start_task":
             self._start_task(r.get("n"))
@@ -109,7 +130,7 @@ class Controller:
         with self._lock:
             return self._gen
 
-    def command(self, name, expect_gen=None):
+    def command(self, name, expect_gen=None, skill=None):
         if name == "start":
             self._start_task(None, announce=True)
         elif name == "resume":
@@ -121,6 +142,8 @@ class Controller:
                 self._restart()
             else:
                 self._restart(expect_gen)
+        elif name == "test":
+            return self._request_test(skill, expect_gen=expect_gen)
         elif name == "quit":
             self.stop()
         else:
@@ -128,14 +151,19 @@ class Controller:
 
     def _start_task(self, n, announce=False):
         with self._lock:
-            if self.state not in (IDLE, DONE):
+            busy = self.state == TESTING
+            if not busy and self.state not in (IDLE, DONE):
                 return False
-            self._gen += 1
-            self.remaining = n or self.initial_count
-            self.count = self.retries = 0
-            self.skill, self.vision_method, self.last_boxes = None, "estimate", None
-            self.state, self.phase = WORKING, "idle"
-            self.skills.new_task(self.remaining)
+            if not busy:
+                self._gen += 1
+                self.remaining = n or self.initial_count
+                self.count = self.retries = 0
+                self.skill, self.vision_method, self.last_boxes = None, "estimate", None
+                self.state, self.phase = WORKING, "idle"
+                self.skills.new_task(self.remaining)
+        if busy:
+            self.notify(_TEST_BUSY)
+            return False
         if announce:
             self._message("robot", self.brain.line("start"))
         self._publish()
@@ -144,14 +172,19 @@ class Controller:
 
     def _resume(self, announce=False):
         with self._lock:
-            if self.state == REFUSING:
-                self.count = 0
-                self.state = WORKING
-            elif not (self.state == WORKING and self.phase == "waiting_operator"):
-                return False
-            self._gen += 1
-            self.retries = 0
-            self.phase = "idle"
+            busy = self.state == TESTING
+            if not busy:
+                if self.state == REFUSING:
+                    self.count = 0
+                    self.state = WORKING
+                elif not (self.state == WORKING and self.phase == "waiting_operator"):
+                    return False
+                self._gen += 1
+                self.retries = 0
+                self.phase = "idle"
+        if busy:
+            self.notify(_TEST_BUSY)
+            return False
         if announce:
             self._message("robot", self.brain.line("resume"))
         self._publish()
@@ -164,6 +197,7 @@ class Controller:
             already = self.state == ESTOP
             self._gen += 1
             self.state, self.phase = ESTOP, "idle"  # 이미 ESTOP이면 진행 중인 재시작도 중단
+            self._pending_test = None  # 아직 시작 안 한 스킬 테스트는 버린다
         self.skills.estop()  # 상태 기록 뒤 한 번 더: 재시작의 release_estop과 겹쳐도 래치가 남는다
         if self.voice is not None:  # 락 밖: 비상정지 전의 남은 대사가 이어 나오지 않게 (재생 중인 한 문장은 끝까지)
             try:
@@ -223,6 +257,129 @@ class Controller:
         self._publish()
         return ok
 
+    # ---- 스킬 테스트 (TESTING) ----
+    def _request_test(self, skill, expect_gen=None, origin="button", say=None):
+        """스킬 1회 실행 요청. 대기(IDLE)이고 진행 중인 동작이 없을 때만 받는다.
+        expect_gen: 접수 순간의 세션 번호 (그 뒤 비상정지·재시작이 끼면 거부).
+        say: 있으면 루프 스레드가 말하고 소리가 시작된 뒤에 움직인다 (버튼은 없음 = 즉시). 실행은 루프 스레드(step_test)가 한다."""
+        if skill not in TEST_SKILLS:
+            raise ValueError(f"알 수 없는 테스트 스킬: {skill}")
+        with self._lock:
+            if self.state != IDLE:   # 상태 확인이 먼저: 두 번 누르면 "이미 테스트 중"
+                refused = _TEST_REFUSED.get(self.state, "대기 상태에서만 테스트할 수 있어요")
+            elif expect_gen is not None and self._gen != expect_gen:
+                refused = _TEST_CANCELED
+            elif not self._run_idle.is_set():
+                refused = "아직 동작이 끝나지 않았어요. 잠시 뒤 다시 눌러 주세요"
+            else:
+                refused = None
+                self._gen += 1
+                self._pending_test = (skill, self._gen, origin, say)
+                self.state, self.phase, self.skill = TESTING, "idle", skill
+        if refused:
+            log.info("스킬 테스트 거부 (%s): %s", skill, refused)
+            self.notify(refused)
+            return False
+        self._publish()
+        self._wake.set()
+        return True
+
+    def _testing(self, gen):
+        with self._lock:
+            return self.state == TESTING and self._gen == gen
+
+    def _set_test_phase(self, phase, gen):
+        with self._lock:
+            if self.state != TESTING or self._gen != gen:
+                return
+            self.phase = phase
+        self._publish()
+
+    def step_test(self):
+        """대기 중인 스킬 테스트 1회 (루프 스레드에서만 부른다).
+        없거나 접수 뒤 세션이 바뀌었으면 None, 아니면 stop_reason (예외면 "error")."""
+        with self._lock:
+            job, self._pending_test = self._pending_test, None
+            if job is None:
+                return None
+            skill, gen, origin, say = job
+            if self.state != TESTING or self._gen != gen:
+                return None
+            if not say:
+                self._run_idle.clear()  # 확인과 같은 락 안: 재시작이 그 사이로 끼어들지 못한다
+        if say:
+            # 락 밖에서 말하고 소리가 시작될 때까지 기다린다. 팔은 아직 안 움직이고 _run_idle은 set이라
+            # 비상정지·재시작은 이 대기를 기다리지 않는다 (세대가 바뀌면 0.1초 안에 빠져나온다)
+            try:
+                started = self._message("robot", say)
+            except Exception as e:
+                log.warning("테스트 대사 실패: %r", e)
+                started = None
+            self._wait_speech(started, gen, alive=lambda: self._testing(gen),
+                              on_wait=lambda: self._set_test_phase("speaking", gen))
+            with self._lock:
+                if self.state != TESTING or self._gen != gen or self._stop.is_set():
+                    return None
+                self._run_idle.clear()  # 재확인과 같은 락 안
+        t0 = time.monotonic()
+        stop_reason, grasped, record, error = None, None, None, None
+        try:
+            if skill == "home":
+                self._set_test_phase("returning", gen)
+                stop_reason = self.skills.go_home() or "done"
+            else:
+                self._set_test_phase("acting", gen)
+                r = self.skills.run(skill, on_phase=lambda phase: self._set_test_phase(phase, gen))
+                stop_reason, grasped, record = r.stop_reason, bool(r.grasped), getattr(r, "record", None)
+        except Exception as e:
+            log.warning("스킬 테스트 실패 (%s): %r", skill, e, exc_info=True)
+            error = e
+        finally:
+            self._run_idle.set()
+        ms = _ms(t0)
+        with self._lock:
+            current = self.state == TESTING and self._gen == gen
+            stale = not current and self.state != ESTOP   # 재시작이 먼저 끝났다: 지난 결과가 새 세션 화면을 덮지 않게
+            if current:
+                if stop_reason == "estop":  # 스킬 쪽에서 멈췄다 (예: Ctrl+C): 사이클과 같이 비상정지로 맞춘다
+                    self.state, self.phase = ESTOP, "idle"
+                else:
+                    self.state, self.phase, self.skill = IDLE, "idle", None
+        if stale:
+            log.info("테스트 결과 생략 (그 사이 세션이 바뀜): %s %s", skill, stop_reason)
+        elif error is not None:
+            self.notify(f"테스트 실패: {error}")
+        else:
+            self.notify(self._test_text(skill, origin, stop_reason, grasped, ms, record))
+        if current:
+            self._publish()
+        result = "error" if error is not None else stop_reason
+        self._log_test(skill, origin, result, grasped, ms, record, error)
+        return result
+
+    def _test_text(self, skill, origin, stop_reason, grasped, ms, record):
+        """결과 한 줄: 버튼 '테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초 · 기록 …', LLM '도리도리 · …'."""
+        how = STOP_REASON_KO.get(stop_reason, "알 수 없음" if stop_reason is None else str(stop_reason))
+        if skill == "dori_dori" and stop_reason == "timeout":
+            how = "정책 동작 완료"  # 정책 도리도리는 끝 신호가 없어 시간이 끝나는 것이 정상 종료다 (RunResult·로그는 원본)
+        label = self.target_name if skill == "oranda_pickup" else TEST_LABELS[skill]
+        parts = [f"{label} · {how}" if origin == "llm" else f"테스트 · {label}: {how}"]
+        if skill == "oranda_pickup":
+            parts.append("쥠 성공" if grasped else "쥠 없음")
+        parts.append(f"{ms / 1000:.1f}초")
+        if record:
+            parts.append(f"기록 {record}")
+        return " · ".join(parts)
+
+    def _log_test(self, skill, origin, stop_reason, grasped, ms, record, error):
+        """사이클 통계와 섞이지 않게 type "test"로 남긴다 (cycle 번호·이벤트 없음). 기록 실패는 경고만."""
+        try:
+            self._append_log({"ts": self.clock(), "type": "test", "skill": skill, "origin": origin,
+                              "stop_reason": stop_reason, "grasped": grasped, "ms": ms, "record": record,
+                              "error": None if error is None else str(error)})
+        except Exception as e:
+            log.warning("테스트 로그 기록 실패: %s", e)
+
     # ---- 사이클 ----
     def _working(self):
         with self._lock:
@@ -235,16 +392,19 @@ class Controller:
             self.phase = phase
         self._publish()
 
-    def _wait_speech(self, started, gen):
+    def _wait_speech(self, started, gen, alive=None, on_wait=None):
         """대사 소리가 나기 시작할 때까지 기다린다 (최대 sync_timeout_s). 대기한 ms를 돌려준다.
-        비상정지·종료·상태 변경이 오면 즉시 멈춘다. 락은 잡지 않는다."""
+        비상정지·종료·상태 변경이 오면 즉시 멈춘다. 락은 잡지 않는다.
+        alive: 계속 기다려도 되는지 판정 (기본: 사이클 일하는 중), on_wait: 기다리기 시작할 때 단계 표시."""
+        alive = alive or self._working
+        on_wait = on_wait or (lambda: self._set_phase("speaking"))
         if started is None:
             return 0
         t0 = time.monotonic()
         if not started.is_set():
-            self._set_phase("speaking")
+            on_wait()
             while not started.wait(0.1):
-                if (not self._working() or self._stop.is_set() or self._gen != gen
+                if (not alive() or self._stop.is_set() or self._gen != gen
                         or time.monotonic() - t0 >= self.sync_timeout_s):
                     break
         return _ms(t0)
@@ -408,6 +568,9 @@ class Controller:
                       "stop_reason": r.stop_reason if r else None, "grasped": r.grasped if r else None,
                       "ms": ms}
         self._emit({"type": "cycle", "n": n, "result": result, "ms": dict(ms)})
+        self._append_log(record)
+
+    def _append_log(self, record):
         if self.log_path is not None:
             with open(self.log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -450,5 +613,11 @@ class Controller:
                                 + ("재시작을 눌러 주세요." if estopped else "재개를 눌러 주세요."))
                     self._publish()
             else:
-                self._wake.wait(0.2)
-                self._wake.clear()
+                try:
+                    ran = self.step_test()  # 스킬 테스트도 이 스레드에서만 (두 스레드가 스킬을 부르지 않게)
+                except Exception:
+                    log.exception("스킬 테스트 처리 실패")
+                    ran = None
+                if ran is None:
+                    self._wake.wait(0.2)
+                    self._wake.clear()

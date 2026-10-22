@@ -4,6 +4,7 @@
 - 상태: 사용자 리뷰 대기
 - 기존 문서(ARCHITECTURE / DECISION_LOGIC / DATASET_GUIDE / DEMO_RUNBOOK)와 충돌하면 **이 문서가 우선**한다.
 - 화면 4분할·3D 디지털 트윈·녹화 재생·실행 기록은 `2026-10-22-digital-twin-design.md`가 이 문서의 UI 부분보다 우선한다.
+- 스킬 1회 실행(TESTING 상태, `test` 명령)·코드 도리도리·LLM `dori_dori` 의도는 `2026-10-22-skill-test-and-scripted-dori-design.md`가 이 문서의 상태·명령·채팅 의도 부분보다 우선한다.
 
 ## 1. 목표와 범위
 

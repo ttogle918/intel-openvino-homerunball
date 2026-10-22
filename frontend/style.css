@@ -240,3 +240,14 @@ body[data-state=REFUSING] .state-badge{animation-name:shakeS}
 .cam .count-name{font-size:1.15rem}
 .cam-refuse,.cam-estop{z-index:3}
 @media (max-width:760px),(max-aspect-ratio:3/4){.tiles{grid-template-columns:1fr}}
+
+/* 스킬 테스트 줄 (설계: docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md 3장) */
+.bottom{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) 42rem}
+.ctrl{grid-template-columns:minmax(0,1fr) 14rem}
+.ctrl-left{display:flex;flex-direction:column;gap:.6rem;min-width:0;min-height:0}
+.ctrl-left .ctrl-small{flex:1;flex-direction:row;gap:.6rem;min-height:0}
+.ctrl-test{flex:none;display:flex;flex-direction:column;gap:.3rem}
+.ctrl-test-label{font-size:.95rem;font-weight:800;color:var(--ink2)}
+.ctrl-test-btns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem}
+.btn-test{font-size:1.1rem;padding:.45rem .3rem;border-radius:.8rem;background:var(--amber-bg);color:var(--ink);box-shadow:.18rem .18rem 0 var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body[data-state=TESTING] .state-badge{background:var(--amber-bg);color:var(--amber)}

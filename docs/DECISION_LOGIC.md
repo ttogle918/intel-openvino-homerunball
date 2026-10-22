@@ -117,20 +117,24 @@ B → A 순서로 구현한다 (설계 문서 6.0절).
 
 | 상태 | allowed intent |
 |---|---|
-| IDLE / DONE | `start_task`, `chat` |
-| WORKING / ESTOP | `chat` |
+| IDLE | `start_task`, `chat`, `dori_dori` |
+| DONE | `start_task`, `chat` |
+| WORKING / ESTOP / TESTING | `chat` |
 | REFUSING | `resume`, `chat` (M5부터. 그 전에는 `chat`만) |
 
 출력 스키마:
 
 ```json
-{"intent": "start_task | resume | chat", "say": "한국어 대사 1문장", "n": 3}
+{"intent": "start_task | resume | chat | dori_dori", "say": "한국어 대사 1문장", "n": 3}
 ```
 
 - `n`: 작업 지시에 개수가 있으면 숫자, 없으면 null. B단계의 시작 개수로 쓴다.
 - 검증: JSON 실패 / 허용 외 intent → 키워드 규칙
   - start_task: 옮겨, 집어, 시작, 일해
   - resume: 조금만, 부탁, 힘내, 한 번만
+  - dori_dori (IDLE만): 도리도리, 고개 저어, 고개를 저어
+  - 우선순위: start_task가 dori_dori보다 앞이다 ("도리도리 하지 말고 옮겨줘" → start_task. 사용자 결정)
   - 그 외: chat
 - `n` 파싱 fallback: 숫자 또는 한글 수사(하나·둘·셋…) 정규식.
 - `say` 검증은 4장과 같다 (비었거나 80자 초과 → 준비된 대사).
+- `dori_dori`: 고개를 좌우로 젓는 동작 1회. 프롬프트에 도구 설명 한 줄(`dori_dori: 고개를 좌우로 젓는 동작 한 번 (싫다고 하거나, 도리도리를 해 보라고 할 때)`). 실행은 UI 스킬 테스트와 같은 경로(TESTING)라 횟수·피로도에 반영하지 않는다. 설계: `docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md` 8절

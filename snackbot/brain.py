@@ -11,6 +11,7 @@ MAX_N = 20
 
 START_WORDS = ("옮겨", "집어", "시작", "일해")
 RESUME_WORDS = ("조금만", "부탁", "힘내", "한 번만", "한번만")
+DORI_WORDS = ("도리도리", "고개 저어", "고개를 저어")
 KOREAN_N = {"하나": 1, "한": 1, "둘": 2, "두": 2, "셋": 3, "세": 3, "넷": 4, "네": 4, "다섯": 5,
             "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10}
 
@@ -26,6 +27,8 @@ LINES = {
     "busy": ["지금 일하는 중이에요! 이따 얘기해요."],
     "estop": ["지금은 비상정지 중이에요. 진행자가 재시작해 줘야 해요."],
     "refusing": ["지금은 쉬는 중이에요… 달래 주면 생각해 볼게요."],
+    "dori_chat": ["도리도리~ 이렇게요?", "싫어요~ 도리도리!"],
+    "testing": ["지금 테스트 중이에요. 끝나면 시켜 주세요!"],
 }
 
 DECIDE_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {target}만 골라 옮기는 로봇팔이야.
@@ -54,6 +57,7 @@ CHAT_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {targe
 사람이 한 말(text), 지금 상태(state), 지금까지 옮긴 횟수(count), 고를 수 있는 의도 목록(allowed)을 받아.
 - start_task: 과자를 옮기라는 작업 지시
 - resume: 거부 중일 때 달래거나 다시 해 달라는 부탁
+- dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)
 - chat: 그 밖의 말
 반드시 allowed 안에서 intent를 골라. 작업 지시에 개수가 있으면 n에 숫자, 없으면 null.
 
@@ -72,7 +76,9 @@ def allowed_skills(remaining, count, decision):
 
 
 def allowed_intents(state):
-    if state in ("IDLE", "DONE"):
+    if state == "IDLE":
+        return ["start_task", "chat", "dori_dori"]   # dori_dori: 도리도리 1회 (스킬 테스트와 같은 경로)
+    if state == "DONE":
         return ["start_task", "chat"]
     if state == "REFUSING":
         return ["resume", "chat"]
@@ -83,7 +89,9 @@ def keyword_intent(text, allowed):
     if "resume" in allowed and any(w in text for w in RESUME_WORDS):
         return "resume"
     if "start_task" in allowed and any(w in text for w in START_WORDS):
-        return "start_task"
+        return "start_task"   # 작업 시작이 도리도리보다 우선 ("도리도리 하지 말고 옮겨줘")
+    if "dori_dori" in allowed and any(w in text for w in DORI_WORDS):
+        return "dori_dori"
     return "chat"
 
 
@@ -214,4 +222,6 @@ class Brain:
             return "start"
         if intent == "resume":
             return "resume"
-        return {"WORKING": "busy", "REFUSING": "refusing", "ESTOP": "estop"}.get(state, "chat")
+        if intent == "dori_dori":
+            return "dori_chat"
+        return {"WORKING": "busy", "REFUSING": "refusing", "ESTOP": "estop", "TESTING": "testing"}.get(state, "chat")
