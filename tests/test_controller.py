@@ -448,3 +448,122 @@ def test_controller_passes_history_and_restart_clears_it(cfg):
     c.command("restart")
     assert [m["role"] for m in c.history] == ["system"]  # 재시작 안내만 남는다
     assert c.state == "IDLE"
+
+
+class EventVoice:
+    """speak가 호출마다 Event를 돌려주는 가짜 voice. 테스트가 직접 set 한다."""
+
+    def __init__(self):
+        self.events, self.spoken = [], []
+
+    def speak(self, text):
+        ev = threading.Event()
+        self.events.append(ev)
+        self.spoken.append(text)
+        return ev
+
+
+def _make_voiced(cfg, voice, timeout=8):
+    cfg["voice"]["sync_timeout_s"] = timeout
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills(), voice=voice)
+    c.state, c.phase, c.remaining = "WORKING", "idle", 3
+    return c
+
+
+def _step_in_thread(c):
+    out = []
+    t = threading.Thread(target=lambda: out.append(c.step()), daemon=True)
+    t.start()
+    return t, out
+
+
+def _wait_for(cond, timeout=2):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and not cond():
+        time.sleep(0.01)
+    return cond()
+
+
+def test_skill_waits_until_speech_starts(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    time.sleep(0.3)
+    assert c.skills.runs == []
+    v.events[0].set()
+    t.join(3)
+    assert c.skills.runs == ["oranda_pickup"] and out == ["success"]
+
+
+def test_already_set_event_does_not_wait(cfg):
+    class Instant(EventVoice):
+        def speak(self, text):
+            ev = super().speak(text)
+            ev.set()
+            return ev
+
+    c = _make_voiced(cfg, Instant())
+    t0 = time.monotonic()
+    assert c.step() == "success"
+    assert time.monotonic() - t0 < 1
+
+
+def test_speech_wait_timeout_proceeds_and_logs_ms(cfg, tmp_path):
+    c = _make_voiced(cfg, EventVoice(), timeout=0.3)
+    c.log_path = tmp_path / "c.jsonl"
+    assert c.step() == "success"
+    assert c.skills.runs == ["oranda_pickup"]
+    ms = json.loads(c.log_path.read_text(encoding="utf-8").splitlines()[0])["ms"]
+    assert 250 <= ms["speech_wait"] < 2000
+
+
+def test_estop_while_waiting_for_speech_skips_skill(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    c.command("estop")
+    t.join(3)
+    assert not t.is_alive()
+    assert out == [None] and c.skills.runs == [] and c.state == "ESTOP"
+
+
+def test_stop_while_waiting_for_speech_skips_skill(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    c._stop.set()
+    t.join(3)
+    assert not t.is_alive() and c.skills.runs == []
+
+
+def test_done_skill_does_not_wait_for_speech(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    c.remaining = 0
+    t0 = time.monotonic()
+    assert c.step() == "done"
+    assert time.monotonic() - t0 < 1
+
+
+def test_no_voice_or_none_event_does_not_wait(cfg):
+    c = _make_voiced(cfg, None)
+    assert c.step() == "success"
+
+    class NoneVoice:
+        def speak(self, text):
+            return None
+
+    c = _make_voiced(cfg, NoneVoice())
+    assert c.step() == "success"
+
+
+def test_other_robot_messages_do_not_wait(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t0 = time.monotonic()
+    c._start_task(None, announce=True)  # 대사는 내지만 기다리지 않는다
+    c.chat("안녕")
+    assert time.monotonic() - t0 < 1

@@ -8,7 +8,7 @@ def test_speak_is_non_blocking_and_survives_errors(monkeypatch):
     v = Voice("log")
     done, gate = [], threading.Event()
 
-    def slow(text):
+    def slow(text, started=None):
         if text == "boom":
             raise RuntimeError("tts down")
         gate.wait(1)
@@ -221,3 +221,78 @@ def test_make_voice_builds_gemini():
         assert v.engine == "gemini" and v._http is not None
     finally:
         v.close()
+
+
+def test_speak_returns_event_set_just_before_playback(monkeypatch):
+    import snackbot.voice as vm
+    v = Voice("gemini")  # 키 없음 -> none으로 떨어지므로 엔진을 직접 지정
+    v.engine = "openai"
+    seen = {}
+    holder = {}
+
+    def fake_play(data):
+        seen["set_at_play"] = holder["ev"].is_set()
+
+    monkeypatch.setattr(v, "synthesize", lambda text: b"wav")
+    monkeypatch.setattr(vm, "play_wav", fake_play)
+    holder["ev"] = ev = v.speak("안녕")
+    assert isinstance(ev, threading.Event)
+    assert ev.wait(2)
+    v.close()
+    assert seen == {"set_at_play": True}
+
+
+def test_event_not_set_while_synthesizing(monkeypatch):
+    import snackbot.voice as vm
+    v = Voice("none")
+    v.engine = "gemini"
+    gate = threading.Event()
+    monkeypatch.setattr(v, "synthesize", lambda text: (gate.wait(2), b"wav")[1])
+    monkeypatch.setattr(vm, "play_wav", lambda data: None)
+    ev = v.speak("x")
+    assert not ev.wait(0.2)
+    gate.set()
+    assert ev.wait(2)
+    v.close()
+
+
+def test_event_set_when_synthesis_fails(monkeypatch):
+    v = Voice("none")
+    v.engine = "openai"
+
+    def boom(text):
+        raise RuntimeError("tts down")
+
+    monkeypatch.setattr(v, "synthesize", boom)
+    ev = v.speak("x")
+    assert ev.wait(2)
+    v.close()
+
+
+def test_event_set_for_log_none_and_unknown_engines(capsys):
+    for engine in ("log", "none"):
+        v = Voice(engine)
+        assert v.speak("x").wait(2)
+        v.close()
+    v = Voice("none")
+    v.engine = "bogus"
+    assert v.speak("x").wait(2)
+    v.close()
+
+
+def test_event_set_after_close():
+    v = Voice("none")
+    v.close()
+    assert v.speak("x").is_set()
+
+
+def test_close_sets_events_of_unprocessed_items(monkeypatch):
+    v = Voice("none")
+    gate = threading.Event()
+    monkeypatch.setattr(v, "_say", lambda text, started=None: gate.wait(3))
+    v.speak("first")  # 워커가 여기서 막힌다
+    time.sleep(0.1)
+    pending = [v.speak("a"), v.speak("b")]
+    v.close()  # join 2초 타임아웃, 남은 항목은 set
+    assert all(e.is_set() for e in pending)
+    gate.set()

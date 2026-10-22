@@ -24,6 +24,7 @@ class Controller:
         self.decision = cfg["decision"]
         self.initial_count = cfg["target"]["initial_count"]
         self.camera = cfg["vision"].get("camera", "front")
+        self.sync_timeout_s = float((cfg.get("voice") or {}).get("sync_timeout_s", 8))
         self.brain, self.skills, self.voice, self.clock = brain, skills, voice, clock
         self.vision = vision if vision is not None and vision.enabled else None
         self.state, self.phase = IDLE, "idle"
@@ -71,7 +72,8 @@ class Controller:
             self.history.append(msg)
         self._emit(msg)
         if role == "robot" and self.voice is not None:
-            self.voice.speak(text)
+            return self.voice.speak(text)
+        return None
 
     def notify(self, text):
         self._message("system", text)
@@ -185,6 +187,20 @@ class Controller:
             self.phase = phase
         self._publish()
 
+    def _wait_speech(self, started):
+        """대사 소리가 나기 시작할 때까지 기다린다 (최대 sync_timeout_s). 대기한 ms를 돌려준다.
+        비상정지·종료·상태 변경이 오면 즉시 멈춘다. 락은 잡지 않는다."""
+        if started is None:
+            return 0
+        t0 = time.monotonic()
+        if not started.is_set():
+            self._set_phase("speaking")
+            while not started.wait(0.1):
+                if (not self._working() or self._stop.is_set()
+                        or time.monotonic() - t0 >= self.sync_timeout_s):
+                    break
+        return _ms(t0)
+
     def step(self):
         """사이클 1회. 일할 상태가 아니면 None. 결과: success | fail | refuse | done | estop."""
         if not self._working():
@@ -207,9 +223,12 @@ class Controller:
             return None
         with self._lock:
             self.skill = d["skill"]
-        self._message("robot", d["say"])
+        started = self._message("robot", d["say"])
         if d["skill"] == "done":
             return self._finish(ms, d)
+        ms["speech_wait"] = self._wait_speech(started)
+        if not self._working() or self._stop.is_set():
+            return None
         self._set_phase("acting")
         t0 = time.monotonic()
         returning_at = []

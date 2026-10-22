@@ -68,6 +68,8 @@ class Voice:
                 engine = "none"
         self.engine = engine
         self._q = queue.Queue()
+        self._closed = False
+        self._close_lock = threading.Lock()
         self._tts = None
         self._thread = threading.Thread(target=self._worker, name="voice", daemon=True)
         self._thread.start()
@@ -113,32 +115,57 @@ class Voice:
         return pcm_to_wav(base64.b64decode(inline["data"]), int(m.group(1)) if m else 24000)
 
     def speak(self, text):
-        self._q.put(text)
+        """대기열에 넣고 Event를 반환한다. 이벤트는 재생 직전(실패·종료 시에도 반드시) set 된다."""
+        started = threading.Event()
+        with self._close_lock:
+            if self._closed:
+                started.set()
+            else:
+                self._q.put((text, started))
+        return started
 
     def close(self):
-        self._q.put(None)
+        with self._close_lock:
+            self._closed = True
+            self._q.put(None)
         self._thread.join(timeout=2)
+        while True:  # 워커가 처리하지 못하고 남긴 문장: 기다리는 쪽이 막히지 않게 set
+            try:
+                item = self._q.get_nowait()
+            except queue.Empty:
+                break
+            if item is not None:
+                item[1].set()
         if self._http is not None:
             self._http.close()
 
     def _worker(self):
         while True:
-            text = self._q.get()
-            if text is None:
+            item = self._q.get()
+            if item is None:
                 return
+            text, started = item
             try:
-                self._say(text)
+                self._say(text, started)
             except Exception:
                 log.exception("TTS 실패")
+            finally:
+                started.set()
 
-    def _say(self, text):
+    def _say(self, text, started=None):
+        def go():
+            if started is not None:
+                started.set()
+
         if self.engine == "log":
+            go()
             print(f"[TTS] {text}", flush=True)
         elif self.engine == "pyttsx3":
             if self._tts is None:
                 import pyttsx3
                 self._tts = pyttsx3.init()
             try:
+                go()
                 self._tts.say(text)
                 self._tts.runAndWait()
             except Exception:
@@ -146,9 +173,12 @@ class Voice:
                 self._tts = None
                 raise
         elif self.engine in ("openai", "gemini"):
-            play_wav(self.synthesize(text))
+            wav = self.synthesize(text)
+            go()
+            play_wav(wav)
         elif self.engine != "none":
             raise ValueError(f"알 수 없는 TTS 엔진: {self.engine}")
+        go()
 
 
 def make_voice(cfg, env):
