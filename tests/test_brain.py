@@ -137,6 +137,12 @@ def test_chat_llm_bad_n_falls_back_to_text(cfg):
     assert r["n"] == 4
 
 
+def test_chat_text_n_wins_over_llm_n(cfg):
+    # 문장에서 읽은 개수가 있으면 LLM 값은 무시한다 (횟수는 코드가 정한다)
+    r = make(cfg, '{"intent": "start_task", "say": "네", "n": 20}').chat("3개 옮겨줘", "IDLE", 0)
+    assert r["n"] == 3
+
+
 def test_chat_in_estop_uses_estop_line(cfg):
     b = make(cfg)
     r = b.chat("안녕", "ESTOP", 2)

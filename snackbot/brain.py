@@ -164,8 +164,8 @@ class Brain:
                 if data.get("intent") in allowed:
                     intent = data["intent"]
                 say = data.get("say")
-                llm_n = data.get("n")
-                if isinstance(llm_n, int) and not isinstance(llm_n, bool) and 0 < llm_n <= MAX_N:
+                llm_n = data.get("n")  # 문장에서 개수를 못 읽었을 때만 쓴다
+                if n is None and isinstance(llm_n, int) and not isinstance(llm_n, bool) and 0 < llm_n <= MAX_N:
                     n = llm_n
         if intent != "start_task":
             n = None
