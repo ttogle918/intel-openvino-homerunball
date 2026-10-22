@@ -77,3 +77,56 @@ def test_handle_key_ctrl_c_d_quit(ch):
 
 def test_handle_key_empty_is_noop():
     assert handle_key("", object(), lambda: None) is None
+
+
+def test_handle_key_h_restarts():
+    calls = []
+
+    class C:
+        def command(self, name):
+            calls.append(name)
+
+    assert handle_key("h", C(), lambda: None) == "restart"
+    assert calls == ["restart"]
+
+
+def test_read_posix_key_discards_escape_sequence():
+    from snackbot.__main__ import read_posix_key
+    assert read_posix_key(_getch(chr(27), "O", "R")) == ""
+    assert read_posix_key(_getch("r")) == "r"
+
+
+def test_key_loop_survives_handler_error(monkeypatch):
+    import snackbot.__main__ as m
+
+    class C:
+        stopped = False
+
+        def command(self, name):
+            raise RuntimeError("boom")
+
+    c = C()
+    keys = iter(["s", "r"])
+
+    def fake_read():
+        try:
+            return next(keys)
+        except StopIteration:
+            c.stopped = True
+            return " "
+
+    monkeypatch.setattr(m, "enter_cbreak", lambda: None)
+    monkeypatch.setattr(m, "read_key", fake_read)
+    m.key_loop(c, lambda: None)      # 예외 없이 끝나야 한다
+    assert c.stopped
+
+
+def test_key_loop_warns_when_cbreak_fails(monkeypatch, capsys):
+    import snackbot.__main__ as m
+
+    def bad():
+        raise OSError("no tty")
+
+    monkeypatch.setattr(m, "enter_cbreak", bad)
+    m.key_loop(type("C", (), {"stopped": False})(), lambda: None)
+    assert "비상정지" in capsys.readouterr().err

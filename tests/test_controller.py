@@ -323,3 +323,57 @@ def test_estop_interrupted_cycles_are_logged_once(cfg, tmp_path):
     assert c.step() == "estop"
     lines = next(tmp_path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()
     assert [json.loads(x)["result"] for x in lines] == ["estop", "estop"]
+
+
+def test_cycle_ms_splits_act_and_return(cfg):
+    c, ev = make(cfg)
+    c.chat("1개 옮겨줘")
+    c.step()
+    ms = [e for e in ev if e["type"] == "cycle"][-1]["ms"]
+    assert "return" in ms and "act" in ms and ms["act"] >= 0 and ms["return"] >= 0
+
+
+def test_cycle_ms_without_returning_has_no_return(cfg):
+    c, ev = make(cfg)
+    c.chat("4개 옮겨줘")
+    c.count = cfg["decision"]["force_refuse"]       # dori_dori 는 returning 단계가 없다
+    c.step()
+    ms = [e for e in ev if e["type"] == "cycle"][-1]["ms"]
+    assert "act" in ms and "return" not in ms
+
+
+def test_loop_exception_after_estop_keeps_phase(cfg):
+    holder = {}
+
+    class Boom:
+        def decide(self, *a, **k):
+            holder["c"].command("estop")
+            raise RuntimeError("boom")
+
+        def line(self, kind):
+            return kind
+
+    c = Controller(cfg, Boom(), FakeSkills())
+    holder["c"] = c
+    c.command("start")
+    c.start()
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not any(
+                m["role"] == "system" and "오류" in m["text"] for m in c.history):
+            time.sleep(0.01)
+        assert c.state == "ESTOP" and c.phase == "idle"
+    finally:
+        c.stop()
+
+
+def test_stop_estops_skills_even_when_not_working(cfg):
+    c, _ = make(cfg)
+    c.command("start")
+    c.command("estop")
+    c.skills.estopped = False
+    c.stop()
+    assert c.skills.estopped
+    c2, _ = make(cfg)
+    c2.stop()
+    assert not c2.skills.estopped       # IDLE 이면 건드리지 않는다

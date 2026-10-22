@@ -24,6 +24,7 @@ LINES = {
     "resume": ["알겠어요… 조금만 더 할게요."],
     "chat": ["저는 과자 옮기는 로봇이에요. '과자 옮겨줘'라고 해 주세요!"],
     "busy": ["지금 일하는 중이에요! 이따 얘기해요."],
+    "estop": ["지금은 비상정지 중이에요. 진행자가 재시작해 줘야 해요."],
     "refusing": ["지금은 쉬는 중이에요… 달래 주면 생각해 볼게요."],
 }
 
@@ -181,4 +182,4 @@ class Brain:
             return "start"
         if intent == "resume":
             return "resume"
-        return {"WORKING": "busy", "REFUSING": "refusing"}.get(state, "chat")
+        return {"WORKING": "busy", "REFUSING": "refusing", "ESTOP": "estop"}.get(state, "chat")

@@ -1,6 +1,6 @@
 """python -m snackbot [--dry-run] [--no-ui]
 
-키: s 시작 · r 재개 · space 비상정지 · q 종료 (UI 버튼과 같은 동작)
+키: s 시작 · r 재개 · h 재시작(홈 복귀) · space 비상정지 · q 종료 (UI 버튼과 같은 동작)
 """
 import argparse
 import atexit
@@ -17,9 +17,10 @@ from .stt import build_stt
 from .vision import build_vision
 from .voice import Voice
 
-KEYS = {"s": "start", "r": "resume", " ": "estop", "q": "quit"}
+KEYS = {"s": "start", "r": "resume", "h": "restart", " ": "estop", "q": "quit"}
 QUIT_CHARS = (chr(3), chr(4))  # Ctrl+C, Ctrl+D
 _restore_terminal = None
+log = logging.getLogger(__name__)
 
 
 def build(cfg, env, dry_run=True):
@@ -67,6 +68,16 @@ def read_windows_key(getch):
     return ch
 
 
+def read_posix_key(read1):
+    """ESC로 시작하는 방향키·F키 시퀀스(ESC [ A, ESC O R 등)는 뒤 두 글자까지 읽고 버린다."""
+    ch = read1()
+    if ch == chr(27):
+        read1()
+        read1()
+        return ""
+    return ch
+
+
 def enter_cbreak():
     """POSIX 터미널을 cbreak로 바꾸고 원래 설정을 복원하는 함수를 모듈에 보관한다."""
     global _restore_terminal
@@ -100,13 +111,15 @@ def read_key():
     if sys.platform == "win32":
         import msvcrt
         return read_windows_key(msvcrt.getwch)
-    return sys.stdin.read(1)
+    return read_posix_key(lambda: sys.stdin.read(1))
 
 
 def key_loop(controller, quit_fn):
     try:
         enter_cbreak()
-    except Exception:
+    except Exception as e:
+        print(f"경고: 터미널 키 입력을 켜지 못했어요 ({e}). space 비상정지 키가 꺼져 있으니 UI 버튼을 쓰세요.",
+              file=sys.stderr, flush=True)
         return
     while not controller.stopped:
         try:
@@ -115,7 +128,10 @@ def key_loop(controller, quit_fn):
             return
         if ch == "" and sys.platform != "win32":
             return  # EOF
-        handle_key(ch, controller, quit_fn)
+        try:
+            handle_key(ch, controller, quit_fn)
+        except Exception:
+            log.exception("키 처리 실패: %r", ch)
 
 
 def console_printer(event):
@@ -158,7 +174,7 @@ def main(argv=None):
         if server is not None:
             server.should_exit = True
 
-    print("키: s 시작 · r 재개 · space 비상정지 · q 종료", flush=True)
+    print("키: s 시작 · r 재개 · h 재시작 · space 비상정지 · q 종료", flush=True)
     controller.start()
     if sys.stdin.isatty():
         threading.Thread(target=key_loop, args=(controller, quit_fn), name="keys", daemon=True).start()
@@ -174,7 +190,8 @@ def main(argv=None):
             host, port = args.host or srv.get("host", "127.0.0.1"), args.port or srv.get("port", 8000)
             app = create_app(controller, parts["info"], frame_fn=parts["frame_fn"], stt=parts["stt"],
                              static_dir=root / "frontend")
-            server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
+            server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning",
+                                                  timeout_graceful_shutdown=2))
             print(f"UI: http://{host}:{port}", flush=True)
             if not quit_requested.is_set():
                 server.run()

@@ -135,3 +135,9 @@ def test_chat_llm_intent_outside_allowed_uses_keywords(cfg):
 def test_chat_llm_bad_n_falls_back_to_text(cfg):
     r = make(cfg, '{"intent": "start_task", "say": "네", "n": "many"}').chat("4개 옮겨", "IDLE", 0)
     assert r["n"] == 4
+
+
+def test_chat_in_estop_uses_estop_line(cfg):
+    b = make(cfg)
+    r = b.chat("안녕", "ESTOP", 2)
+    assert r["intent"] == "chat" and "비상정지" in r["say"]

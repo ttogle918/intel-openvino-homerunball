@@ -172,3 +172,42 @@ def test_ws_survives_malformed_frames(cfg, tmp_path):
         got = [ws.receive_json() for _ in range(3)]
         assert got[0]["role"] == "user" and got[1]["role"] == "robot"
         assert got[2]["type"] == "state"
+
+
+def test_estop_not_delayed_by_slow_chat(cfg, tmp_path, monkeypatch):
+    import time
+    c, app = make_app(cfg, tmp_path)
+    monkeypatch.setattr(c, "chat", lambda text, source="text": time.sleep(1.5))
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        t0 = time.monotonic()
+        ws.send_json({"type": "chat", "text": "느린 질문"})
+        ws.send_json({"type": "command", "name": "estop"})
+        while c.state != "ESTOP" and time.monotonic() - t0 < 1.2:
+            time.sleep(0.01)
+        assert c.state == "ESTOP"
+        assert time.monotonic() - t0 < 0.5
+
+
+class _Abort(BaseException):
+    pass
+
+
+def test_stream_stops_when_controller_stopped(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr("snackbot.server.STREAM_INTERVAL_S", 0.001)
+    calls = {"n": 0}
+    holder = {}
+
+    def frame_fn():
+        calls["n"] += 1
+        if calls["n"] == 3:
+            holder["c"].stop()
+        if calls["n"] > 50:
+            raise _Abort()          # 수정 전에는 무한 루프 → 테스트가 멈추지 않게 중단
+        return np.zeros((10, 10, 3), np.uint8)
+
+    c, app = make_app(cfg, tmp_path, frame_fn=frame_fn)
+    holder["c"] = c
+    with TestClient(app) as client:
+        r = client.get("/stream/front")
+    assert r.status_code == 200 and calls["n"] <= 5

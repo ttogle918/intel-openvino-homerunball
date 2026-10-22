@@ -38,7 +38,12 @@ class Voice:
             if self._tts is None:
                 import pyttsx3
                 self._tts = pyttsx3.init()
-            self._tts.say(text)
-            self._tts.runAndWait()
+            try:
+                self._tts.say(text)
+                self._tts.runAndWait()
+            except Exception:
+                log.exception("pyttsx3 오류: 다음 대사에서 엔진을 다시 만듭니다")
+                self._tts = None
+                raise
         elif self.engine != "none":
             raise ValueError(f"알 수 없는 TTS 엔진: {self.engine}")

@@ -98,6 +98,18 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
         skip_keys = {(m.get("ts"), m.get("role"), m.get("text")) for m in history}
         clients.add(outbox)
         task = asyncio.create_task(writer(ws, outbox, skip_keys))
+        pending = set()     # 느린 chat/resume/restart 작업 (수신 루프를 막지 않는다)
+
+        def dispatch(fn, *args):
+            t = asyncio.create_task(run_in_threadpool(fn, *args))
+            pending.add(t)
+            t.add_done_callback(done)
+
+        def done(t):
+            pending.discard(t)
+            if not t.cancelled() and t.exception() is not None:
+                log.warning("ws 명령 처리 실패: %r", t.exception())
+
         try:
             while True:
                 text = await ws.receive_text()
@@ -105,9 +117,11 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
                     msg = json.loads(text)
                     kind = msg.get("type")
                     if kind == "chat":
-                        await run_in_threadpool(controller.chat, str(msg.get("text", "")), "text")
+                        dispatch(controller.chat, str(msg.get("text", "")), "text")
+                    elif kind == "command" and msg.get("name") == "estop":
+                        controller.command("estop")     # 즉시 처리: 스레드풀·다른 작업 뒤에 서지 않는다
                     elif kind == "command" and msg.get("name") in UI_COMMANDS:
-                        await run_in_threadpool(controller.command, msg["name"])
+                        dispatch(controller.command, msg["name"])
                 except Exception as e:
                     log.warning("잘못된 ws 메시지 무시: %r (%s)", text[:100], e)
         except WebSocketDisconnect:
@@ -115,8 +129,10 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
         finally:
             clients.discard(outbox)
             task.cancel()
+            for t in list(pending):
+                t.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await task
+                await asyncio.gather(task, *pending, return_exceptions=True)
 
     @app.post("/stt")
     async def stt_endpoint(request: Request):
@@ -142,7 +158,7 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
             raise HTTPException(404, "카메라 없음")
 
         async def frames():
-            while True:
+            while not controller.stopped:
                 try:
                     frame = await run_in_threadpool(frame_fn)
                     chunk = mjpeg_chunk(frame, controller.last_boxes) if frame is not None else None

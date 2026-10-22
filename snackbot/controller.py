@@ -205,8 +205,20 @@ class Controller:
             return self._finish(ms, d)
         self._set_phase("acting")
         t0 = time.monotonic()
-        r = self.skills.run(d["skill"], on_phase=self._set_phase)
-        ms["act"] = _ms(t0)
+        returning_at = []
+
+        def on_phase(phase):
+            if phase == "returning" and not returning_at:
+                returning_at.append(time.monotonic())
+            self._set_phase(phase)
+
+        r = self.skills.run(d["skill"], on_phase=on_phase)
+        total = _ms(t0)
+        if returning_at:
+            ms["act"] = int((returning_at[0] - t0) * 1000)
+            ms["return"] = max(0, total - ms["act"])
+        else:
+            ms["act"] = total
         if r.stop_reason == "estop":
             with self._lock:
                 if self.state != ESTOP:
@@ -315,8 +327,10 @@ class Controller:
     def stop(self):
         self._stop.set()
         self._wake.set()
-        if self._working():
-            self.skills.estop()  # 진행 중인 스킬 중단
+        with self._lock:
+            active = self.state != IDLE
+        if active:
+            self.skills.estop()  # 진행 중인 스킬·재시작 홈 복귀 중단
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=5)
 
@@ -336,7 +350,8 @@ class Controller:
                 except Exception:
                     log.exception("사이클 실패")
                     with self._lock:
-                        self.phase = "waiting_operator"
+                        if self.state == WORKING:
+                            self.phase = "waiting_operator"
                     self.notify("오류가 났어요. 로그를 확인한 뒤 재개를 눌러 주세요.")
                     self._publish()
             else:
