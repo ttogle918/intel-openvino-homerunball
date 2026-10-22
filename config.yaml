@@ -14,6 +14,7 @@ providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 �
   openrouter: {type: openai_compat, base_url: "https://openrouter.ai/api/v1", api_key_env: OPENROUTER_API_KEY}
   nvidia:     {type: openai_compat, base_url: "https://integrate.api.nvidia.com/v1", api_key_env: NVIDIA_API_KEY}
   openai:     {type: openai_compat, base_url: "https://api.openai.com/v1", api_key_env: OPENAI_API_KEY}
+  gemini:     {type: openai_compat, base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: GEMINI_API_KEY}
   anthropic:  {type: anthropic, api_key_env: ANTHROPIC_API_KEY}
   ollama:     {type: openai_compat, base_url: "http://localhost:11434/v1"}
   local_ov:   {type: openvino}
@@ -22,8 +23,12 @@ brain:
   max_say_len: 80
   max_tokens: 1024
   # 위에서부터 시도, 전부 실패하면 규칙. 비우면 규칙만.
-  chain: []
+  # NVIDIA 추론 모델은 생각을 끄지 않으면 8초를 넘겨 규칙으로 떨어진다 (extra_body로 끈다).
+  chain:
+    - {provider: nvidia, model: "nvidia/nemotron-3.5-lightning-30b-a3b", timeout_s: 8, extra_body: {chat_template_kwargs: {enable_thinking: false}}}
+    - {provider: nvidia, model: "deepseek-ai/deepseek-v4.1-flash", timeout_s: 8, extra_body: {chat_template_kwargs: {enable_thinking: false}}}
   # chain:
+  #   - {provider: gemini, model: "[모델 ID]", timeout_s: 5}
   #   - {provider: openrouter, model: "[모델 ID]", timeout_s: 5}
   #   - {provider: anthropic, model: "claude-opus-5-5", effort: low, timeout_s: 8}
   #   - {provider: local_ov, model_dir: "models/llm", device: GPU, kind: llm}

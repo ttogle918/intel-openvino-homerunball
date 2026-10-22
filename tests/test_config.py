@@ -10,7 +10,9 @@ def test_repo_config_has_core_sections():
     cfg = load_config(ROOT / "config.yaml")
     assert cfg["target"] == {"name": "오란다", "initial_count": 3}
     assert cfg["decision"] == {"safe_max": 3, "force_refuse": 6, "max_retry": 2}
-    assert cfg["brain"]["chain"] == []
+    for entry in cfg["brain"]["chain"]:
+        assert entry["provider"] in cfg["providers"]
+        assert entry.get("model")
     assert cfg["vision"]["chain"] == []
     assert cfg["stt"]["chain"] == []
 

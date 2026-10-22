@@ -24,8 +24,9 @@ class ProviderError(Exception):
 class OpenAICompat:
     """OpenRouter, NVIDIA, OpenAI, Gemini(OpenAI 호환), Groq, Ollama — base_url과 키만 다르다."""
 
-    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None):
+    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None, extra_body=None):
         self.model = model
+        self.extra_body = dict(extra_body or {})  # 예: 추론 모델의 생각 끄기
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.http = httpx.Client(base_url=base_url.rstrip("/"), headers=headers,
                                  timeout=timeout_s, transport=transport)
@@ -37,7 +38,8 @@ class OpenAICompat:
             msgs[-1]["content"] = [{"type": "text", "text": msgs[-1]["content"]},
                                    {"type": "image_url", "image_url": {"url": url}}]
         r = self.http.post("/chat/completions",
-                           json={"model": self.model, "messages": msgs, "max_tokens": max_tokens})
+                           json={**self.extra_body, "model": self.model, "messages": msgs,
+                                 "max_tokens": max_tokens})
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"] or ""
 
@@ -194,7 +196,7 @@ def build_chain(entries, providers_cfg, env):
                 continue
             timeout = float(e.get("timeout_s", 5))
             if kind == "openai_compat":
-                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout)
+                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout, extra_body=e.get("extra_body"))
             elif kind == "anthropic":
                 provider = AnthropicProvider(key, e["model"], timeout, e.get("effort"))
             elif kind == "openvino":

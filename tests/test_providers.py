@@ -183,3 +183,17 @@ def test_openvino_vlm_requires_image():
     p._pipe = object()
     with pytest.raises(ProviderError):
         p.complete([{"role": "user", "content": "q"}], image=None)
+
+
+def test_openai_compat_extra_body_is_merged_into_request():
+    seen = {}
+
+    def handler(request):
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    p = OpenAICompat("https://e.test/v1", "k", "m", 5, transport=httpx.MockTransport(handler),
+                     extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+    p.complete([{"role": "user", "content": "x"}])
+    assert seen["body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert seen["body"]["model"] == "m"
