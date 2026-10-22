@@ -94,3 +94,14 @@ skills:
 ## 7. 현장 확인
 - 코드 도리도리 진폭·속도는 실제 팔에서 작게 시작해 조정 (`amplitude` 10 → 15 → 20).
 - 오란다 1회 테스트로 `grasp_min`, `closed_below`, `open_above`, `max_time_s`가 맞는지 보고 조정.
+
+## 8. 추가 (2026-10-22, 사용자 요청): LLM이 도리도리를 도구로 호출
+
+- 대화 LLM이 **채팅 의도(intent)로 도리도리를 고를 수 있다.** 대화 체인(Claude → NVIDIA → 규칙)의 모든 provider에서 같게 동작하도록 Anthropic tool-use API가 아니라 기존 JSON intent 방식을 쓴다 (절대 규칙 3: LLM 출력은 허용된 값만).
+  - `allowed_intents("IDLE")` = `["start_task", "chat", "dori_dori"]` (그 밖의 상태에는 넣지 않는다).
+  - `CHAT_SYSTEM` 프롬프트에 도구 설명 한 줄: `dori_dori: 고개를 좌우로 젓는 동작 한 번 (싫다고 하거나, 도리도리를 해 보라고 할 때)`.
+  - LLM 실패 시 키워드 fallback: `도리도리`, `고개 저어`, `고개를 저어` → `dori_dori` (IDLE에서만).
+  - LLM이 `dori_dori`를 골라도 상태가 IDLE이 아니면 무시되고 chat으로 처리된다 (기존 허용 목록 규칙).
+- **실행 경로는 버튼과 하나:** `controller.chat`에서 intent가 `dori_dori`면 대사를 낸 뒤 `command("test", skill="dori_dori")`와 같은 내부 경로(`_request_test`)로 1회 실행한다. 즉 TESTING 상태, 대기 상태에서만, 횟수·피로도 미반영, 결과 시스템 메시지, 비상정지 즉시 — 버튼과 완전히 같다.
+- 결과 메시지의 출처 표시: 버튼은 `테스트 · …`, LLM은 `도리도리 · …`.
+- 테스트: brain(IDLE 허용 목록, 다른 상태에서 무시, 키워드 fallback), controller(chat → 1회 실행 → IDLE 복귀, 다른 상태에서는 실행 안 함), 프롬프트에 도구 설명 포함.
