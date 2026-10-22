@@ -11,6 +11,7 @@ logs/runs/<YYYYmmdd-HHMMSS>_<스킬>/episode.json + frames/<카메라>/000000.jp
 import json
 import logging
 import queue
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -51,6 +52,7 @@ class _Session:
         self.queue = queue.Queue(maxsize=max(1, queue_size))
         self.next_index = 0
         self.first_frame_t = self.last_frame_t = None
+        self.next_due = None
         self.counts = {}
         self.dropped = 0
         self.thread = None
@@ -95,10 +97,13 @@ class RunRecorder:
             s.thread.start()
         except Exception as e:
             log.warning("실행 기록을 시작하지 못했어요 (%s, 로봇 동작에는 영향 없음): %s", skill, e)
+            self.last_folder = None
             return None
         with self._lock:
             self._session = s
+            self._threads = [t for t in self._threads if t.is_alive()]
             self._threads.append(s.thread)
+            self._warned.clear()
         self.last_folder = folder
         return folder
 
@@ -112,10 +117,12 @@ class RunRecorder:
             if s.first_t is None:
                 s.first_t = t
             s.last_t = t
-            if not frames or (s.last_frame_t is not None and t - s.last_frame_t < 1.0 / self.frame_fps - _EPS):
+            period = 1.0 / self.frame_fps
+            if not frames or (s.next_due is not None and t < s.next_due - _EPS):
                 return
             try:
-                s.queue.put_nowait((s.next_index, dict(frames)))
+                # 버퍼를 카메라 드라이버가 재사용해도 안전하도록 솎아 남기는 프레임만 복사한다
+                s.queue.put_nowait((s.next_index, {k: v.copy() for k, v in frames.items()}))
             except queue.Full:
                 s.dropped += 1
                 return
@@ -123,6 +130,8 @@ class RunRecorder:
             if s.first_frame_t is None:
                 s.first_frame_t = t
             s.last_frame_t = t
+            due = (s.next_due if s.next_due is not None else t) + period
+            s.next_due = due if due > t - period else t + period   # 예정 시각 누적, 많이 밀렸으면 지금 기준
         except Exception as e:
             self._warn_once("tick", "실행 기록 중 오류 (로봇 동작에는 영향 없음): %s", e)
 
@@ -135,7 +144,15 @@ class RunRecorder:
         meta = {"stop_reason": getattr(result, "stop_reason", None),
                 "grasped": bool(getattr(result, "grasped", False)), "ms": getattr(result, "ms", None)}
         try:
-            s.queue.put((_STOP, meta), timeout=5)
+            try:
+                s.queue.put_nowait((_STOP, meta))
+            except queue.Full:   # 가득 찼으면 가장 오래된 프레임 하나를 버려서라도 마감 신호는 반드시 넣는다
+                try:
+                    s.queue.get_nowait()
+                    s.dropped += 1
+                except queue.Empty:
+                    pass
+                s.queue.put_nowait((_STOP, meta))
         except Exception as e:
             log.warning("실행 기록을 마무리하지 못했어요: %s (%s)", s.folder, e)
         return s.folder
@@ -144,8 +161,11 @@ class RunRecorder:
         """저장 스레드가 끝날 때까지 기다린다 (테스트·종료용)."""
         with self._lock:
             threads, self._threads = self._threads, []
+        deadline = None if timeout is None else time.monotonic() + timeout
         for t in threads:
-            t.join(timeout)
+            t.join(None if deadline is None else max(0.0, deadline - time.monotonic()))
+        with self._lock:   # 아직 도는 스레드는 다시 기다릴 수 있게 남긴다
+            self._threads = [t for t in threads if t.is_alive()] + self._threads
 
     def _worker(self, s):
         while True:
@@ -163,6 +183,11 @@ class RunRecorder:
                     self._warn_once(("frame", cam), "실행 기록 프레임 저장 실패 (%s): %s", cam, e)
 
     def _finish(self, s, meta):
+        if not s.joints:   # 틱이 하나도 없던 세션 (예: 비상정지가 이미 켜진 채 시작): 빈 기록을 남기지 않는다
+            shutil.rmtree(s.folder, ignore_errors=True)
+            if self.last_folder == s.folder:
+                self.last_folder = None
+            return
         frame_fps = _rate(s.first_frame_t, s.last_frame_t, s.next_index, self.frame_fps)
         doc = {"skill": s.skill, "source": "run", "fps": _rate(s.first_t, s.last_t, len(s.joints), self.fps),
                "joints": s.joints,

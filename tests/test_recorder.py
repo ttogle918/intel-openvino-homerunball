@@ -116,3 +116,75 @@ def test_same_second_runs_get_distinct_folders(tmp_path):
     rec.stop(result())
     rec.wait(5)
     assert a.name == "20261022-130000_dori_dori" and b.name == "20261022-130000_dori_dori_2"
+
+
+def test_stop_returns_immediately_when_writer_stuck_and_queue_full(tmp_path):
+    gate = threading.Event()
+    rec = RunRecorder(rec_cfg(tmp_path, queue_size=2), writer=lambda p, rgb, w: gate.wait(5))
+    folder = rec.start("dori_dori")
+    feed(rec, 90)
+    t0 = time.monotonic()
+    rec.stop(result())
+    assert time.monotonic() - t0 < 0.5
+    gate.set()
+    rec.wait(5)
+    assert (folder / "episode.json").exists()          # 마감 신호는 반드시 전달된다
+
+
+def test_frame_thinning_survives_tick_jitter(tmp_path):
+    rec = RunRecorder(rec_cfg(tmp_path, queue_size=500))   # 합성 틱은 한꺼번에 들어오므로 큐를 넉넉히
+    folder = rec.start("dori_dori")
+    rng = np.random.default_rng(0)
+    for i in range(301):                                # 10초, 30Hz에 +-2ms 지터
+        rec.tick(np.zeros(6, np.float32), {"tower cam": FRAME}, i / 30 + rng.uniform(-0.002, 0.002))
+    rec.stop(result())
+    rec.wait(5)
+    assert load_episode(folder)["cameras"]["tower cam"]["count"] >= 98   # 10fps -> 약 100장
+
+
+def test_queued_frames_are_copies(tmp_path):
+    seen = []
+    rec = RunRecorder(rec_cfg(tmp_path), writer=lambda p, rgb, w: seen.append(rgb))
+    rec.start("dori_dori")
+    buf = np.zeros((4, 4, 3), np.uint8)
+    rec.tick(np.zeros(6), {"c": buf}, 0.0)
+    buf[:] = 9                                          # 드라이버가 버퍼를 재사용
+    rec.stop(result())
+    rec.wait(5)
+    assert seen and seen[0].max() == 0
+
+
+def test_warned_resets_per_run_and_empty_session_leaves_nothing(tmp_path, caplog):
+    def boom(path, rgb, width):
+        raise OSError("disk full")
+
+    rec = RunRecorder(rec_cfg(tmp_path), writer=boom)
+    with caplog.at_level("WARNING"):
+        for _ in range(2):
+            rec.start("dori_dori")
+            feed(rec, 3, cams=("a",))
+            rec.stop(result())
+            rec.wait(5)
+    assert caplog.text.count("disk full") == 2          # run마다 한 번씩
+    empty = rec.start("dori_dori")
+    rec.stop(result())
+    rec.wait(5)
+    assert not empty.exists() and rec.last_folder is None
+
+
+def test_wait_shares_one_deadline_and_prunes_threads(tmp_path):
+    gate = threading.Event()
+    rec = RunRecorder(rec_cfg(tmp_path), writer=lambda p, rgb, w: gate.wait(5))
+    for _ in range(3):
+        rec.start("dori_dori")
+        feed(rec, 3, cams=("a",))
+        rec.stop(result())
+    t0 = time.monotonic()
+    rec.wait(0.3)
+    assert time.monotonic() - t0 < 0.8                  # 스레드 3개여도 0.3초 안팎
+    gate.set()
+    rec.wait(5)
+    rec.start("dori_dori")
+    rec.stop(result())
+    rec.wait(5)
+    assert rec._threads == []
