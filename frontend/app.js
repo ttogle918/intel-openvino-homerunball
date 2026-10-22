@@ -63,6 +63,8 @@ function renderInfo(m) {
     d.querySelector('dd').textContent = mod[d.dataset.k] || '–';
     d.querySelector('dd').title = mod[d.dataset.k] || '';
   });
+  clearReplay();
+  Object.keys(replayData).forEach((k) => delete replayData[k]);   // 서버 재시작 뒤 새 녹화를 받도록
   S.twin = m.twin || { mode: S.mock ? 'mock' : 'replay', urdf: DEFAULT_URDF };
   S.replays = Array.isArray(m.replays) ? m.replays : [];
   buildTiles(m.ui && m.ui.tiles);
@@ -146,7 +148,7 @@ function startMock() {
 }
 function stopMock() {
   if (!mock) return;
-  mock.stop(); mock = null; S.mock = false; $('#mockTag').hidden = true; stopSway(); resetUI();
+  mock.stop(); mock = null; S.mock = false; lastQ = null; $('#mockTag').hidden = true; stopSway(); resetUI();
   tiles.forEach((t) => { if (t.spec.kind === 'camera') loadStream(t); });
 }
 function resetUI() {

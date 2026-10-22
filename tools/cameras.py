@@ -47,8 +47,21 @@ def snapshot(info, out, width, height):
     return path
 
 
-def config_line(info):
+def duplicate_serials(infos):
+    """둘 이상 장치가 같이 쓰는 시리얼(빈 값 포함)의 집합. 이런 장치는 시리얼로 지정할 수 없다."""
+    seen, dup = set(), set()
+    for info in infos:
+        serial = serial_of(info)
+        if serial is None:
+            continue
+        (dup if serial in seen else seen).add(serial)
+    return dup
+
+
+def config_line(info, dup=frozenset()):
     serial = serial_of(info)
+    if serial in dup:
+        serial = None
     device = f'{{serial: "{serial}"}}' if serial else str(info.index)
     return f"  cam{info.index}: {{device: {device}, width: 1280, height: 720, fps: 30}}"
 
@@ -76,11 +89,16 @@ def main(argv=None):
         except Exception as e:
             shot = f"열지 못함 ({type(e).__name__}: {e}) — Studio 등 다른 프로그램이 쓰는 중인지 확인"
         print(f"[{info.index}] {info.name or '(이름 없음)'} · 시리얼 {serial or '없음'} · {shot}")
+    dup = duplicate_serials(infos)
+    no_serial = [i for i in infos if serial_of(i) is None]
     print()
+    if dup or len(no_serial) > 1:
+        print("주의: 같은 시리얼(또는 시리얼 없음)인 장치가 있어요 → 그 장치들은 시리얼 대신 번호로 지정하세요 "
+              "(USB를 다시 꽂으면 번호가 바뀔 수 있으니 사진으로 다시 확인)")
     print("config.yaml cameras 예시 (camN을 사진을 보고 tower cam / side cam / follow cam 으로 바꾸고, "
           "해상도는 Studio 녹화 때와 같게):")
     for info in infos:
-        print(config_line(info))
+        print(config_line(info, dup))
 
 
 if __name__ == "__main__":

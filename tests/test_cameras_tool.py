@@ -61,3 +61,19 @@ def test_cameras_none_found(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(cameras, "discover", lambda: [])
     cameras.main(["--out", str(tmp_path / "c")])
     assert "찾지 못했어요" in capsys.readouterr().out
+
+
+def test_cameras_duplicate_or_empty_serials_print_index_and_warn(tmp_path, monkeypatch, capsys):
+    infos = [SimpleNamespace(index=0, name="A", hardware_payload={"serial": "SAME"}),
+             SimpleNamespace(index=1, name="B", hardware_payload={"serial": "SAME"}),
+             SimpleNamespace(index=2, name="C", hardware_payload={"serial": "UNIQ"}),
+             SimpleNamespace(index=3, name="D", hardware_payload={"serial": ""})]
+    monkeypatch.setattr(cameras, "discover", lambda: infos)
+    monkeypatch.setattr(cameras, "open_camera", lambda d, w, h: FakeCam(d, fail=False))
+    cameras.main(["--out", str(tmp_path / "cams")])
+    out = capsys.readouterr().out
+    assert "cam0: {device: 0," in out and "cam1: {device: 1," in out
+    assert 'cam2: {device: {serial: "UNIQ"}' in out
+    assert "cam3: {device: 3," in out
+    assert "같은 시리얼" in out and "번호로 지정" in out
+    assert 'serial: "SAME"' not in out

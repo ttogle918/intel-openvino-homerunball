@@ -833,3 +833,13 @@ def test_main_passes_twin_parts_to_create_app(monkeypatch):
     assert seen["cameras"] == ["tower cam"] and seen["box_camera"] == "tower cam"
     assert seen["joints_fn"] is parts["joints_fn"] and seen["joints_hz"] == 20.0
     assert seen["convert"] is str and seen["replays_dir"] == "replays"
+
+
+@pytest.mark.parametrize("raw,expected", [(0, 15.0), (None, 15.0), (-5, 1.0), (0.2, 1.0), (30, 30.0)])
+def test_build_twin_rate_hz_is_clamped(cfg, raw, expected):
+    cfg["twin"] = {**(cfg.get("twin") or {}), "rate_hz": raw}
+    parts = build(cfg, env={}, dry_run=True)
+    try:
+        assert parts["joints_hz"] == expected
+    finally:
+        parts["voice"].close()

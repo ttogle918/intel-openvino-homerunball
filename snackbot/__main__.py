@@ -73,7 +73,7 @@ def build(cfg, env, dry_run=True):
     return {"controller": controller, "skills": skills, "voice": voice, "stt": stt, "info": info,
             "frame_fn": lambda cam=None: skills.latest_frame(cam or camera),
             "cameras": list(cfg.get("cameras") or {}), "box_camera": camera,
-            "joints_fn": getattr(skills, "latest_joints", None), "joints_hz": float(twin.get("rate_hz", 15)),
+            "joints_fn": getattr(skills, "latest_joints", None), "joints_hz": max(1.0, float(twin.get("rate_hz") or 15)),
             "convert": make_converter(cfg), "replays_dir": replays_dir}
 
 

@@ -98,3 +98,19 @@ def test_reorder_without_pos_suffix_and_camera_name():
     assert fetch_replays.reorder([[1, 2, 3, 4, 5, 6]], keys) == [[1, 2, 3, 4, 5, 6]]
     assert fetch_replays.camera_name("observation.images.side cam", {"A": "tower cam"}) == "side cam"
     assert fetch_replays.camera_name("observation.images.A", {"A": "tower cam"}) == "tower cam"
+
+
+def test_fetch_removes_stale_episode_json_before_downloading(tmp_path):
+    out = tmp_path / "replays" / "dori_dori"
+    out.mkdir(parents=True)
+    (out / "episode.json").write_text("{}", encoding="utf-8")
+
+    def handler(request):
+        if "/episodes/" in request.url.path:
+            return httpx.Response(200, json=EPISODE)
+        return httpx.Response(500)                                  # 영상 받기 실패
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(SystemExit):
+        run(tmp_path, ["--dataset", "d1", "--episode", "3"], client)
+    assert not (out / "episode.json").exists()                      # 낡은 기록이 남지 않는다

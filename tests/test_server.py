@@ -372,3 +372,46 @@ def test_joints_fn_errors_and_none_are_skipped(cfg, tmp_path):
     with TestClient(app) as client, client.websocket_connect("/ws") as ws:
         ws.receive_json(), ws.receive_json()
         assert ws.receive_json()["type"] == "joints" and calls["n"] >= 5
+
+
+def test_stream_encodes_off_the_event_loop_thread(cfg, tmp_path, monkeypatch):
+    import threading
+    monkeypatch.setattr("snackbot.server.STREAM_INTERVAL_S", 0.001)
+    loop_thread = {}
+    encode_threads = []
+    real_chunk = mjpeg_chunk
+
+    def spy_chunk(frame, boxes=None):
+        encode_threads.append(threading.get_ident())
+        return real_chunk(frame, boxes)
+
+    monkeypatch.setattr("snackbot.server.mjpeg_chunk", spy_chunk)
+    holder = {}
+
+    def frame_fn():
+        if len(encode_threads) >= 2:
+            holder["c"].stop()
+        return np.zeros((10, 10, 3), np.uint8)
+
+    c, app = make_app(cfg, tmp_path, frame_fn=frame_fn)
+    holder["c"] = c
+
+    @app.middleware("http")
+    async def note_loop_thread(request, call_next):
+        loop_thread["id"] = threading.get_ident()
+        return await call_next(request)
+
+    with TestClient(app) as client:
+        r = client.get("/stream/front")
+    assert r.status_code == 200 and encode_threads
+    assert loop_thread["id"] not in encode_threads
+
+
+def test_app_starts_when_replays_dir_cannot_be_created(cfg, tmp_path, caplog):
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    _, app = make_app(cfg, tmp_path, replays_dir=blocker / "replays")      # 파일 아래에는 폴더를 못 만든다
+    with TestClient(app) as client:
+        assert client.get("/").status_code == 200
+        assert client.get("/replays/x").status_code == 404
+    assert "replays" in caplog.text

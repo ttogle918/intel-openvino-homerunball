@@ -115,6 +115,7 @@ def main(argv=None, client=None):
             raise SystemExit(f"Studio 에피소드 응답 형식이 달라요 (없는 키: {e})") from e
         joints = reorder(actions, keys)
         out.mkdir(parents=True, exist_ok=True)
+        (out / EPISODE_FILE).unlink(missing_ok=True)   # 받는 중 실패하면 낡은 episode.json 대신 '재생 없음'
         known = set(cfg.get("cameras") or {})
         cameras = {}
         for key, video in (ep.get("videos") or {}).items():

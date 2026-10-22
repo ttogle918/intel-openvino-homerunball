@@ -37,6 +37,12 @@ def mjpeg_chunk(frame, boxes=None):
     return b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + encode_jpeg(draw_boxes(frame, boxes)) + b"\r\n"
 
 
+def grab_chunk(read, boxes):
+    """프레임 읽기 + 박스 그리기 + JPEG 인코딩 (블로킹: 스레드풀에서 부른다). 프레임이 없으면 None."""
+    frame = read()
+    return mjpeg_chunk(frame, boxes()) if frame is not None else None
+
+
 def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend", *, cameras=(), box_camera=None,
                joints_fn=None, joints_hz=15.0, convert=None, replays_dir=None):
     """frame_fn(cam=None): RGB 프레임. 인자 없이 부르면 vision 카메라 (/stream/front).
@@ -193,8 +199,7 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend",
     async def mjpeg(read, boxes):
         while not controller.stopped:
             try:
-                frame = await run_in_threadpool(read)
-                chunk = mjpeg_chunk(frame, boxes()) if frame is not None else None
+                chunk = await run_in_threadpool(grab_chunk, read, boxes)   # 읽기·박스·JPEG 인코딩 모두 스레드에서
             except Exception as e:
                 log.debug("프레임 오류, 건너뜀: %r", e)
                 chunk = None
@@ -225,8 +230,11 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend",
         return data
 
     if replays_dir is not None:
-        Path(replays_dir).mkdir(parents=True, exist_ok=True)
-        app.mount("/replays", StaticFiles(directory=replays_dir), name="replays")
+        try:
+            Path(replays_dir).mkdir(parents=True, exist_ok=True)
+            app.mount("/replays", StaticFiles(directory=replays_dir), name="replays")
+        except OSError as e:
+            log.warning("replays 폴더를 만들지 못해 /replays를 건너뜀: %r", e)
     static = Path(static_dir)
     if static.is_dir():
         app.mount("/", StaticFiles(directory=static, html=True), name="frontend")
