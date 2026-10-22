@@ -67,8 +67,9 @@ skills:
   device: GPU                              # CPU | GPU | NPU (정책별로 device를 따로 써도 된다)
   # camera_map: 학습 때 Studio 카메라 이름이 위 cameras 키와 다르면 {학습 이름: config 이름}.
   #   학습 이름은 결과물 manifest.json의 "images.<이름>"에서 확인한다. 예: {A: tower cam, B: side cam}
-  oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
-  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}}
+  # replay: dry-run 재생에 쓸 Studio 녹화 {dataset: <데이터셋 id>, episode: <번호>} (python -m tools.fetch_replays 가 읽는다)
+  oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}, replay: {dataset: null, episode: null}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
+  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}, replay: {dataset: null, episode: null}}
   gripper:                                 # python -m tools.robot_probe watch 로 값을 읽고 정한다 (0..100, 작을수록 닫힘)
     closed_below: null                     # 이보다 작으면 "닫힘"
     open_above: null                       # 닫힘 뒤 이보다 큰 값이 open_hold_s 동안 이어지면 "놓음" → ACT 정지
@@ -78,6 +79,23 @@ skills:
   move_s: 2.0                              # 자세 하나로 이동하는 시간 (초)
 
 poses_file: poses.yaml                     # python -m tools.robot_probe save home | save lift 가 기록
+
+ui:
+  tiles: [tower cam, side cam, follow cam, twin]   # 2×2 칸 순서. 각 칸: config 카메라 이름 | twin | {iframe: URL, name: 이름표}
+
+twin:                                     # 3D 디지털 트윈 (frontend/twin.js)
+  urdf: twin/so101/so101_new_calib.urdf   # frontend/ 기준 경로 (정적 서빙)
+  rate_hz: 15                             # 실제 로봇 관절값 전송 주기 (값이 바뀔 때만 보낸다)
+  sign: [1, 1, 1, 1, 1, 1]                # [ ] 관절별 부호 보정: 3D가 실제와 반대로 돌면 -1
+  offset_deg: [0, 0, 0, 0, 0, 0]          # [ ] 관절별 영점 보정 (도)
+
+replays_dir: replays                      # git 제외. replays/<스킬>/episode.json (tools.fetch_replays 또는 실행 기록 복사)
+
+recording:                                # 실행 기록: 실제 로봇에서 정책 phase마다 관절값·프레임 저장 (episode.json 형식)
+  enabled: true
+  dir: logs/runs                          # git 제외 (logs/*)
+  frame_fps: 10
+  frame_width: 640
 
 voice:
   engine: gemini            # none | log | pyttsx3 | openai | gemini

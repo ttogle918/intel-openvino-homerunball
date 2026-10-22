@@ -21,4 +21,6 @@ def cfg(tmp_path):
     c["dry_run"]["act_s"] = 0
     c["dry_run"]["samples_dir"] = str(tmp_path / "samples")
     c["logging"]["dir"] = str(tmp_path / "logs")
+    c["replays_dir"] = str(tmp_path / "replays")
+    c["recording"]["dir"] = str(tmp_path / "runs")
     return c
