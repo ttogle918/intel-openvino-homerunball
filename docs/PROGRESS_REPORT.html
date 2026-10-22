@@ -89,9 +89,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <div class="wrap">
 
 <h1>snackbot 진행 보고서</h1>
-<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-22 갱신 · 기준: 커밋 <code>dc7685c</code> (브랜치 <code>feat/robot-m4</code>)</p>
+<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-22 갱신 · 기준: 커밋 <code>637a678</code> (브랜치 <code>feat/robot-m4</code>)</p>
 
-<div class="note"><b>이번 갱신(ee5a12b 이후):</b> (1) <b>음성·동작 동기화</b>를 사용자 결정 A안으로 넣었다(<code>bd7d36d</code>, 수정 <code>089f9f6</code>). 사이클이 생각 → 말하기 → 옮기기 순서이고, 대사 소리가 나기 시작하면 동작이 시작된다. TTS 실패나 <code>voice.sync_timeout_s</code>(10초) 초과면 바로 동작하고, 기다리는 중 비상정지면 동작하지 않는다. UI 단계 표시줄에 "말하기"가 생겼다(<code>d8d67fb</code>). (2) <b>리뷰 안 됐던 커밋 7개를 리뷰</b>했다. LLM·음성·대화 기억 5개는 sonnet 리뷰 <b>승인</b>, 콘솔 키 2개(<code>620cdfa</code>, <code>b2f4c6e</code>)는 opus 리뷰 <b>수정 필요</b>로 지금 고치는 중이다. (3) <b>M4 Task 2</b>(<code>snackbot/motion.py</code>)를 마쳤고 Task 3(<code>robot.py</code>)을 구현 중이다. (4) 채팅 문장의 개수가 LLM 값보다 우선하도록 고쳤다(<code>c2c269e</code>). (5) STT·TTS 후보 비교는 <a href="VOICE_PROVIDERS.md"><code>VOICE_PROVIDERS.md</code></a>에 정리했고(<code>1449202</code>), Gemini 예비 STT도 실제로 확인했다(<code>5312105</code>). UI에서 🎤 마이크·음성 재생은 사용자가 브라우저로 확인 중이다(아직 결과 없음).</div>
+<div class="note"><b>이번 갱신(a719de3 이후):</b> (1) <b>콘솔 키 비상정지 누출 2건</b>을 고쳤다(<code>3b33cf1</code>, 테스트 수정 <code>369dda6</code>, opus 리뷰 2회 후 완료). space와 방향키·Home이 거의 동시에 오면 'H'가 재시작으로 읽혀 비상정지가 풀리던 문제는 "ESC가 든 입력 뒤 100ms는 space만 인정"으로, h 직후 space를 누르면 재시작이 나중 비상정지를 덮던 문제는 "재시작에 누른 순간의 세션 번호를 붙여 그 사이 비상정지가 있었으면 거부"로 막았다. (2) <b>M4 Task 3</b>(<code>snackbot/robot.py</code>, RobotSkills)를 마쳤다(<code>64963fa</code>, 수정 <code>97d10b3</code> <code>9bfcaaf</code>, opus 리뷰 2회 + 컨트롤러 확인). 비상정지는 토크 유지(physicalai 소스로 확인), 시작 때 모델을 한 번 미리 돌려(warmup) 카메라 이름이 안 맞으면 바로 안내하고, 모델 폴더가 없는 정책은 건너뛴다(과자 모델이 아직 없어도 home·dori_dori로 테스트 가능). SO101 import는 physicalai 본체 경로를 먼저 쓴다(<code>5a30392</code>). (3) <b>M4 Task 4</b> 현장 도구를 마쳤다(<code>2cdd395</code> <code>9563b9f</code>, sonnet 리뷰 승인): <code>tools.fetch_calibration</code>, <code>tools.robot_probe</code>. (4) <b>controller 정리</b>(<code>8cd3b82</code> <code>637a678</code>, opus 리뷰): 재시작은 동작이 멈춘 뒤에만, 비상정지 때 남은 대사 버리기, 이전 세션 결과가 새 세션을 덮지 않음, 음성 동기화 Minor 정리. (5) 런북에 노트북 "로봇 첫 연결" 절차를 넣었다(<code>56c1b67</code>, <a href="DEMO_RUNBOOK.md"><code>DEMO_RUNBOOK.md</code></a> 2-2절). (6) 로컬 main을 <code>637a678</code>로 병합했다(원격 push는 사용자가 직접 실행할 예정). 남은 일: M4 Task 5·6, 노트북 실기 확인, 과자 모델 학습, UI 🎤·음성 재생 확인(아직 결과 없음).</div>
 
 <h2 id="intro">1. 프로젝트와 시연 시나리오</h2>
 <div class="card">
@@ -112,20 +112,20 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="summary">2. 전체 진척 요약</h2>
 <div class="grid">
-  <div class="stat"><b style="color:var(--done)">32</b><span>완료</span></div>
+  <div class="stat"><b style="color:var(--done)">38</b><span>완료</span></div>
   <div class="stat"><b style="color:var(--review)">0</b><span>리뷰 대기 (구현됨, 리뷰 안 함)</span></div>
-  <div class="stat"><b style="color:var(--wip)">5</b><span>진행 중</span></div>
-  <div class="stat"><b style="color:var(--todo)">7</b><span>남음</span></div>
+  <div class="stat"><b style="color:var(--wip)">4</b><span>진행 중</span></div>
+  <div class="stat"><b style="color:var(--todo)">5</b><span>남음</span></div>
   <div class="stat"><b style="color:var(--hold)">1</b><span>보류</span></div>
-  <div class="stat"><b>203</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>c2c269e</code> 시점 전체)</span></div>
+  <div class="stat"><b>266</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>637a678</code> 시점 전체)</span></div>
 </div>
-<p class="sub" style="margin-top:8px">비교표(4장) 45개 행 기준. 소프트웨어 계획 Task 1~10은 모두 완료, 로봇 연결(M4)은 Task 1~2 완료·Task 3 진행 중. Task 2 수정 뒤 <code>test_motion</code> 16개 통과.</p>
+<p class="sub" style="margin-top:8px">비교표(4장) 48개 행 기준. 소프트웨어 계획 Task 1~10은 모두 완료, 로봇 연결(M4)은 Task 1~4 완료·Task 5~6 남음. 다만 실제 로봇 실기 확인은 아직 하지 않았다.</p>
 
 <div class="card">
 <div class="prow"><span class="n">설계 마일스톤 M0~M7</span><div class="bar"><i class="d" style="width:75%"></i><i class="w" style="width:12.5%"></i></div><span class="v">완료 6 · 진행 1 · 남음 1</span></div>
 <div class="prow"><span class="n">소프트웨어 Task 1~10</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 10 / 10</span></div>
-<div class="prow"><span class="n">M4 로봇 Task 1~6</span><div class="bar"><i class="d" style="width:33.3%"></i><i class="w" style="width:16.7%"></i></div><span class="v">완료 2 · 진행 1 · 남음 3</span></div>
-<div class="prow"><span class="n">그 밖의 연결·정리 (21개)</span><div class="bar"><i class="d" style="width:66.7%"></i><i class="w" style="width:14.3%"></i></div><span class="v">완료 14 · 진행 3 · 남음 3 · 보류 1</span></div>
+<div class="prow"><span class="n">M4 로봇 Task 1~6</span><div class="bar"><i class="d" style="width:66.7%"></i></div><span class="v">완료 4 · 남음 2</span></div>
+<div class="prow"><span class="n">그 밖의 연결·정리 (24개)</span><div class="bar"><i class="d" style="width:75%"></i><i class="w" style="width:12.5%"></i></div><span class="v">완료 18 · 진행 3 · 남음 2 · 보류 1</span></div>
 </div>
 <p class="sub">범례: <span class="badge b-done">완료</span> <span class="badge b-review">리뷰 대기</span> <span class="badge b-wip">진행 중</span> <span class="badge b-todo">남음</span> <span class="badge b-hold">보류</span></p>
 
@@ -137,7 +137,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
   <div class="layer"><h4>판단 <small>다음 행동과 대사, 채팅 의도</small></h4>
     코드 가드 + LLM (provider 체인), TTS 출력<br><small>구현: <code>brain.py</code> <code>providers.py</code> <code>voice.py</code></small></div>
   <div class="layer"><h4>행동 <small>동작 실행</small></h4>
-    ACT 정책 2개 (OpenVINO): <code>oranda_pickup</code>, <code>dori_dori</code><br><small>구현: <code>skills.py</code> (dry-run 완료), <code>motion.py</code> 완료, <code>robot.py</code> 구현 중 (M4)</small></div>
+    ACT 정책 2개 (OpenVINO): <code>oranda_pickup</code>, <code>dori_dori</code><br><small>구현: <code>skills.py</code> (dry-run 완료), <code>motion.py</code> <code>robot.py</code> 완료 (M4), 실기 확인은 남음</small></div>
 </div>
 <p>의존 방향: <code>server → controller → (brain, vision, skills, voice)</code>. controller는 FastAPI를 모르므로 <code>--no-ui</code>로도 돈다.</p>
 
@@ -170,7 +170,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>M1 controller, brain 규칙, B 판정, dry skills, 콘솔 키, JSONL</td><td><span class="badge b-done">완료</span></td><td><code>89b3c4a</code> <code>f6d6a08</code> <code>cd33df2</code></td></tr>
 <tr><td>M2 server.py + 계약, <code>frontend/</code></td><td><span class="badge b-done">완료</span></td><td><code>985351f</code> <code>6a7353b</code></td></tr>
 <tr><td>M3 providers + brain(decide·chat) + TTS, counter 체인(A)</td><td><span class="badge b-done">완료</span></td><td><code>437149a</code> <code>f648b13</code> <code>93915c8</code> <code>f6c1921</code>. 코드·테스트는 끝. 실제 YOLO/VLM 모델은 아직 안 붙였다(vision.chain 비어 있음, 아래 "남음" 참고)</td></tr>
-<tr><td>M4 로봇 연결 (자세 이동 → 정책 단독 → 전체 루프 → 카메라 스트림)</td><td><span class="badge b-wip">진행 중</span></td><td>Task 1 <code>2a95f3c</code>, Task 2 <code>504084d</code> <code>dc7685c</code> 완료, Task 3 진행 중</td></tr>
+<tr><td>M4 로봇 연결 (자세 이동 → 정책 단독 → 전체 루프 → 카메라 스트림)</td><td><span class="badge b-wip">진행 중</span></td><td>Task 1~4 완료 (<code>2a95f3c</code>, <code>504084d</code> <code>dc7685c</code>, <code>64963fa</code>, <code>2cdd395</code>), Task 5·6 남음. 노트북 실기 확인 전</td></tr>
 <tr><td>M5 달래기 (REFUSING에서 resume intent)</td><td><span class="badge b-done">완료</span></td><td><code>f648b13</code> (intent) + <code>89b3c4a</code> (상태 전이). dry-run 기준, 대화 LLM은 별도 행</td></tr>
 <tr><td>M6 STT (<code>/stt</code> + stt.py, 말로 시작·달래기)</td><td><span class="badge b-done">완료</span></td><td>서버 경로 <code>985351f</code> + 로컬 Whisper <code>1284e6a</code> <code>e006840</code></td></tr>
 <tr><td>M7 (선택) ACT 디바이스별 지연 비교</td><td><span class="badge b-todo">남음</span></td><td>자를 때 가장 먼저 자르는 항목</td></tr>
@@ -188,22 +188,25 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td class="grp" colspan="3">M4 로봇 연결 Task 1~6 (plans/2026-10-22-snackbot-robot.md)</td></tr>
 <tr><td>M4-1 로봇 설정과 포즈 파일</td><td><span class="badge b-done">완료</span></td><td><code>2a95f3c</code>, 리뷰 통과</td></tr>
 <tr><td>M4-2 motion.py: 그리퍼 감시, 보간 이동, 정지 신호</td><td><span class="badge b-done">완료</span></td><td><code>504084d</code> + 수정 <code>dc7685c</code>. 리뷰에서 Important 발견 → 수정 → 컨트롤러 확인. test_motion 16개 통과</td></tr>
-<tr><td>M4-3 robot.py: RobotSkills</td><td><span class="badge b-wip">진행 중</span></td><td>구현 중. physicalai 실제 소스로 API를 대조하며 작성, 리뷰는 아직</td></tr>
-<tr><td>M4-4 현장 도구: fetch_calibration, robot_probe</td><td><span class="badge b-todo">남음</span></td><td><code>tools/</code>에는 export_yolo_world.py만 있다</td></tr>
+<tr><td>M4-3 robot.py: RobotSkills</td><td><span class="badge b-done">완료</span></td><td><code>64963fa</code> + 수정 <code>97d10b3</code> <code>9bfcaaf</code>, SO101 import 경로 <code>5a30392</code>. opus 리뷰 2회 + 컨트롤러 확인. 모델 폴더 없는 정책은 건너뜀, 시작 때 warmup, 비상정지 세대 번호</td></tr>
+<tr><td>M4-4 현장 도구: fetch_calibration, robot_probe</td><td><span class="badge b-done">완료</span></td><td><code>2cdd395</code> + <code>9563b9f</code>, sonnet 리뷰 승인. 예외에도 disconnect(팔 자세 유지), 한국어 오류 안내</td></tr>
 <tr><td>M4-5 진입점에 실제 로봇 연결</td><td><span class="badge b-todo">남음</span></td><td>현 코드에 맞춰 적용해야 함 (계획 이후 <code>__main__.py</code>가 많이 바뀜)</td></tr>
 <tr><td>M4-6 현장 절차 문서</td><td><span class="badge b-todo">남음</span></td><td>CLAUDE.md, DEMO_RUNBOOK, 설계 문서 수정</td></tr>
 <tr><td class="grp" colspan="3">그 밖의 연결·정리</td></tr>
 <tr><td>최종 리뷰 반영과 콘솔 키 보강 (비상정지 지연, 재시작 키 h, ESC 처리)</td><td><span class="badge b-done">완료</span></td><td><code>0a14bb2</code> <code>4b3b5bf</code> <code>59f967a</code> <code>5a67d35</code> <code>34c886e</code> <code>db07574</code></td></tr>
 <tr><td>dori_dori 결과물·Studio 설정 확인</td><td><span class="badge b-done">완료</span></td><td>설계 11.5절, <code>03256a4</code></td></tr>
-<tr><td>프로젝트 저장소(homerunball)에 subtree push</td><td><span class="badge b-done">완료</span></td><td>main <code>34c886e</code> 시점까지 (원격 main=<code>193ae1d</code>). 이후 M4 커밋은 미병합</td></tr>
+<tr><td>프로젝트 저장소(homerunball)에 subtree push</td><td><span class="badge b-done">완료</span></td><td>main <code>34c886e</code> 시점까지 (원격 main=<code>193ae1d</code>). 이후 커밋은 아래 병합 행 참고</td></tr>
 <tr><td>대화 LLM: Claude 우선 → NVIDIA → 규칙, Gemini provider</td><td><span class="badge b-done">완료</span></td><td><code>4d6b040</code> <code>bd1c9ee</code>. sonnet 리뷰 승인. Claude 대화는 실제 동작 확인(1.8~3.6초)</td></tr>
 <tr><td>대화 기억(최근 12개), 캐릭터 이름 "보리", 재시작 때 초기화</td><td><span class="badge b-done">완료</span></td><td><code>b2fc422</code>. sonnet 리뷰 승인</td></tr>
-<tr><td>콘솔 키 단순화 (ESC 섞이면 space만, 명령 워커 1개) + 정지 때 대기열 비우기</td><td><span class="badge b-wip">진행 중</span></td><td><code>620cdfa</code> <code>b2f4c6e</code>. opus 리뷰 <b>수정 필요</b> → 수정 중, 이후 재리뷰. Important 2건: space와 방향키·Home이 거의 동시에 들어오면 뒤따르는 H가 재시작으로 읽혀 비상정지가 풀림 / h 직후 짧은 틈에 누른 space가 재시작에 덮임. 재시작에 누른 순간의 세션 번호를 붙여 그 사이 비상정지가 있었으면 거부</td></tr>
+<tr><td>콘솔 키 단순화 (ESC 섞이면 space만, 명령 워커 1개) + 정지 때 대기열 비우기</td><td><span class="badge b-done">완료</span></td><td><code>620cdfa</code> <code>b2f4c6e</code> → 수정 <code>3b33cf1</code> + 테스트 수정 <code>369dda6</code>, opus 리뷰 2회. 누출 2건: space와 방향키·Home이 거의 동시에 오면 H가 재시작으로 읽혀 비상정지가 풀림 → ESC가 든 입력 뒤 100ms는 space만 인정 / h 직후 space가 재시작에 덮임 → 재시작에 세션 번호를 붙여 그 사이 비상정지가 있었으면 거부</td></tr>
 <tr><td>진입점에서 make_voice로 음성 설정 연결</td><td><span class="badge b-done">완료</span></td><td><code>982692d</code>. sonnet 리뷰 승인</td></tr>
 <tr><td>음성 인식·합성을 Gemini로 (STT gemini-3.5-flash-lite, TTS gemini-2.5-flash-preview-tts)</td><td><span class="badge b-done">완료</span></td><td><code>6db1ac4</code>. sonnet 리뷰 승인(타임아웃·키 노출·허용값 검증 문제 없음). 새 무료 키로 TTS 동작 확인(아래 행). STT는 로컬 Whisper가 먼저 쓰이고, TTS는 Gemini만 쓴다(OS TTS 예비 없음)</td></tr>
 <tr><td>Gemini TTS 무료 키 동작과 TTS → STT 왕복 검사</td><td><span class="badge b-done">완료</span></td><td>모델 <code>gemini-2.5-flash-preview-tts</code>(voice Leda) 유지. 문장 3개 모두 로컬 Whisper가 핵심 단어를 되받아 인식. 새 모델 <code>gemini-3.8-flash-tts</code>(4.6~5.0초), <code>gemini-3.8-flash-lite-tts</code>(3.0~3.8초)는 말투 지시문까지 소리 내어 읽어 채택 안 함. TTS는 대기열 스레드라 로봇 루프를 막지 않고 문장당 약 4초 늦게 들린다</td></tr>
 <tr><td>음성·동작 동기화 (생각 → 말하기 → 옮기기, 사용자 결정 A안)</td><td><span class="badge b-done">완료</span></td><td><code>bd7d36d</code> + 수정 <code>089f9f6</code>. 대사 소리가 나기 시작하면 동작 시작, TTS 실패·10초 초과면 바로 동작, 기다리는 중 비상정지면 동작 안 함. TTS 합성·재생을 두 스레드로 나눠 다음 대사를 미리 합성. 세션 번호(<code>_gen</code>)로 비상정지→재시작→시작이 겹쳐도 이전 결정을 실행하지 않음. opus 리뷰 2회, 최종 승인</td></tr>
-<tr><td>동기화 Minor 정리 (기본값 8초 ↔ config 10초 불일치, 다 옮김 경로 세션 번호 확인 등)</td><td><span class="badge b-todo">남음</span></td><td>리뷰에서 남긴 Minor. 콘솔 키 재리뷰 다음 순서</td></tr>
+<tr><td>동기화 Minor 정리 (기본값 8초 ↔ config 10초 불일치, 다 옮김 경로 세션 번호 확인 등)</td><td><span class="badge b-done">완료</span></td><td><code>8cd3b82</code> <code>637a678</code>. 음성 동기화 기본값을 10초로 맞춤, 이전 세션의 '다 옮김'·개수 결과가 새 세션을 덮지 않음</td></tr>
+<tr><td>controller 정리 (재시작은 동작이 멈춘 뒤, 비상정지 때 남은 대사 버리기)</td><td><span class="badge b-done">완료</span></td><td><code>8cd3b82</code> <code>637a678</code>, opus 리뷰. 재시작은 진행 중인 동작이 멈춘 뒤에만(최대 5초, 안 멈추면 거부하고 비상정지 유지), 웹 UI 재시작에도 세션 번호 확인, 재시작 취소 시 UI 알림</td></tr>
+<tr><td>런북에 노트북 "로봇 첫 연결" 절차 (2-2절)</td><td><span class="badge b-done">완료</span></td><td><code>56c1b67</code>, <a href="DEMO_RUNBOOK.md"><code>DEMO_RUNBOOK.md</code></a>. 포트 → 캘리브레이션 → watch(그리퍼 방향) → 포즈 저장 → home 이동(Ctrl+C 토크 유지 확인) → dori_dori 순서, 무료 Gemini 키 안내 포함</td></tr>
+<tr><td>노트북에서 로봇 실기 확인 (런북 2-2절 순서)</td><td><span class="badge b-todo">남음</span></td><td>아직 실제 로봇으로 돌려 보지 않았다. 포트, 카메라, 캘리브레이션, 그리퍼 방향, 포즈 저장, home 이동, dori_dori 확인</td></tr>
 <tr><td>UI 말하기 단계 (단계 표시줄 "말하기", 상태 "말하는 중", 목업 반영)</td><td><span class="badge b-done">완료</span></td><td><code>d8d67fb</code>. 연동 계약(UI_DESIGN_PROMPT, 설계 문서)의 phase 목록에 speaking 추가</td></tr>
 <tr><td>채팅 개수 우선순위 ("3개 옮겨줘"의 3이 LLM 값보다 우선)</td><td><span class="badge b-done">완료</span></td><td><code>c2c269e</code>. 절대 규칙 1 "횟수는 코드가 센다"에 맞춤. 리뷰에서 발견</td></tr>
 <tr><td>STT·TTS 선택 문서와 Gemini 예비 STT 실제 확인</td><td><span class="badge b-done">완료</span></td><td><a href="VOICE_PROVIDERS.md"><code>VOICE_PROVIDERS.md</code></a> (<code>1449202</code>, <code>5312105</code>): 후보 비교와 선택 이유. 무료 키로 <code>gemini-3.5-flash-lite</code> 오디오 입력, 3문장 모두 정확, 1.5~2.4초</td></tr>
@@ -213,9 +216,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>STT를 OpenVINO Whisper 로컬로 (결정 21번)</td><td><span class="badge b-done">완료</span></td><td>결정은 <code>4ac9524</code>, 구현 <code>1284e6a</code> <code>e006840</code> (small CPU 기본, Gemini 예비). 노트북에서 설치·속도 확인은 남음</td></tr>
 <tr><td>oranda_pickup ACT 학습 (Studio)</td><td><span class="badge b-wip">진행 중</span></td><td>Studio에서 학습 중. 끝나면 <code>exports/openvino</code>가 나온다 (외부 작업)</td></tr>
 <tr><td>counter 체인의 실제 모델(YOLO-World 내보내기, VLM, OpenCV 튜닝)</td><td><span class="badge b-todo">남음</span></td><td>도구 <code>93915c8</code>는 있음. 큰 패키지(ultralytics 등)는 이 PC에 설치하지 않음. 실제 트레이 사진으로 정해야 함</td></tr>
-<tr><td>feat/robot-m4를 main에 병합하고 homerunball에 push</td><td><span class="badge b-todo">남음</span></td><td>M4 끝난 뒤. origin(강의 저장소)에는 push하지 않기로 함</td></tr>
+<tr><td>feat/robot-m4를 main에 병합하고 homerunball에 push</td><td><span class="badge b-wip">진행 중</span></td><td>로컬 main을 <code>637a678</code>로 병합 완료(fast-forward). homerunball 원격 push는 사용자가 직접 실행할 준비 중. origin(강의 저장소)에는 push하지 않기로 함</td></tr>
 </tbody></table></div>
-<p class="sub">리뷰 대기 커밋은 없다. 이전 리뷰 대기 7개 중 5개(<code>4d6b040</code> <code>bd1c9ee</code> <code>982692d</code> <code>b2fc422</code> <code>6db1ac4</code>)는 승인, 2개(<code>620cdfa</code> <code>b2f4c6e</code>)는 수정 중이다.</p>
+<p class="sub">리뷰 대기 커밋은 없다. 이전 리뷰 대기 7개 중 5개(<code>4d6b040</code> <code>bd1c9ee</code> <code>982692d</code> <code>b2fc422</code> <code>6db1ac4</code>)는 승인, 콘솔 키 2개(<code>620cdfa</code> <code>b2f4c6e</code>)는 수정 후 opus 재리뷰로 완료했다.</p>
 
 <h2 id="detail">5. 단계별 상세</h2>
 <p class="sub">각 항목을 눌러 펼친다. 근거는 진행 기록(<code>.superpowers/sdd/progress.md</code>), 계획, 설계 문서, 의논 기록(결정 1~21).</p>
@@ -265,8 +268,8 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <p><span class="k">무엇:</span> physical-ai-studio가 학습한 ACT OpenVINO 정책 2개를 <code>physicalai</code> 0.3.0 런타임으로 SO-101에서 직접 실행. 그리퍼 "닫힘 → 열림"에서 ACT를 멈추고 코드가 <code>lift_pose → home_pose</code>로 복귀, 비상정지는 토크 유지.</p>
 <p><span class="k">구조(계획):</span> <code>RobotRuntime</code> 하나를 시작 때 연결해 두고 <code>run()</code>마다 동작 출처를 바꿔 끼운다(<code>Switch.active</code> = 정책 A / 정책 B / <code>MoveSource</code>). 매 틱 콜백(<code>Tap</code>)이 관절값·프레임을 저장하고 <code>GripperWatch</code>에 넘긴다.</p>
 <p><span class="k">왜 그리퍼 전이인가:</span> 홈 자세에서 그리퍼가 이미 열려 있으면 "열림 + 0.5초"는 시작하자마자 걸린다. 닫힘 기준을 한 번 지난 뒤 열림 기준을 0.5초 넘으면 정지, 최대 시간은 안전장치(결정 17). 기준값은 <code>tools/gripper_stats.py</code>로 데이터셋에서 정한다.</p>
-<p><span class="k">Task별 상태:</span> Task 1~2 완료, Task 3 진행 중, Task 4~6 남음(아래 5-C).</p>
-<p><span class="k">주의:</span> 노트북에서 포트, 카메라 번호, 포즈 파일을 확인해야 한다. 현재 <code>poses.yaml</code>과 <code>calibration/</code>은 없다(현장 작업). 로봇 포트는 한 프로그램만 잡으므로 Studio 세션을 먼저 닫는다.</p>
+<p><span class="k">Task별 상태:</span> Task 1~4 완료, Task 5~6 남음(아래 5-C). 노트북 실기 확인은 아직이다.</p>
+<p><span class="k">주의:</span> 노트북에서 포트, 카메라 번호, 포즈 파일을 확인해야 한다(절차는 <a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a> 2-2절). 현재 <code>poses.yaml</code>과 <code>calibration/</code>은 없다(현장 작업). 로봇 포트는 한 프로그램만 잡으므로 Studio 세션을 먼저 닫는다.</p>
 </div></details>
 
 <details><summary>M5 달래기 <span class="badge b-done">완료</span></summary><div class="body">
@@ -342,7 +345,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <details><summary>Task 9 진입점, 콘솔 키, 임시 화면 <span class="badge b-done">완료</span></summary><div class="body">
 <p><span class="k">만든 것:</span> <code>__main__.py</code>(<code>--dry-run</code>, <code>--no-ui</code>, <code>--host</code>, <code>--port</code>), 콘솔 키 루프, 개발용 임시 화면. 수정 <code>a4e33c2</code>(Windows 특수 키 무시, Ctrl+C 종료, 터미널 복원).</p>
-<p><span class="k">이후 변화:</span> 방향키·ESC 꼬리가 명령으로 새는 문제를 여러 번 고쳤다(<code>5a67d35</code> <code>34c886e</code> <code>db07574</code>, 그리고 <code>620cdfa</code> <code>b2f4c6e</code>; opus 리뷰에서 수정 필요 판정, 수정 중). 현재 규칙: ESC가 섞인 입력은 space(비상정지)만 인정하고 나머지는 버리며, 일반 명령은 워커 스레드 1개가 순서대로 처리하고, 비상정지·종료 때 대기 중 명령을 비운다.</p>
+<p><span class="k">이후 변화:</span> 방향키·ESC 꼬리가 명령으로 새는 문제를 여러 번 고쳤다(<code>5a67d35</code> <code>34c886e</code> <code>db07574</code>, 그리고 <code>620cdfa</code> <code>b2f4c6e</code>; opus 리뷰의 수정 필요 판정을 <code>3b33cf1</code> <code>369dda6</code>로 고쳐 완료). 현재 규칙: ESC가 든 입력과 그 뒤 100ms는 space(비상정지)만 인정하고 나머지는 버리며, 일반 명령은 워커 스레드 1개가 순서대로 처리하고, 비상정지·종료 때 대기 중 명령을 비운다.</p>
 <p><span class="k">남은 minor / 알려진 점:</span> ESC 100ms 창은 None 청크로만 열려, 걸러진 청크 뒤 100ms 안의 일반 키는 버려짐. POSIX 경로는 Ubuntu 노트북 실제 터미널에서 직접 확인해야 한다.</p>
 </div></details>
 
@@ -364,14 +367,17 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <p><span class="k">왜:</span> 매 스텝 그리퍼 정지 조건과 비상정지를 확인해야 한다. 비상정지는 정지 순간의 목표값을 고정해 유지(중력으로 처지지 않게, 결정 9).</p>
 </div></details>
 
-<details><summary>M4-3 robot.py (RobotSkills) <span class="badge b-wip">진행 중</span></summary><div class="body">
-<p><span class="k">진행:</span> physicalai 0.3.0 실제 소스로 API를 대조하며 구현 중(리뷰 전). <span class="k">계획된 인터페이스:</span> <code>RobotSkills(cfg, poses, make_runtime=None, policies=None)</code>, 메서드 <code>connect() tray new_task(n) run(name, on_phase) ensure_home() go_home() estop() release_estop() latest_frame() close()</code>. 포즈나 그리퍼 기준값이 없으면 SystemExit. CLI <code>python -m snackbot.robot oranda_pickup|dori_dori|home</code>.</p>
+<details><summary>M4-3 robot.py (RobotSkills) <span class="badge b-done">완료</span></summary><div class="body">
+<p><span class="k">만든 것(<code>64963fa</code>, 수정 <code>97d10b3</code> <code>9bfcaaf</code>):</span> <code>snackbot/robot.py</code>. <code>RobotRuntime</code> 하나에 동작 출처(정책 A/B, 보간 이동)를 바꿔 끼운다. 인터페이스 <code>RobotSkills(cfg, poses, make_runtime=None, policies=None)</code>, 메서드 <code>connect() tray new_task(n) run(name, on_phase) ensure_home() go_home() estop() release_estop() latest_frame() close()</code>. CLI <code>python -m snackbot.robot oranda_pickup|dori_dori|home</code>.</p>
+<p><span class="k">안전:</span> 비상정지는 토크 유지다(physicalai 소스로 확인: 런타임은 정지 때 아무 명령도 보내지 않아 마지막 목표가 유지된다). 비상정지 세대 번호 덕에 비상정지 직후 해제가 끼어도 진행 중이던 동작은 비상정지로 끝난다. 동작 출처 교체는 카메라·시리얼 락 안에서 해서 재시작 경쟁 때 정책이 연결된 채 남던 문제(I-3)를 없앴다.</p>
+<p><span class="k">시작 점검:</span> 시작 때 실제 관절값·카메라로 모델을 한 번 미리 돌려(warmup) 카메라 이름이 안 맞으면 바로 안내하고 멈춘다. 모델 폴더가 없는 정책은 건너뛴다(과자 모델이 아직 없어 home·dori_dori만으로 테스트 가능). 그리퍼 기준값은 과자 모델이 있을 때만 필수다.</p>
 <p><span class="k">동작 규칙:</span> <code>run</code>은 비상정지면 즉시 <code>estop</code>. 홈 확인 → 정책 phase → oranda_pickup이면 <code>lift → home</code>, dori_dori면 <code>home</code>. oranda_pickup은 <code>GripperWatch.done</code> 또는 <code>max_time_s</code>에서 끝난다(<code>stop_reason</code>: <code>gripper_open</code> / <code>timeout</code>).</p>
+<p><span class="k">SO101 import:</span> physicalai 0.3.0 본체 <code>physicalai.robot.so101</code>를 먼저 쓰고(Studio 백엔드와 같은 경로) 플러그인은 예비다(<code>5a30392</code>). <code>requirements-robot.txt</code>에서 플러그인은 뺐다.</p>
 <p><span class="k">미해결 설계 숙제:</span> 런타임이 카메라를 잡고 있는 동안 화면 영상·개수 세기를 어떻게 할지(설계 11.5절).</p>
 </div></details>
 
-<details><summary>M4-4 현장 도구 <span class="badge b-todo">남음</span></summary><div class="body">
-<p><code>tools/fetch_calibration.py</code>: Studio runtime-config에서 follower SO101의 캘리브레이션을 GET만으로 받아 <code>calibration/follower.yaml</code>로 저장. <code>tools/robot_probe.py</code>: 토크를 끄고 관절값 보기(<code>watch</code>), 홈·리프트 자세 저장(<code>save home|lift</code>).</p>
+<details><summary>M4-4 현장 도구 <span class="badge b-done">완료</span></summary><div class="body">
+<p><span class="k">만든 것(<code>2cdd395</code>, <code>9563b9f</code>, sonnet 리뷰 승인):</span> <code>tools.fetch_calibration</code>은 Studio에서 팔로워 SO101의 캘리브레이션을 GET만으로 조회해 <code>calibration/follower.yaml</code>로 저장한다. <code>tools.robot_probe watch</code>는 토크를 끄고 관절값을 실시간으로 보여 주고, <code>save home|lift</code>는 포즈를 저장한다. 예외가 나도 disconnect(팔 자세 유지)하고 오류는 한국어로 안내한다.</p>
 </div></details>
 
 <details><summary>M4-5 진입점에 실제 로봇 연결 <span class="badge b-todo">남음</span></summary><div class="body">
@@ -426,8 +432,8 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <h3>리뷰 결과 (이전 리뷰 대기 커밋 7개)</h3>
 <ul>
 <li><b>승인 (sonnet 리뷰, 5개):</b> <code>4d6b040</code> 대화 LLM·Gemini provider, <code>bd1c9ee</code> Claude 우선·OpenAI 음성 엔진, <code>982692d</code> make_voice 연결, <code>b2fc422</code> 대화 기억, <code>6db1ac4</code> Gemini 음성. 타임아웃·키 노출·허용값 검증 문제 없음. Important 2건은 처리했다(채팅 개수 우선순위 <code>c2c269e</code>, Gemini 예비 STT 실제 확인 <code>5312105</code>).</li>
-<li><b>수정 필요 (opus 리뷰, 2개):</b> <code>620cdfa</code> <code>b2f4c6e</code> 콘솔 키. (a) space와 방향키·Home이 거의 동시에 들어오면 뒤따르는 H가 재시작으로 읽혀 비상정지가 풀림, (b) h 직후 짧은 틈에 누른 space가 재시작에 덮임. 해결: 재시작에 누른 순간의 세션 번호를 붙여, 그 사이 비상정지가 있었으면 거부. 지금 수정 중.</li>
-<li>음성·동작 동기화(<code>bd7d36d</code> + <code>089f9f6</code>)는 opus 리뷰 2회로 최종 승인. Minor(기본값 8↔config 10 불일치, 다 옮김 경로 세션 번호 확인 등)는 남음.</li>
+<li><b>수정 후 완료 (opus 리뷰, 2개):</b> <code>620cdfa</code> <code>b2f4c6e</code> 콘솔 키. 수정은 <code>3b33cf1</code> + <code>369dda6</code>, 재리뷰 후 완료. 문제는 (a) space와 방향키·Home이 거의 동시에 들어오면 뒤따르는 H가 재시작으로 읽혀 비상정지가 풀림, (b) h 직후 짧은 틈에 누른 space가 재시작에 덮임이었다. 해결: (a)는 ESC가 든 입력 뒤 100ms는 space만 인정, (b)는 재시작에 누른 순간의 세션 번호를 붙여 그 사이 비상정지가 있었으면 거부.</li>
+<li>음성·동작 동기화(<code>bd7d36d</code> + <code>089f9f6</code>)는 opus 리뷰 2회로 최종 승인. Minor(기본값 8↔config 10 불일치, 다 옮김 경로 세션 번호 확인 등)는 <code>8cd3b82</code> <code>637a678</code>에서 정리했다. controller 정리와 M4 Task 3·4 리뷰 결과는 위 비교표 참고.</li>
 </ul>
 <p>리뷰 보고서 위치: <code>.superpowers/sdd/</code> 의 keys-fix-report.md, llm-connect-report.md, voice-llm-report.md, memory-report.md, gemini-voice-report.md.</p>
 
@@ -436,9 +442,11 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <li><b>STT 로컬 Whisper: 완료</b> (<code>1284e6a</code>, <code>e006840</code>). 남은 것은 시연 노트북에서 openvino-genai 설치, <code>hf download OpenVINO/whisper-small-int8-ov --local-dir models/whisper-small</code>, <code>python -m snackbot.stt</code>로 속도 확인, CPU/GPU 선택(device와 label을 같이 바꾼다).</li>
 <li><b>TTS 완료:</b> 무료 Gemini 키로 동작하고 왕복 검사도 통과했다(OS TTS 예비는 만들지 않음).</li>
 <li>UI에서 🎤 마이크 입력과 음성 재생 확인 (사용자가 확인 중, 아직 결과 없음).</li>
-<li>콘솔 키 수정 재리뷰 (opus) → 동기화 Minor 정리.</li>
-<li>M4 Task 3(robot.py) 리뷰 → Task 4(현장 도구: 캘리브레이션 받기, 관절값 보기·포즈 저장) → Task 5(진입점에 실제 로봇 연결) → Task 6(현장 문서).</li>
-<li>M4가 끝나면 <code>feat/robot-m4</code>를 main에 병합, homerunball에 subtree push (origin에는 push하지 않음).</li>
+<li>(완료) 콘솔 키 수정 재리뷰, 동기화 Minor 정리, M4 Task 3(robot.py)·Task 4(현장 도구) 리뷰.</li>
+<li>M4 Task 5(진입점 <code>python -m snackbot</code>에 실제 로봇 연결) → Task 6(현장 문서 마무리).</li>
+<li>노트북 실기 확인: <a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a> 2-2절 순서(포트 → 캘리브레이션 → watch → 포즈 저장 → home 이동 → dori_dori).</li>
+<li>과자 모델(<code>oranda_pickup</code>) 학습이 끝나면 <code>camera_map</code>·<code>grasp_min</code> 확정.</li>
+<li>로컬 main은 <code>637a678</code>로 병합했다. homerunball 원격 push는 사용자가 직접 실행한다 (origin에는 push하지 않음).</li>
 <li>챗봇 추가 후보: 긴 대화 요약, 서버 쪽 입력 길이 제한 (스트리밍은 보류).</li>
 </ol>
 
@@ -455,7 +463,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="verify">9. 확인 방법 모음</h2>
 <pre><code># project 루트에서
-.venv/Scripts/python -m pytest -q                       # 203개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
+.venv/Scripts/python -m pytest -q                       # 266개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
 .venv/Scripts/python -m snackbot --dry-run              # 로봇 없이 전체 흐름 + UI (http://localhost:8000)
 .venv/Scripts/python -m snackbot --dry-run --no-ui      # 콘솔만 (s 시작, r 재개, space 비상정지, h 재시작, q 종료)
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg</code></pre>
