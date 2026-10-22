@@ -332,6 +332,14 @@ target:
 - **카메라 점유:** 런타임이 실행 중에는 카메라를 잡고 있다. `/stream/front`와 개수 세기(A)는 런타임 밖에서 사진을 찍고 바로 놓는 방식(06의 `look_at_table`)으로 바꿀지 M4에서 정한다.
 - 로컬 LLM 후보: Ollama `qwen3:4b-instruct` (06에서 도구 호출 비교 결과 가장 좋음) → config의 `ollama` provider로 연결 가능.
 
+Studio(`192.168.0.6:7860`, 프로젝트 `dori-dori`)에서 읽은 설정 (조회 API만 사용):
+
+- 카메라: `tower cam` (UVC index 0), `follow cam` (UVC index 2), 둘 다 1280×720@30.
+- 로봇: `SO101 Follower` (runtime-config 기준 `/dev/ttyACM1`), `SO101 Leader` (`/dev/ttyACM0`). 학습 PC 기준 경로라 노트북에서는 바꿔야 한다 (`CHANGE_ME` 주석).
+- 환경 runtime-config 구조: `physicalai.runtime.RobotRuntime` ← robot `physicalai.robot.SharedRobot` 안에 `physicalai_so101_plugin.SO101(port, calibration, role=follower, unit=normalized)`, cameras는 `physicalai.capture.SharedCamera` 안에 `UVCCamera(width, height, fps, device{index, serial…})` + `color_mode: RGB`, `fps: 30.0`, action_source는 환경 기본값이 `TeleopSource`(리더 팔). 정책 실행용 runtime.yaml은 action_source를 정책으로 바꾼 노트북 전용 파일을 따로 만든다 (openvino-physical-ai-lab 06 교안 5절).
+- dori_dori 모델: dataset `dori_dori`(v1, v2), `dori_dori_4`(최신, onnx·openvino·torch 내보내기), task 문장 `"Shake the arm side to side to say no"`.
+- 2026-10-22 오후 기준 이 Studio에는 oranda_pickup 데이터셋·모델이 아직 없다 (학습 중 작업 1개 진행 중).
+
 ## 12. 미확인 사항 (M0에서 확인)
 
 - physicalai 런타임 설치 경로: PyPI `physicalai[so101-plugin]` (실습 자료) vs Studio가 고정한 git 커밋. 실제 시그니처(`SO101`, `InferenceModel.select_action` 입력 형식, uint8 HWC 허용 여부)
