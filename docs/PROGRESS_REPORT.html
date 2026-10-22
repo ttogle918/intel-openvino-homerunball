@@ -89,9 +89,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <div class="wrap">
 
 <h1>snackbot 진행 보고서</h1>
-<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-22 갱신 · 기준: 커밋 <code>780f368</code> (브랜치 <code>feat/robot-m4</code>)</p>
+<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-22 갱신 · 기준: 커밋 <code>7f4292c</code> (브랜치 <code>feat/robot-m4</code>)</p>
 
-<div class="note"><b>이번 갱신(5b03faa 이후):</b> (1) <b>M4 Task 5</b>를 마쳤다(<code>5366123</code> + 수정 <code>780f368</code>, sonnet 리뷰 승인). <code>python -m snackbot</code>이 실제 로봇 경로로 동작한다: 포즈 파일이 없으면 physicalai를 불러오기 전에 안내하고 끝내며, 연결·warmup을 시작 전에 하고, 실패해도 정리 단계를 하나씩 보호해 끝까지 돌리고, 정책 모델이 없으면 시작 때 경고하며, 연결 중에 눌린 키는 버린다. UI 모델 정보는 "ACT · OpenVINO · GPU (dori_dori만…)"로 표시하고, 실제 로봇에서는 가짜 개수 세기를 뺐다. (2) <b>M4 Task 6</b>을 마쳤다(<code>cca8703</code>): CLAUDE.md의 로봇 명령·파일 구조, 설계 문서 11.6절 "M4 구현 결정"(런북 2-2절은 <code>56c1b67</code>). 이로써 <b>M4 코드 6개 Task가 모두 끝났다.</b> M4 마일스톤은 "노트북 실기 확인"이 남아 진행 중이다. (3) homerunball에 push를 1회 마쳤다(<code>2afa38e</code>, 사용자가 직접 실행). 다음 push를 준비한다. 테스트는 275개. 남은 일: 노트북 실기 확인(런북 2-2), 과자 모델 학습 후 camera_map·grasp_min 확정과 oranda_pickup 실기, 전체 흐름 실기(<code>python -m snackbot</code>), UI 🎤 확인, (검토 중) 로봇이 안 될 때 대비책인 3D 시뮬레이션(디지털 트윈) 패널.</div>
+<div class="note"><b>이번 갱신(780f368 이후):</b> (1) <b>4분할 화면 · 3D 디지털 트윈 · 녹화 재생 · 실행 기록 · 카메라 찾기를 마쳤다.</b> 설계 <code>docs/superpowers/specs/2026-10-22-digital-twin-design.md</code>, 계획 <code>docs/superpowers/plans/2026-10-22-digital-twin.md</code>, Task 1~7(<code>3aa5cef..57b98fd</code>)의 Task별 리뷰는 모두 승인(Task 4·5는 opus), 전체 최종 리뷰(opus)는 "병합 가능", 반영 수정은 <code>7f4292c</code>(MJPEG 인코딩을 스레드로 옮겨 UI 비상정지 지연 제거, 재생 캐시 정리, 카메라 시리얼 중복 경고 등). 화면은 카메라 3칸(tower/side/follow) + 3D 팔(three.js 0.186.1 + urdf-loader 0.13.1, SO-101 URDF, 오프라인)이다. 실제 로봇이면 실시간 영상과 실제 관절을 따라 움직이는 3D, dry-run이면 옮기기 차례에 녹화 에피소드(영상 + 관절 궤적)를 재생한다. Chrome(dry-run)에서 4분할, 3D 로드(요청 28개 모두 200, 콘솔 오류 없음), 녹화 재생 동기, 비상정지 시 정지, 재시작, 목업을 확인했다. 도구는 <code>tools.fetch_replays</code>(Studio 에피소드 받기, GET만), <code>tools.cameras</code>(카메라 목록·사진·시리얼), 실행 기록은 <code>logs/runs/</code>(관절 30Hz + 프레임 10fps)이다. (2) 팀 메모 <a href="memo/2026-10-22-robot-runtime-and-twin.html"><code>2026-10-22-robot-runtime-and-twin.html</code></a>(Studio 역할, iframe이 왜 안 맞는지, 카메라 연결, 4분할 설계안)를 추가했다. (3) <b>새 설계(구현 전, 사용자 요청 시 구현):</b> <code>docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md</code> — UI 버튼으로 스킬 1회 실행(실제 로봇 추론 1회 테스트, TESTING 상태)과 모델 없이 코드로 하는 도리도리. 테스트는 340개. 남은 일: 노트북 실기 확인(런북 2-2절), 과자 모델 학습 후 camera_map·grasp_min 확정과 oranda_pickup 실기, 전체 흐름 실기, UI 🎤 확인, (선택) 스킬 테스트 구현. 현장 확인 항목이 늘었다: 3D 렌더와 ACT 추론이 같은 iGPU를 써서 느려지는지(느리면 <code>ui.tiles</code>에서 twin 제외), 3D 영점(<code>twin.sign</code>/<code>offset_deg</code>), Studio 영상 코덱(AV1), 카메라 시리얼, 녹화 CPU. 주의: 개발 PC의 <code>replays/</code>에는 화면 확인용 가짜 데이터가 있으니 시연 전에 실제 녹화로 바꾼다.</div>
 
 <h2 id="intro">1. 프로젝트와 시연 시나리오</h2>
 <div class="card">
@@ -112,20 +112,20 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="summary">2. 전체 진척 요약</h2>
 <div class="grid">
-  <div class="stat"><b style="color:var(--done)">40</b><span>완료</span></div>
+  <div class="stat"><b style="color:var(--done)">42</b><span>완료</span></div>
   <div class="stat"><b style="color:var(--review)">0</b><span>리뷰 대기 (구현됨, 리뷰 안 함)</span></div>
   <div class="stat"><b style="color:var(--wip)">4</b><span>진행 중</span></div>
   <div class="stat"><b style="color:var(--todo)">4</b><span>남음</span></div>
   <div class="stat"><b style="color:var(--hold)">1</b><span>보류</span></div>
-  <div class="stat"><b>275</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>780f368</code> 시점 전체)</span></div>
+  <div class="stat"><b>340</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>7f4292c</code> 시점 전체)</span></div>
 </div>
-<p class="sub" style="margin-top:8px">비교표(4장) 49개 행 기준. 소프트웨어 계획 Task 1~10과 로봇 연결(M4) 코드 Task 1~6은 모두 완료. 다만 실제 로봇 실기 확인은 아직 하지 않았다.</p>
+<p class="sub" style="margin-top:8px">비교표(4장) 51개 행 기준. 소프트웨어 계획 Task 1~10, 로봇 연결(M4) 코드 Task 1~6, 4분할·3D 트윈 Task 1~7은 모두 완료. 다만 실제 로봇 실기 확인은 아직 하지 않았다.</p>
 
 <div class="card">
 <div class="prow"><span class="n">설계 마일스톤 M0~M7</span><div class="bar"><i class="d" style="width:75%"></i><i class="w" style="width:12.5%"></i></div><span class="v">완료 6 · 진행 1 · 남음 1</span></div>
 <div class="prow"><span class="n">소프트웨어 Task 1~10</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 10 / 10</span></div>
 <div class="prow"><span class="n">M4 로봇 Task 1~6</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 6 / 6</span></div>
-<div class="prow"><span class="n">그 밖의 연결·정리 (25개)</span><div class="bar"><i class="d" style="width:72%"></i><i class="w" style="width:12%"></i></div><span class="v">완료 18 · 진행 3 · 남음 3 · 보류 1</span></div>
+<div class="prow"><span class="n">그 밖의 연결·정리 (27개)</span><div class="bar"><i class="d" style="width:74%"></i><i class="w" style="width:11%"></i></div><span class="v">완료 20 · 진행 3 · 남음 3 · 보류 1</span></div>
 </div>
 <p class="sub">범례: <span class="badge b-done">완료</span> <span class="badge b-review">리뷰 대기</span> <span class="badge b-wip">진행 중</span> <span class="badge b-todo">남음</span> <span class="badge b-hold">보류</span></p>
 
@@ -217,7 +217,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>oranda_pickup ACT 학습 (Studio)</td><td><span class="badge b-wip">진행 중</span></td><td>Studio에서 학습 중. 끝나면 <code>exports/openvino</code>가 나온다 (외부 작업)</td></tr>
 <tr><td>counter 체인의 실제 모델(YOLO-World 내보내기, VLM, OpenCV 튜닝)</td><td><span class="badge b-todo">남음</span></td><td>도구 <code>93915c8</code>는 있음. 큰 패키지(ultralytics 등)는 이 PC에 설치하지 않음. 실제 트레이 사진으로 정해야 함</td></tr>
 <tr><td>feat/robot-m4를 main에 병합하고 homerunball에 push</td><td><span class="badge b-wip">진행 중</span></td><td>M4 코드 완료분까지 로컬 main에 fast-forward 병합한 뒤 다음 push를 준비한다(subtree split 후 homerunball-export에 병합, push는 사용자가 직접 실행). origin(강의 저장소)에는 push하지 않기로 함</td></tr>
-<tr><td>로봇이 안 될 때 대비책: 3D 시뮬레이션(디지털 트윈) 패널</td><td><span class="badge b-todo">남음</span></td><td>검토 중, 사용자 결정 대기. 후보는 three.js + urdf-loader로 SO-ARM100 저장소의 SO101 URDF를 띄우고 녹화 궤적을 재생하는 방식</td></tr>
+<tr><td>로봇이 안 될 때 대비책: 4분할 화면 · 3D 디지털 트윈 · 녹화 재생 · 실행 기록 · 카메라 찾기</td><td><span class="badge b-done">완료</span></td><td>설계 <code>digital-twin-design.md</code>, 계획 <code>digital-twin.md</code>, Task 1~7 <code>3aa5cef..57b98fd</code>(<code>b51754a</code> 화면·3D, <code>b963dab</code> 스트림·재생 API, <code>0a75abc</code> <code>c643932</code> 실행 기록, <code>264d5ee</code> 카메라 찾기, <code>16bf641</code> 에피소드 받기). Task별 리뷰 모두 승인(Task 4·5 opus), 최종 리뷰(opus) "병합 가능", 반영 수정 <code>7f4292c</code>. Chrome(dry-run) 확인: 4분할, 3D 로드(요청 28개 200, 콘솔 오류 없음), 녹화 재생 동기, 비상정지, 재시작, 목업. 현장 확인은 남음(iGPU 경합, 3D 영점, Studio 영상 코덱 AV1, 카메라 시리얼, 녹화 CPU). 개발 PC <code>replays/</code>는 가짜 데이터</td></tr>
+<tr><td>팀 메모: 로봇 실행과 화면 대비책 (Studio 역할, iframe, 카메라 연결, 4분할 설계안)</td><td><span class="badge b-done">완료</span></td><td><code>52c64e9</code>, <a href="memo/2026-10-22-robot-runtime-and-twin.html"><code>2026-10-22-robot-runtime-and-twin.html</code></a></td></tr>
+<tr><td>UI 스킬 1회 실행(추론 테스트, TESTING 상태)과 모델 없이 코드로 도리도리</td><td><span class="badge b-todo">남음</span></td><td>설계만 끝남(<code>dd54cc0</code>, <code>skill-test-and-scripted-dori-design.md</code>). 구현 전이며 사용자 요청 시 진행</td></tr>
 </tbody></table></div>
 <p class="sub">리뷰 대기 커밋은 없다. 이전 리뷰 대기 7개 중 5개(<code>4d6b040</code> <code>bd1c9ee</code> <code>982692d</code> <code>b2fc422</code> <code>6db1ac4</code>)는 승인, 콘솔 키 2개(<code>620cdfa</code> <code>b2f4c6e</code>)는 수정 후 opus 재리뷰로 완료했다.</p>
 
@@ -446,10 +448,11 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <li>UI에서 🎤 마이크 입력과 음성 재생 확인 (사용자가 확인 중, 아직 결과 없음).</li>
 <li>(완료) 콘솔 키 수정 재리뷰, 동기화 Minor 정리, M4 Task 3(robot.py)·Task 4(현장 도구) 리뷰.</li>
 <li>(완료) M4 Task 5(진입점 <code>python -m snackbot</code>에 실제 로봇 연결)·Task 6(현장 문서). 코드 Task 6개 모두 끝.</li>
-<li>노트북 실기 확인: <a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a> 2-2절 순서(포트 → 캘리브레이션 → watch → 포즈 저장 → home 이동 → dori_dori).</li>
+<li>노트북 실기 확인(1순위): <a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a> 2-2절 순서(포트 → 캘리브레이션 → watch → 포즈 저장 → home 이동 → dori_dori). 카메라는 <code>python -m tools.cameras</code>로 목록·시리얼을 확인하고 3D 영점도 함께 본다.</li>
 <li>과자 모델(<code>oranda_pickup</code>) 학습이 끝나면 <code>camera_map</code>·<code>grasp_min</code> 확정, <code>oranda_pickup</code> 실기, 전체 흐름 실기(<code>python -m snackbot</code>).</li>
 <li>homerunball push는 1회 완료(<code>2afa38e</code>). 다음 push를 준비한다(사용자가 직접 실행, origin에는 push하지 않음).</li>
-<li>(검토 중, 사용자 결정 대기) 로봇이 안 될 때 대비책: 3D 시뮬레이션(디지털 트윈) 패널.</li>
+<li>(완료) 로봇이 안 될 때 대비책: 4분할 화면 · 3D 디지털 트윈 · 녹화 재생 · 실행 기록 · 카메라 찾기.</li>
+<li>(선택) UI 스킬 1회 실행(추론 테스트)과 코드 도리도리 구현 (설계 완료, 사용자 요청 시).</li>
 <li>챗봇 추가 후보: 긴 대화 요약, 서버 쪽 입력 길이 제한 (스트리밍은 보류).</li>
 </ol>
 
@@ -466,7 +469,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="verify">9. 확인 방법 모음</h2>
 <pre><code># project 루트에서
-.venv/Scripts/python -m pytest -q                       # 275개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
+.venv/Scripts/python -m pytest -q                       # 340개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
 .venv/Scripts/python -m snackbot --dry-run              # 로봇 없이 전체 흐름 + UI (http://localhost:8000)
 .venv/Scripts/python -m snackbot --dry-run --no-ui      # 콘솔만 (s 시작, r 재개, space 비상정지, h 재시작, q 종료)
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg</code></pre>
