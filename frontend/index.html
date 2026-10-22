@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>과자 옮기기 로봇 관제</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three/build/three.module.js",
+    "three/examples/jsm/": "/vendor/three/examples/jsm/",
+    "three/addons/": "/vendor/three/examples/jsm/",
+    "urdf-loader": "/vendor/urdf-loader/src/URDFLoader.js"
+  }
+}
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body data-state="IDLE" data-phase="idle">
@@ -18,10 +28,8 @@
 </header>
 
 <main class="main">
-  <section class="cam card" aria-label="카메라">
-    <img id="camImg" alt="" hidden>
-    <div id="camEmpty" class="cam-empty"><div class="stripes"></div><span id="camEmptyText">카메라 없음</span></div>
-    <div class="cam-live"><i></i>FRONT</div>
+  <section class="cam card" aria-label="카메라와 3D">
+    <div class="tiles" id="tiles"></div>
     <div class="count-overlay">
       <div class="count-name" id="cntName">과자</div>
       <div class="count-row"><span class="count-num" id="cntNum">–</span><span class="count-unit">개 남음</span></div>
