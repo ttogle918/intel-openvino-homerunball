@@ -1147,7 +1147,8 @@ Co-Authored-By: <세션의 attribution 줄>"
 
 **Interfaces:**
 - Consumes: `RobotSkills` (Task 3), `load_poses` (Task 1)
-- Produces: `build(cfg, env, dry_run=False)` → `RobotSkills(cfg, load_poses(cfg.get("poses_file", "poses.yaml")))` + `connect()`; `info["models"]["act"]` = `"ACT · OpenVINO · <skills.device>"`. 포즈가 없으면 physicalai를 import하기 전에 `SystemExit`.
+- Produces: `build(cfg, env, dry_run=False)` → `RobotSkills(cfg, load_poses(cfg.get("poses_file", "poses.yaml")))` (아직 연결하지 않는다); `info["models"]["act"]` = `"ACT · OpenVINO · <skills.device>"`. 포즈가 없으면 physicalai를 import하기 전에 `SystemExit`. 실제 로봇에서는 `vision.chain`의 `fake` counter를 경고와 함께 뺀다 (`RobotSkills.tray`는 항상 0이라 바로 완료가 된다).
+- `main`: `skills.connect()`(있으면)를 `try:` 블록 안에서 `controller.start()`보다 먼저 부른다 → 연결·warmup이 실패해도 `finally`의 `skills.close()`가 돈다.
 
 - [ ] **Step 1: 테스트 수정 (실패 확인용)**
 
@@ -1185,10 +1186,44 @@ Expected: FAIL — `test_build_real_robot_requires_poses`의 `match="home_pose"`
         from .robot import RobotSkills
 
         skills = RobotSkills(cfg, load_poses(cfg.get("poses_file", "poses.yaml")))
-        skills.connect()
         act = f"ACT · OpenVINO · {cfg['skills'].get('device', 'CPU')}"
+        chain = cfg["vision"].get("chain") or []
+        if any(e.get("type") == "fake" for e in chain):
+            logging.getLogger(__name__).warning("실제 로봇에서는 fake counter를 쓰지 않는다 (vision.chain에서 뺐다)")
+            cfg = {**cfg, "vision": {**cfg["vision"], "chain": [e for e in chain if e.get("type") != "fake"]}}
 ```
-같은 함수의 `info` 안 `"act": "dry-run",`을 `"act": act,`로 바꾼다.
+같은 함수의 `info` 안 `"act": "dry-run",`을 `"act": act,`로 바꾼다 (`cfg`를 바꿔 쓰는 줄 다음에 `vision = build_vision(cfg["vision"], ...)`이 오도록, 즉 위 분기가 `build_vision` 호출보다 앞에 있어야 한다).
+
+`main`에서 `controller.start()`를 부르는 곳을 찾아, 그 호출과 키 스레드 시작을 기존 `try:` 블록 안으로 옮기고 맨 앞에 연결을 넣는다:
+```python
+    try:
+        connect = getattr(parts["skills"], "connect", None)
+        if connect is not None:
+            connect()   # 실제 로봇: 연결 + 정책 warmup. 실패해도 finally에서 close()
+        controller.start()
+        # (기존 키 스레드 시작, --no-ui 대기 / uvicorn 실행 코드가 이어진다)
+```
+테스트를 하나 더 추가한다:
+```python
+def test_build_real_robot_drops_fake_counter(cfg, tmp_path, monkeypatch):
+    import snackbot.robot as robot
+    from snackbot.config import save_pose
+
+    poses = tmp_path / "poses.yaml"
+    save_pose(poses, "home_pose", [0] * 6)
+    save_pose(poses, "lift_pose", [0] * 6)
+    cfg["poses_file"] = str(poses)
+    cfg["vision"]["chain"] = [{"type": "fake"}]
+    cfg["skills"]["gripper"].update(closed_below=30, open_above=60, grasp_min=15)
+    monkeypatch.setattr(robot, "build_runtime", lambda c, s, t: object())
+    monkeypatch.setattr(robot, "build_policies", lambda c: {})
+    parts = build(cfg, {}, dry_run=False)
+    try:
+        assert parts["controller"].vision is None
+        assert parts["info"]["models"]["act"].startswith("ACT · OpenVINO")
+    finally:
+        parts["voice"].close()
+```
 
 - [ ] **Step 4: 통과 확인**
 
@@ -1234,11 +1269,12 @@ Co-Authored-By: <세션의 attribution 줄>"
 
 - [ ] **Step 2: CLAUDE.md 실행 절에 로봇 명령 추가**
 
-`CLAUDE.md`의 `## 실행` 코드 블록 끝(닫는 ``` 위)에 추가:
+`CLAUDE.md`의 `## 실행` 두 번째 코드 블록에서 `tools.save_pose home` / `tools.save_pose lift` 두 줄을 지우고, 블록 끝(닫는 ``` 위)에 추가:
 ```bash
-python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project <id> --env <id>
-python -m tools.robot_probe watch       # 관절값 보기 (그리퍼 기준값 정하기)
-python -m snackbot.robot dori_dori      # 스킬 하나만 실제 로봇으로
+.venv/Scripts/python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project <id> --env <id>
+.venv/Scripts/python -m tools.robot_probe watch        # 관절값 보기 (그리퍼 기준값 정하기)
+.venv/Scripts/python -m tools.robot_probe save home    # 현재 팔 자세를 home_pose로 (lift도 같은 방법)
+.venv/Scripts/python -m snackbot.robot dori_dori       # 스킬 하나만 실제 로봇으로
 ```
 같은 파일 `## 파일 구조 (목표)`의 `├── skills.py ...` 줄 아래에 다음 두 줄을 넣고,
 ```

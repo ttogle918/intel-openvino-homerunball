@@ -3037,6 +3037,6 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## 이 계획 다음
 
-- **M4 계획 (별도 문서):** 로봇 노트북에서 M0 환경 확인(physicalai 설치 경로·시그니처, 카메라 이름, OpenVINO 디바이스) → `RobotSkills`(skills.py, 이 계획의 DrySkills와 같은 인터페이스), `tools/save_pose.py`, `tools/gripper_stats.py`, `__main__.build`의 `dry_run=False` 경로.
+- **M4 계획:** `docs/superpowers/plans/2026-10-22-snackbot-robot.md` — `RobotSkills`(`snackbot/robot.py`, DrySkills와 같은 인터페이스), `snackbot/motion.py`, `tools/fetch_calibration.py`, `tools/robot_probe.py`(포즈 저장·그리퍼 기준값), `__main__.build`의 `dry_run=False` 경로.
 - **M3 실모델 연결:** config.yaml의 `brain.chain` / `vision.chain` / `stt.chain`에 실제 모델 ID를 넣고 `OpenVINOProvider`의 openvino_genai 호출을 설치된 버전으로 확인한다.
 - **Claude Design 결과물:** `frontend/`의 임시 화면을 교체한다 (계약은 `docs/UI_DESIGN_PROMPT.md`).
