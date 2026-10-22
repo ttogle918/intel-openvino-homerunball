@@ -2,6 +2,8 @@
 
 작성 2026-10-22. 의논 기록: `docs/memo/2026-10-22-robot-runtime-and-twin.html`. 기존 기준 설계(`2026-10-22-chat-ui-design.md`)를 확장하며, 충돌하면 이 문서가 UI·트윈 부분에서 우선한다.
 
+구현 계획: `docs/superpowers/plans/2026-10-22-digital-twin.md`.
+
 ## 1. 목표와 범위
 
 - 카메라 칸을 **2×2 격자**로: 카메라 3칸(`tower cam`, `side cam`, `follow cam`) + **3D 팔(디지털 트윈)** 1칸.
@@ -130,3 +132,13 @@ python -m tools.cameras            # 목록 + 카메라마다 사진 1장
 - 서버: `/stream/{cam}`, `/api/replay/{skill}`(라디안 변환·404), `joints` 브로드캐스트(바뀔 때만), `info` 확장.
 - `DrySkills`: 재생 데이터가 있으면 동작 시간 = 에피소드 길이.
 - 3D 렌더링 자체는 브라우저에서 확인 (자동 테스트 밖).
+
+## 12. 구현 결정 (계획에서 정한 것)
+
+- 3D 모델 파일: `assets/*.stl` 전부가 아니라 **URDF가 참조하는 STL 13개**만 넣는다 (리더 손잡이·카메라 마운트 등은 쓰지 않음, 약 16MB). 원본 커밋 `a758567`에 고정.
+- `load_episode`: 파일이 없으면 조용히 None (재생 데이터가 없는 것이 보통), 깨졌으면 경고 + None.
+- dry-run 카메라 칸: `/stream/<이름>`이 vision 카메라는 트레이 사진, config의 다른 카메라는 "DRY-RUN <이름>" 화면. config에 없는 이름은 404.
+- `joints` 변환은 서버에서 (`twin.make_converter`: `robot.calibration` 파일이 있으면 그 범위 + `twin.sign`/`offset_deg`). 새 WebSocket 연결은 마지막 joints를 한 번 받는다 (팔이 멈춰 있으면 다음 값이 오지 않으므로). `RobotSkills.connect()`가 관절 캐시를 채운다.
+- 실행 기록 `fps`는 실제 틱 간격으로 계산한다 (표본이 모자라면 `skills.fps`). 추가 필드: `ms`, `started`, `dropped_frames`. 저장 큐 크기 `recording.queue_size`(기본 64).
+- 화면 재생: 첫 영상 칸이 시계 (`playing` 뒤 `currentTime − start`), 영상이 3초 안에 안 나오면 그 칸만 원래 화면으로 돌리고 벽시계. 끝나면 마지막 장면에서 멈춰 두고 다음 `counting`·`IDLE`·`DONE`에서 정리. 개수 표시는 4칸 가운데로 줄여 옮긴다.
+- Studio 키 이름(코드 확인): `action_keys`는 `<관절>.pos`, 영상 키는 `observation.images.<카메라 이름 소문자화>`(공백 유지). 영상 경로의 `\`는 `/`로.

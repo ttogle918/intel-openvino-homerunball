@@ -64,6 +64,30 @@ gantt
 
 - 비상정지는 토크를 켠 채 그 자리를 유지한다. 단, 프로그램을 끝낼 때(Ctrl+C 뒤 종료)는 SO101이 그 순간의 실제 자세를 목표로 다시 잡고 포트를 닫는다.
 
+## 2-3. 화면 4분할 · 3D 트윈 · 녹화 재생 (설계: `docs/superpowers/specs/2026-10-22-digital-twin-design.md`)
+
+화면 카메라 칸은 2×2: `tower cam` · `side cam` · `follow cam` + 3D 팔. 순서·내용은 `config.yaml`의 `ui.tiles` (칸에 `{iframe: URL, name: 이름}`도 넣을 수 있다).
+
+**카메라 찾기 (노트북, 처음 한 번 · USB를 바꿔 꽂았을 때)** — Studio 세션을 먼저 닫는다
+- [ ] `.venv/bin/python -m tools.cameras` → 장치마다 번호·이름·시리얼과 사진 `cameras/<번호>.jpg`
+- [ ] 사진을 보고 어느 장치가 어느 카메라인지 정해, 출력 끝 예시를 `config.yaml` `cameras`에 붙여 넣는다. 시리얼이 있으면 `device: {serial: "..."}` (다시 꽂아도 같은 장치), 없으면 번호
+- [ ] 값싼 같은 모델 카메라는 시리얼이 비거나 서로 같을 수 있다 (현장 확인). 그러면 번호로 지정하고, USB 포트를 바꿔 꽂으면 이 절차를 다시 한다
+
+**녹화 받기 (로봇이 안 될 때 대비, Studio가 켜진 PC와 같은 네트워크에서)**
+- [ ] Studio에서 보여 줄 에피소드를 연다 → 주소창 `/projects/<프로젝트>/datasets/<데이터셋 id>/episodes/<번호>`에서 id와 번호를 `config.yaml` `skills.oranda_pickup.replay`, `skills.dori_dori.replay`에 쓴다 (`{dataset: <id>, episode: <번호>}`)
+- [ ] `.venv/bin/python -m tools.fetch_replays --studio http://192.168.0.6:7860 --skill oranda_pickup` (dori_dori도 같은 방법. 조회만 한다. `--dataset`, `--episode`로 config 값을 덮어쓸 수 있다) → `replays/<스킬>/episode.json` + 카메라별 `.mp4`
+- [ ] 카메라 이름이 config와 다르게 학습됐으면(`camera_map`) 자동으로 config 이름으로 바꿔 저장한다. "config cameras에 없어요" 주의가 나오면 `camera_map` 확인
+- [ ] `.venv/bin/python -m snackbot --dry-run` → 옮기기·도리도리 차례에 카메라 칸은 녹화 영상, 3D 칸은 같은 에피소드 관절 궤적이 함께 움직이는지 확인 (영상이 안 나오면 Chrome/Edge로. Studio 영상 코덱(AV1일 수 있음)이 시연 노트북 브라우저에서 안 되면 그 칸만 원래 화면으로 나온다 → 아래 실행 기록(JPEG 프레임)을 재생 데이터로 쓰는 쪽이 안전)
+
+**실행 기록 (실제 로봇)**
+- [ ] `recording.enabled: true`면 스킬을 실행할 때마다 `logs/runs/<YYYYmmdd-HHMMSS>_<스킬>/`에 정책 구간의 관절값(`episode.json`)과 카메라 사진(`frames/`, `frame_fps`장/초)이 쌓인다. 기록 실패는 경고만, 로봇 동작에는 영향 없다
+- [ ] 카메라 3대 + 기록 중 제어 루프가 느려지거나 `episode.json`의 `dropped_frames`가 0이 아니면 `recording.frame_fps`를 낮추거나 `recording.enabled: false` (현장 확인: CPU 부하)
+- [ ] 잘 된 실행 하나를 재생 데이터로: 기존 것을 치우고 복사 — `rm -rf replays/oranda_pickup && cp -r logs/runs/20261023-101500_oranda_pickup replays/oranda_pickup`
+
+**3D 방향 맞추기 (실제 로봇, 처음 한 번)**
+- [ ] `.venv/bin/python -m snackbot` 화면에서 3D 팔이 실제 팔을 따라 움직이는지 본다 (`robot.calibration` 파일이 있으면 그 범위로 변환)
+- [ ] 관절이 반대로 돌면 `twin.sign`의 그 자리를 `-1`, 영점이 어긋나면 `twin.offset_deg`(도)로 맞춘다. 순서: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper. (URDF 0 라디안이 SO101 tick 2048과 맞는지는 현장에서 처음 확인한다)
+
 ## 3. 진행자 대본 예시
 1. "이 로봇은 과자 공장 직원입니다. 오란다만 골라내요." → 시작
 2. 1~3회: 로봇이 옮기면서 점점 투덜댐
@@ -81,6 +105,9 @@ gantt
 | LLM 응답이 느림 | 디바이스 부하 | 더 작은 모델 또는 fallback 대사 모드 |
 | 대사가 안 나옴 | 오디오 장치 | 콘솔 대사를 화면에 띄워 대체 |
 | 로봇 이상 동작 | — | **space 비상정지** (UI 비상정지 버튼도 같음) → `h` 또는 UI 재시작 (홈 복귀 후 대기) → 채팅으로 다시 시작 |
+| 카메라 칸이 "카메라 없음" | 장치 번호가 바뀜, 다른 프로그램이 점유 | Studio 닫기, `python -m tools.cameras`로 확인 후 `cameras.<이름>.device` (시리얼 권장) |
+| 3D 칸이 "3D 없음" | `frontend/vendor/`·`frontend/twin/so101/` 파일 누락, WebGL 꺼짐 | 브라우저 콘솔 확인. 나머지 화면·로봇은 그대로 동작 |
+| 로봇·카메라가 안 됨 | 하드웨어 문제 | `python -m snackbot --dry-run`: 옮기기·도리도리 차례에 녹화 재생 (2-3절 녹화 받기) |
 | 전부 안 됨 | — | 백업 영상 재생 |
 
 ## 5. 발표에서 보여줄 숫자 (logs/ 에서 집계)
