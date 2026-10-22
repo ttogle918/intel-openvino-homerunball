@@ -344,9 +344,22 @@ Studio(`192.168.0.6:7860`, 프로젝트 `dori-dori`)에서 읽은 설정 (조회
 - dori_dori 모델: dataset `dori_dori`(v1, v2), `dori_dori_4`(최신, onnx·openvino·torch 내보내기), task 문장 `"Shake the arm side to side to say no"`.
 - 2026-10-22 오후 기준 이 Studio에는 oranda_pickup 데이터셋·모델이 아직 없다 (학습 중 작업 1개 진행 중).
 
+## 11.6 M4 구현 결정 (plans/2026-10-22-snackbot-robot.md, physicalai 0.3.0 소스로 확인)
+
+- 7.1~7.2의 "루프 직접 작성" 대신 **RobotRuntime 하나 + 동작 출처 교체** (`snackbot/robot.py`): `Switch.active` = PolicySource(정책 A/B) 또는 MoveSource(보간 이동). `run()`마다 `stop_event`(비상정지 · 끝 신호). `RobotRuntime.run()`은 실행마다 동작 출처의 `connect()`를 부르고 끝에 `disconnect()`한다(runtime/core.py) → 정책은 실행마다 초기화된다.
+- SO101은 physicalai 본체 `physicalai.robot.so101` (Studio 백엔드와 같은 경로). `physicalai_so101_plugin`은 없을 때만 쓰는 예비.
+- 그리퍼 감시는 런타임 콜백 `Tap.on_tick`(제어 스레드에서 동기 호출)에서. 열림을 한 번 본 뒤부터 닫힘을 인정하고(홈에서 닫혀 있어도 오작동 없음), 닫힘 → 열림이 `open_hold_s` 유지되면 정지. 끝난 뒤 값은 무시.
+- **비상정지:** 런타임을 끊지 않는다. 런타임은 정지 때 아무 명령도 보내지 않으므로(`return_to_initial_state` 기본 False) 서보는 마지막 목표를 토크 켠 채 유지한다. 비상정지마다 **세대 번호**를 올려, 직후 해제(재시작)가 끼어도 진행 중이던 동작은 비상정지로 끝나고 다음 단계로 가지 않는다. 프로그램을 끝낼 때(`close`)는 SO101.disconnect가 그 순간 측정값을 목표로 다시 잡고 포트를 닫는다.
+- controller 쪽: 재시작은 진행 중인 `skills.run`이 끝난 뒤에만(최대 5초, 아니면 거부·비상정지 유지). 콘솔·웹 재시작 모두 접수 순간의 세션 번호를 붙여 그 사이 비상정지가 있었으면 거부.
+- 카메라·시리얼은 스레드 안전하지 않아 `_io` 락으로 보호. 동작 출처 교체도 락 안에서. 동작 중 프레임은 Tap 캐시, 쉬는 중엔 카메라에서 읽는다.
+- **warmup:** `PolicySource.warmup()`은 `connect()` 전에 쓸 수 없어서, 시작 때 실제 관절값·카메라 프레임으로 `to_model_input` → `InferenceModel.predict_action_chunk` → `reset`을 한 번 돌린다. 첫 추론 지연을 시작할 때 치르고, 카메라 이름(`images.<이름>`)이 모델과 다르면 바로 안내하고 멈춘다.
+- 모델 폴더가 없는 정책은 건너뛴다 (과자 모델 없이 `home`·`dori_dori` 확인). 그리퍼 기준값은 oranda_pickup이 있을 때만 필수.
+- `tools/gripper_stats.py`(데이터셋 통계) 대신 `tools/robot_probe.py watch`로 실제 그리퍼 값을 보고 정한다. 포즈는 `poses.yaml` (`robot_probe save home|lift`).
+- 대사와 동작: 그 사이클 대사의 소리가 나기 시작하면 동작을 시작한다 (`voice.sync_timeout_s`, 실패·초과면 바로). 현장 절차: `docs/DEMO_RUNBOOK.md` 2-2절.
+
 ## 12. 미확인 사항 (M0에서 확인)
 
-- physicalai 런타임 설치 경로: PyPI `physicalai[so101-plugin]` (실습 자료) vs Studio가 고정한 git 커밋. 실제 시그니처(`SO101`, `InferenceModel.select_action` 입력 형식, uint8 HWC 허용 여부)
+- ~~physicalai 런타임 설치 경로·시그니처~~ → 11.6에서 확인 (PyPI physicalai 0.3.0, SO101은 본체)
 - 학습에 쓴 카메라 이름 (손목 카메라가 `wrist`인지 `gripper`인지), dori_dori 정책도 같은 카메라 이름인지
 - 로봇 노트북(Ubuntu 24.04)의 OpenVINO GPU/NPU 디바이스 문자열
 - 사용할 API 모델 ID와 키 준비 여부
