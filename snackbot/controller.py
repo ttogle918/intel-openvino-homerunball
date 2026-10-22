@@ -24,7 +24,9 @@ class Controller:
         self.decision = cfg["decision"]
         self.initial_count = cfg["target"]["initial_count"]
         self.camera = cfg["vision"].get("camera", "front")
-        self.sync_timeout_s = float((cfg.get("voice") or {}).get("sync_timeout_s", 8))
+        sync = (cfg.get("voice") or {}).get("sync_timeout_s")
+        self.sync_timeout_s = 8.0 if sync is None else float(sync)
+        self._gen = 0  # 세션 번호: estop/start/resume/restart 때 올라간다 (이전 세션의 결정을 버리는 용도)
         self.brain, self.skills, self.voice, self.clock = brain, skills, voice, clock
         self.vision = vision if vision is not None and vision.enabled else None
         self.state, self.phase = IDLE, "idle"
@@ -113,6 +115,7 @@ class Controller:
         with self._lock:
             if self.state not in (IDLE, DONE):
                 return False
+            self._gen += 1
             self.remaining = n or self.initial_count
             self.count = self.retries = 0
             self.skill, self.vision_method, self.last_boxes = None, "estimate", None
@@ -131,6 +134,7 @@ class Controller:
                 self.state = WORKING
             elif not (self.state == WORKING and self.phase == "waiting_operator"):
                 return False
+            self._gen += 1
             self.retries = 0
             self.phase = "idle"
         if announce:
@@ -143,6 +147,7 @@ class Controller:
         self.skills.estop()  # 멱등: 항상 먼저 하드웨어를 세운다
         with self._lock:
             already = self.state == ESTOP
+            self._gen += 1
             self.state, self.phase = ESTOP, "idle"  # 이미 ESTOP이면 진행 중인 재시작도 중단
         self.skills.estop()  # 상태 기록 뒤 한 번 더: 재시작의 release_estop과 겹쳐도 래치가 남는다
         if not already:
@@ -154,6 +159,7 @@ class Controller:
             if self.state != ESTOP or self.phase == "returning":
                 return False
             self.phase = "returning"
+            self._gen += 1
         self.skills.release_estop()
         with self._lock:
             still = self.state == ESTOP and self.phase == "returning"
@@ -165,6 +171,7 @@ class Controller:
             ok = self.state == ESTOP and self.phase == "returning"
             if ok:
                 self.state, self.phase, self.retries, self.skill = IDLE, "idle", 0, None
+                self._gen += 1
                 # 비상정지 후 재시작은 새 시연의 시작: LLM 대화 기억을 비운다.
                 # (UI 로그는 재접속 전까지 그대로 보인다. 작업 시작/재개 사이에는 기억을 유지한다.)
                 self.history.clear()
@@ -187,7 +194,7 @@ class Controller:
             self.phase = phase
         self._publish()
 
-    def _wait_speech(self, started):
+    def _wait_speech(self, started, gen):
         """대사 소리가 나기 시작할 때까지 기다린다 (최대 sync_timeout_s). 대기한 ms를 돌려준다.
         비상정지·종료·상태 변경이 오면 즉시 멈춘다. 락은 잡지 않는다."""
         if started is None:
@@ -196,7 +203,7 @@ class Controller:
         if not started.is_set():
             self._set_phase("speaking")
             while not started.wait(0.1):
-                if (not self._working() or self._stop.is_set()
+                if (not self._working() or self._stop.is_set() or self._gen != gen
                         or time.monotonic() - t0 >= self.sync_timeout_s):
                     break
         return _ms(t0)
@@ -208,6 +215,7 @@ class Controller:
         ms = {}
         with self._lock:
             n_before = self.remaining
+            gen = self._gen
         if self.vision:
             self._set_phase("counting")
             seen = self._count(ms)
@@ -219,15 +227,16 @@ class Controller:
             hist = list(self.history)
         d = self.brain.decide(n_before, self.count, WORKING, None, history=hist)
         ms["llm"] = _ms(t0)
-        if not self._working():
+        if not self._working() or self._gen != gen:
             return None
         with self._lock:
             self.skill = d["skill"]
         started = self._message("robot", d["say"])
         if d["skill"] == "done":
             return self._finish(ms, d)
-        ms["speech_wait"] = self._wait_speech(started)
-        if not self._working() or self._stop.is_set():
+        ms["speech_wait"] = self._wait_speech(started, gen)
+        if not self._working() or self._stop.is_set() or self._gen != gen:
+            self._log_cycle("estop", ms, d)  # 기다리는 중 중단: 대사만 나가고 동작은 안 했다
             return None
         self._set_phase("acting")
         t0 = time.monotonic()

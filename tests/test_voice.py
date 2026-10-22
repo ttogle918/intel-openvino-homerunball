@@ -8,7 +8,7 @@ def test_speak_is_non_blocking_and_survives_errors(monkeypatch):
     v = Voice("log")
     done, gate = [], threading.Event()
 
-    def slow(text, started=None):
+    def slow(text, started=None, wav=None):
         if text == "boom":
             raise RuntimeError("tts down")
         gate.wait(1)
@@ -288,11 +288,73 @@ def test_event_set_after_close():
 
 def test_close_sets_events_of_unprocessed_items(monkeypatch):
     v = Voice("none")
+    v._join_timeout_s = 0.2
     gate = threading.Event()
-    monkeypatch.setattr(v, "_say", lambda text, started=None: gate.wait(3))
+    monkeypatch.setattr(v, "_say", lambda text, started=None, wav=None: gate.wait(3))
     v.speak("first")  # 워커가 여기서 막힌다
     time.sleep(0.1)
     pending = [v.speak("a"), v.speak("b")]
     v.close()  # join 2초 타임아웃, 남은 항목은 set
     assert all(e.is_set() for e in pending)
     gate.set()
+
+
+def test_next_sentence_synthesizes_while_previous_plays(monkeypatch):
+    import snackbot.voice as vm
+    v = Voice("none")
+    v.engine = "openai"
+    hold, played, synth = threading.Event(), [], []
+    second_synth = threading.Event()
+
+    def synthesize(text):
+        synth.append(text)
+        if text == "둘":
+            second_synth.set()
+        return text.encode()
+
+    def play(data):
+        played.append(data)
+        hold.wait(3)
+
+    monkeypatch.setattr(v, "synthesize", synthesize)
+    monkeypatch.setattr(vm, "play_wav", play)
+    e1, e2 = v.speak("하나"), v.speak("둘")
+    assert e1.wait(2)
+    assert second_synth.wait(2)  # 첫 문장이 재생 중(hold)인 채로 둘째를 합성
+    assert played == ["하나".encode()] and not e2.is_set()
+    hold.set()
+    assert e2.wait(2)
+    v.close()
+    assert played == ["하나".encode(), "둘".encode()]
+
+
+def test_playback_order_matches_speak_order(monkeypatch):
+    import snackbot.voice as vm
+    v = Voice("none")
+    v.engine = "gemini"
+    played = []
+    monkeypatch.setattr(v, "synthesize", lambda t: t.encode())
+    monkeypatch.setattr(vm, "play_wav", lambda d: played.append(d.decode()))
+    evs = [v.speak(str(i)) for i in range(6)]
+    assert all(e.wait(3) for e in evs)
+    v.close()
+    assert played == [str(i) for i in range(6)]
+
+
+def test_failed_synthesis_does_not_block_next(monkeypatch):
+    import snackbot.voice as vm
+    v = Voice("none")
+    v.engine = "openai"
+    played = []
+
+    def synth(t):
+        if t == "bad":
+            raise RuntimeError("x")
+        return t.encode()
+
+    monkeypatch.setattr(v, "synthesize", synth)
+    monkeypatch.setattr(vm, "play_wav", lambda d: played.append(d))
+    e1, e2 = v.speak("bad"), v.speak("ok")
+    assert e1.wait(2) and e2.wait(2)
+    v.close()
+    assert played == [b"ok"]

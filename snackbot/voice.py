@@ -71,8 +71,12 @@ class Voice:
         self._closed = False
         self._close_lock = threading.Lock()
         self._tts = None
-        self._thread = threading.Thread(target=self._worker, name="voice", daemon=True)
-        self._thread.start()
+        self._pq = queue.Queue(maxsize=2)  # 합성이 끝난 (wav, text, event): 재생 스레드가 가져간다
+        self._join_timeout_s = 2
+        self._synth_thread = threading.Thread(target=self._synth_worker, name="voice-synth", daemon=True)
+        self._play_thread = threading.Thread(target=self._play_worker, name="voice-play", daemon=True)
+        self._synth_thread.start()
+        self._play_thread.start()
 
     def _open_http(self, providers, env, transport):
         o = self.options
@@ -128,31 +132,63 @@ class Voice:
         with self._close_lock:
             self._closed = True
             self._q.put(None)
-        self._thread.join(timeout=2)
-        while True:  # 워커가 처리하지 못하고 남긴 문장: 기다리는 쪽이 막히지 않게 set
-            try:
-                item = self._q.get_nowait()
-            except queue.Empty:
-                break
-            if item is not None:
-                item[1].set()
+        for t in (self._synth_thread, self._play_thread):
+            t.join(timeout=self._join_timeout_s)
+        # 처리되지 못하고 남은 문장: 기다리는 쪽이 막히지 않게 set. 종료 신호는 되돌려 둔다.
+        for q in (self._q, self._pq):
+            sentinel = False
+            while True:
+                try:
+                    item = q.get_nowait()
+                except queue.Empty:
+                    break
+                if item is None:
+                    sentinel = True
+                else:
+                    item[-1].set()
+            if sentinel:
+                q.put_nowait(None)
         if self._http is not None:
             self._http.close()
 
-    def _worker(self):
+    def _synth_worker(self):
+        """합성 스레드: 앞 문장이 재생되는 동안 다음 문장을 미리 합성한다."""
         while True:
             item = self._q.get()
             if item is None:
+                self._pq.put(None)
                 return
             text, started = item
+            wav = None
+            if self.engine in ("openai", "gemini"):
+                try:
+                    wav = self.synthesize(text)
+                except Exception:
+                    log.exception("TTS 합성 실패")
+                    started.set()
+                    continue
+            while True:
+                try:
+                    self._pq.put((wav, text, started), timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
+
+    def _play_worker(self):
+        while True:
+            item = self._pq.get()
+            if item is None:
+                return
+            wav, text, started = item
             try:
-                self._say(text, started)
+                self._say(text, started, wav)
             except Exception:
                 log.exception("TTS 실패")
             finally:
                 started.set()
 
-    def _say(self, text, started=None):
+    def _say(self, text, started=None, wav=None):
+        """재생. started는 소리가 나기 직전에 set 한다 (실패하면 호출한 쪽 finally가 set)."""
         def go():
             if started is not None:
                 started.set()
@@ -169,16 +205,14 @@ class Voice:
                 self._tts.say(text)
                 self._tts.runAndWait()
             except Exception:
-                # 다음 대사에서 엔진을 다시 만든다 (로그는 _worker가 한 번만 남긴다)
+                # 다음 대사에서 엔진을 다시 만든다 (로그는 호출한 쪽이 한 번만 남긴다)
                 self._tts = None
                 raise
         elif self.engine in ("openai", "gemini"):
-            wav = self.synthesize(text)
             go()
             play_wav(wav)
         elif self.engine != "none":
             raise ValueError(f"알 수 없는 TTS 엔진: {self.engine}")
-        go()
 
 
 def make_voice(cfg, env):

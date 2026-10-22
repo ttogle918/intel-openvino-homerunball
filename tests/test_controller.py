@@ -562,8 +562,34 @@ def test_no_voice_or_none_event_does_not_wait(cfg):
 
 def test_other_robot_messages_do_not_wait(cfg):
     v = EventVoice()
-    c = _make_voiced(cfg, v)
+    cfg["voice"]["sync_timeout_s"] = 8
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills(), voice=v)
     t0 = time.monotonic()
-    c._start_task(None, announce=True)  # 대사는 내지만 기다리지 않는다
-    c.chat("안녕")
+    c.command("start")  # IDLE: 안내 대사를 내지만 기다리지 않는다
+    assert len(v.spoken) == 1
+    c.state, c.phase = "REFUSING", "idle"
+    c.command("resume")
+    assert len(v.spoken) == 2
     assert time.monotonic() - t0 < 1
+    assert c.state == "WORKING" and c.skills.runs == []
+
+
+def test_estop_restart_start_during_wait_drops_old_decision(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    # 폴링 사이에 한꺼번에 일어난 것처럼: 대기 스레드가 중간 상태를 못 보게 락을 잡고 처리한다
+    with c._lock:
+        c._estop()
+        c._restart()
+        c._start_task(None)
+    t.join(3)
+    assert not t.is_alive()
+    assert out == [None] and c.skills.runs == []
+
+
+def test_sync_timeout_null_uses_default(cfg):
+    cfg["voice"]["sync_timeout_s"] = None
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills())
+    assert c.sync_timeout_s == 8
