@@ -139,20 +139,24 @@ class Switch:
 
 
 class Tap:
-    """매 틱 관절값과 카메라 프레임을 저장하고, watch가 있으면 그리퍼 값을 넘긴다."""
+    """매 틱 관절값과 카메라 프레임을 저장하고, watch가 있으면 그리퍼 값을, recorder가 있으면 틱 전체를 넘긴다."""
 
     def __init__(self):
         self.lock = threading.Lock()
         self.joints = None
         self.frames = {}
         self.watch = None
+        self.recorder = None
 
     def on_tick(self, event):
         joints = np.asarray(event.robot_state.joint_positions, np.float32).copy()
+        frames = {name: frame.data for name, frame in event.camera_frames.items()}
         with self.lock:
             self.joints = joints
-            for name, frame in event.camera_frames.items():
-                self.frames[name] = frame.data
+            self.frames.update(frames)
         watch = self.watch
         if watch is not None:
             watch.update(float(joints[GRIPPER]), event.timestamp)
+        recorder = self.recorder
+        if recorder is not None:
+            recorder.tick(joints, frames, event.timestamp)   # 큐에 넣기만 한다 (RunRecorder.tick)

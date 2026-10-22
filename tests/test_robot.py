@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from snackbot.robot import RobotSkills
+from snackbot.twin import load_episode
 
 POSES = {"home_pose": [0, 0, 0, 0, 0, 80], "lift_pose": [0, -20, 10, 0, 0, 80]}
 
@@ -127,7 +128,7 @@ def rcfg(cfg):
     return cfg
 
 
-def make(cfg, joints=POSES["home_pose"], gripper=(), interrupt_at=None, models=None):
+def make(cfg, joints=POSES["home_pose"], gripper=(), interrupt_at=None, models=None, recorder=None):
     robot, holder = FakeRobot(joints), {}
 
     def make_runtime(switch, tap):
@@ -135,7 +136,7 @@ def make(cfg, joints=POSES["home_pose"], gripper=(), interrupt_at=None, models=N
         return holder["rt"]
 
     policies = {"oranda_pickup": FakePolicy(), "dori_dori": FakePolicy()}
-    skills = RobotSkills(cfg, POSES, make_runtime=make_runtime, policies=policies, models=models)
+    skills = RobotSkills(cfg, POSES, make_runtime=make_runtime, policies=policies, models=models, recorder=recorder)
     skills.connect()
     return skills, holder["rt"], robot
 
@@ -435,3 +436,43 @@ def test_camera_failure_warns_once_until_recovered(rcfg, caplog):
         state["fail"] = True
         s.latest_frame()
         assert caplog.text.count("boom") == 2
+
+
+def test_policy_phase_is_recorded_but_moves_are_not(rcfg):
+    s, rt, _ = make(rcfg, joints=[30, 0, 0, 0, 0, 80], gripper=[80, 80] + [25] * 5 + [80] * 10)
+    steps = []
+    s.policies["oranda_pickup"].on_update = steps.append
+    r = s.run("oranda_pickup")
+    s.recorder.wait(5)
+    ep = load_episode(s.recorder.last_folder)
+    assert rt.runs == ["MoveSource", "FakePolicy", "MoveSource"]
+    assert len(ep["joints"]) == len(steps)                # 정책이 돈 틱만 (홈·lift 이동은 제외)
+    assert (ep["stop_reason"], ep["grasped"]) == (r.stop_reason, r.grasped) == ("gripper_open", True)
+    assert set(ep["cameras"]) == {"tower cam", "follow cam"}
+    assert s.tap.recorder is None
+
+
+def test_recording_disabled_or_broken_does_not_change_run(rcfg, tmp_path, caplog):
+    rcfg["recording"]["enabled"] = False
+    s, _, _ = make(rcfg)
+    assert s.run("dori_dori").stop_reason == "timeout" and s.recorder.last_folder is None
+
+    (tmp_path / "file").write_text("x", encoding="utf-8")
+    rcfg["recording"].update(enabled=True, dir=str(tmp_path / "file"))
+    s2, _, _ = make(rcfg)
+    with caplog.at_level("WARNING"):
+        assert s2.run("dori_dori").stop_reason == "timeout"
+    assert "실행 기록을 시작하지 못했어요" in caplog.text
+
+
+def test_latest_joints_none_before_connect_then_cached_copy(rcfg):
+    robot = FakeRobot(POSES["home_pose"])
+    s = RobotSkills(rcfg, POSES, make_runtime=lambda sw, t: FakeRuntime(sw, t, robot),
+                    policies={"dori_dori": FakePolicy()})
+    assert s.latest_joints() is None
+    s.connect()
+    assert s.latest_joints() == POSES["home_pose"]
+    robot.joints[:] = 99                                  # 캐시는 connect·틱에서만 바뀐다
+    assert s.latest_joints() == POSES["home_pose"]
+    s.run("dori_dori")
+    assert s.latest_joints() == pytest.approx(POSES["home_pose"])

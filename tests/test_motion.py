@@ -163,3 +163,15 @@ def test_tap_caches_state_frames_and_feeds_watch():
     tap.on_tick(SimpleNamespace(robot_state=state([1, 2, 3, 4, 5, 20]),
                                 camera_frames={"tower cam": SimpleNamespace(data=frame)}, timestamp=0.1))
     assert tap.joints[GRIPPER] == 20 and tap.frames["tower cam"] is frame and w.closed_seen
+
+
+def test_tap_sends_ticks_to_recorder_only_when_set():
+    tap, got = Tap(), []
+    rec = SimpleNamespace(tick=lambda joints, frames, t: got.append((joints.tolist(), frames, t)))
+    event = SimpleNamespace(robot_state=state([1, 2, 3, 4, 5, 6]),
+                            camera_frames={"tower cam": SimpleNamespace(data="img")}, timestamp=0.5)
+    tap.on_tick(event)
+    tap.recorder = rec
+    tap.on_tick(event)
+    assert got == [([1, 2, 3, 4, 5, 6], {"tower cam": "img"}, 0.5)]
+    assert tap.frames == {"tower cam": "img"}
