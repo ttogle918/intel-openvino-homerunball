@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from conftest import FirstRng
@@ -130,6 +131,7 @@ def test_ws_history_message_delivered_once(cfg, tmp_path):
     c, app = make_app(cfg, tmp_path)
     c.notify("old")
     with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        c._emit(c.history[-1])          # 이미 history에 담긴 메시지를 큐로 다시 흘려보낸다
         assert ws.receive_json() == INFO
         assert ws.receive_json()["type"] == "state"
         assert ws.receive_json()["text"] == "old"
@@ -138,6 +140,26 @@ def test_ws_history_message_delivered_once(cfg, tmp_path):
         assert got[0]["role"] == "user" and got[1]["role"] == "robot"
         assert got[2]["type"] == "state"
         assert all(g.get("text") != "old" for g in got)
+
+
+def test_ws_closes_when_send_fails(cfg, tmp_path, monkeypatch):
+    from starlette.websockets import WebSocket, WebSocketDisconnect
+    real, calls = WebSocket.send_json, {"n": 0}
+
+    async def flaky(self, data, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] > 2:              # info, state까지만 성공
+            raise RuntimeError("send blocked")
+        return await real(self, data, *a, **kw)
+
+    monkeypatch.setattr(WebSocket, "send_json", flaky)
+    c, app = make_app(cfg, tmp_path)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        assert ws.receive_json() == INFO
+        assert ws.receive_json()["type"] == "state"
+        c.notify("x")
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
 
 
 def test_ws_survives_malformed_frames(cfg, tmp_path):

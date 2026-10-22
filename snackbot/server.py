@@ -45,16 +45,23 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
                 outbox.put_nowait((event, True))
 
     async def writer(ws, outbox, skip_keys):
-        """접속별 전송 작업. 오류·타임아웃이면 멈춘다 (정리는 ws_endpoint가 한다)."""
+        """접속별 전송 작업. 오류·타임아웃이면 outbox를 등록 해제하고 소켓을 닫아
+        수신 루프를 끝낸다 (브라우저가 close를 받아 재접속한다)."""
         try:
             while True:
                 e, live = await outbox.get()
                 # 접속 직전 history에 이미 담긴 메시지가 큐에서도 오면 한 번만 보낸다
-                if live and e.get("type") == "message" and (e.get("ts"), e.get("role"), e.get("text")) in skip_keys:
+                key = (e.get("ts"), e.get("role"), e.get("text"))
+                if live and e.get("type") == "message" and key in skip_keys:
+                    skip_keys.discard(key)      # 한 번만 건너뛴다
                     continue
                 await asyncio.wait_for(ws.send_json(e), 2.0)
         except Exception as ex:
             log.debug("ws writer 종료: %r", ex)
+        finally:
+            clients.discard(outbox)
+            with contextlib.suppress(Exception):
+                await ws.close()
 
     def on_event(event):
         # controller 스레드에서 불린다 → 이벤트 루프 스레드로 넘긴다
@@ -108,6 +115,8 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend")
         finally:
             clients.discard(outbox)
             task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     @app.post("/stt")
     async def stt_endpoint(request: Request):
