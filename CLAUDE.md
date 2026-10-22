@@ -3,7 +3,7 @@
 이 파일은 Claude Code가 이 저장소에서 작업할 때 항상 참고하는 프로젝트 요약입니다.
 
 ## 프로젝트
-- 하드웨어: SO-ARM101 (팔로워 1대, 학습용 리더 1대), 카메라 2대(외부 + 손목)
+- 하드웨어: SO-ARM101 (팔로워 1대, 학습용 리더 1대), 카메라 3대(외부 + 손목)
 - 소프트웨어: physical-ai-studio로 학습한 ACT(OpenVINO 결과물, `physicalai` 런타임), LLM(API 또는 로컬), TTS, STT, FastAPI + 웹 UI
 - 기간: 2일 해커톤
 - 시연: 섞인 트레이에서 목표 과자(지금은 **오란다**)만 빈 트레이로 옮긴다. 채팅·음성으로 작업을 시키고,
@@ -68,14 +68,20 @@
 
 ## 실행
 모든 명령은 project 루트에서 실행한다.
+환경 준비 (처음 한 번):
 ```bash
-python -m snackbot --dry-run            # 로봇 없이 전체 흐름 + UI (http://localhost:8000)
-python -m snackbot --dry-run --no-ui    # 콘솔만
-python -m snackbot                      # 실제 로봇
-python -m snackbot.vision tests/samples/tray_3.jpg   # 모듈 단독 테스트
-python -m tools.save_pose home          # 현재 팔 자세를 home_pose로 저장
-python -m tools.save_pose lift          # 현재 팔 자세를 lift_pose로 저장
-pytest
+python -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt   # Linux: .venv/bin/python
+cp .env.example .env                                      # 쓸 API 키만 채운다
+```
+```bash
+.venv/Scripts/python -m snackbot --dry-run            # 로봇 없이 전체 흐름 + UI (http://localhost:8000)
+.venv/Scripts/python -m snackbot --dry-run --no-ui    # 콘솔만
+.venv/Scripts/python -m snackbot                      # 실제 로봇
+.venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg   # 모듈 단독 테스트
+.venv/Scripts/python -m tools.save_pose home          # 현재 팔 자세를 home_pose로 저장
+.venv/Scripts/python -m tools.save_pose lift          # 현재 팔 자세를 lift_pose로 저장
+.venv/Scripts/python -m pytest
 ```
 - 의존 방향: `server → controller → (brain, vision, skills, voice)`. controller는 FastAPI를 모른다.
 - 로봇 포트는 한 프로그램만 잡을 수 있다. 실행 전 physical-ai-studio 세션을 닫는다.
