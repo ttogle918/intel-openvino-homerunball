@@ -30,6 +30,16 @@ gantt
 - [ ] **성공 영상 백업**이 발표 자료에 들어가 있는지 확인
 - [ ] 서버는 127.0.0.1에만 띄운다 (인증이 없으므로 0.0.0.0 금지)
 
+## 2-1. 노트북 준비 (처음 한 번, 음성 인식 Whisper 로컬)
+- [ ] 새 터미널을 연다. Windows 환경 변수에 예전 `GEMINI_API_KEY`가 남아 있으면 `.env`보다 우선해 400 오류가 나므로, 지운 뒤에 연 터미널에서 실행한다 (열려 있던 터미널은 예전 값을 갖고 있다)
+- [ ] `.venv/Scripts/python -m pip install -r requirements.txt` (`openvino-genai==2026.4.1.0` 포함, Windows 다운로드 약 91MB. physicalai의 `openvino>=2026.4.0`과 호환). Ubuntu는 `.venv/bin/python`
+- [ ] 모델 받기 (torch·변환 불필요): `.venv/Scripts/python -m pip install huggingface_hub` 후
+  `.venv/Scripts/hf download OpenVINO/whisper-small-int8-ov --local-dir models/whisper-small` (257MB, Linux는 `.venv/bin/hf`)
+- [ ] 확인: `.venv/Scripts/python -m snackbot.stt a.wav b.wav` (한국어 녹음 파일. 워밍업 후 파일마다 텍스트·source·ms가 나온다)
+- [ ] CPU/GPU 선택: 기본은 `config.yaml`의 `stt.chain` 첫 항목 `device: CPU` (small 1.2~1.8초/문장). GPU로 바꾸면 `device`와 `label`("Whisper small · OpenVINO · GPU")을 같이 바꾼다. GPU는 0.4~0.5초지만 첫 로드가 길다(캐시 `models/ov_cache` 후 2~4초)
+- [ ] 서버를 켜면 백그라운드에서 워밍업한다 (CPU 약 5.6초). 그 뒤 UI 🎤로 "오란다 세 개 옮겨줘" 확인
+- [ ] TTS는 Gemini만 쓴다 (OS TTS 예비는 만들지 않기로 했다). 크레딧을 충전한 뒤 TTS → STT 왕복 검사를 하고, 크레딧이 없으면(402) 소리 없이 진행한다
+
 ## 3. 진행자 대본 예시
 1. "이 로봇은 과자 공장 직원입니다. 오란다만 골라내요." → 시작
 2. 1~3회: 로봇이 옮기면서 점점 투덜댐

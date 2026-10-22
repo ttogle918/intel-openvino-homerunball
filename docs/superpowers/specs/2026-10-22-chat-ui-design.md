@@ -189,9 +189,13 @@ vision:
 ```yaml
 stt:
   chain:
-    - {provider: local_ov, model_dir: "models/whisper", device: CPU, language: ko}
-    - {provider: openai, model: "[전사 모델 ID]"}
+    # device를 GPU로 바꾸면 label도 같이 바꾼다 (UI 모델 정보에 표시됨)
+    - {provider: local_ov, kind: whisper, model_dir: "models/whisper-small", device: CPU, language: ko,
+       cache_dir: "models/ov_cache", label: "Whisper small · OpenVINO · CPU"}
+    - {provider: gemini, model: "gemini-3.5-flash-lite", transcribe: chat, timeout_s: 15}   # 크레딧 있을 때 예비
 ```
+
+측정 (개발 PC, 한국어 TTS 문장 5개): small CPU 1.2~1.8초/문장, GPU 0.43~0.49초 (첫 로드 25초, `cache_dir`로 2~4초). 서버 워밍업 CPU 약 5.6초. small은 5개 중 4개 정확(달래기 키워드 '힘내'·'부탁' 유지)이라 기본으로 쓰고, base(85MB, 0.4초)는 "한 번만 더"→"한 번 더"처럼 키워드를 잃어 채택하지 않았다.
 
 ## 7. 로봇 연동 (skills.py, physicalai 런타임)
 

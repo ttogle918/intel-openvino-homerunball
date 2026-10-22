@@ -242,4 +242,8 @@
 - Claude(Anthropic)는 음성 모델이 없다. OpenAI 키는 무효(401), Gemini는 크레딧 소진(402)으로 실제 확인 못 함.
 - NVIDIA: OpenAI 호환 API에는 음성 모델 없음. build.nvidia.com 음성 NIM은 Riva gRPC라 어댑터가 따로 필요하고, 한국어 TTS는 확인되지 않았다.
 - OpenVINO Whisper를 고른 이유: 코드(`OpenVINOProvider(kind="whisper")`)가 이미 있고, 노트북 안에서 돌아 네트워크·크레딧에 영향받지 않으며, "on-device" 평가 항목에도 맞는다.
-- 실행 순서는 `docs/memo/next-session-prompt.md` 끝의 "결정" 절.
+- 실행 순서는 `docs/memo/next-session-prompt.md` 끝의 "결정" 절. 결과는 같은 파일의 "결과" 절.
+- 구현 결과 (커밋 `1284e6a`, `e006840`): `openvino-genai==2026.4.1.0`, 모델 `OpenVINO/whisper-small-int8-ov`(257MB, torch·변환 불필요), 서버 시작 때 백그라운드 워밍업.
+- 측정 (이 개발 PC, Windows TTS 한국어 문장 5개): small CPU 1.2~1.8초/문장, GPU 0.43~0.49초(첫 로드 25초, CACHE_DIR `models/ov_cache`로 2~4초), 서버 워밍업 CPU 약 5.6초.
+- small 채택 이유: 5개 중 4개 정확하고 "힘내 줘"→"힘내죠"여도 달래기 키워드('힘내', '부탁')가 남는다. base(85MB)는 0.4초로 빠르지만 "오랜다", "보리아", "한 번만 더"→"한 번 더"(달래기 키워드 손실)라 탈락.
+- 기본은 CPU. GPU로 바꾸면 config의 device와 label을 같이 바꾼다.

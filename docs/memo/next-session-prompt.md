@@ -26,7 +26,7 @@
   b2fc422 대화 기억(최근 12개, 역할 유지), 캐릭터 이름 고정, 재시작 때 기억 초기화
   6db1ac4 STT·TTS를 Gemini로(STT: gemini-3.5-flash-lite 채팅+오디오, TTS: gemini-2.5-flash-preview-tts, voice Leda), 캐릭터 이름 "보리"
   → 리뷰 아직 안 한 커밋: 620cdfa 이후 전부(b2f4c6e는 비상정지 경로라 opus 리뷰), bd1c9ee, b2fc422, 6db1ac4.
-- 테스트: `.venv/Scripts/python -m pytest -q` (160개).
+- 테스트: `.venv/Scripts/python -m pytest -q` (172개).
 - 실제 API 확인 상태: Claude 대화는 동작 확인(1.8~3.6초, 대화 기억 "민수" 테스트 통과). Gemini 음성은 계정 크레딧 소진(402)으로 실제 호출 미확인 — 요청 형식(특히 STT의 input_audio)을 충전 후 검증해야 한다. 검증 스크립트 아이디어: TTS로 "과자 세 개 옮겨줘" 생성 → build_stt(...).transcribe → "옮겨" 포함 확인. OpenAI 키는 401(무효)이라 예비로만 남아 있다.
 - 환경 주의: 이 PC의 Windows 환경 변수에 예전(무효) GEMINI_API_KEY가 있으면 load_env가 .env보다 환경 변수를 우선해서 400 API_KEY_INVALID가 난다. 사용자에게 지웠는지 확인할 것. Windows에서 tests/test_server.py가 WinError 10014(루프백 소켓)로 가끔 1~3개 실패 → 다시 돌리면 통과. 서버 시작도 같은 이유로 가끔 실패하니 재시도.
 - 원격:
@@ -68,7 +68,7 @@
 - physicalai 0.3.0: RobotRuntime(robot, action_source, fps, cameras, callbacks).run(duration_s, stop_event), PolicySource(InferenceModel(export_dir, device)), InferenceModel이 모델이 기대하는 입력만 골라 쓴다(남는 카메라 무시).
 
 ## 남은 결정·확인
-- stash@{0}(15:15 git 사고 백업)과 scratchpad/rescue 백업을 지워도 되는지 사용자에게 물어볼 것.
+- (완료) stash@{0}과 rescue 백업은 사용자 승인으로 삭제했다.
 - 시연 전 Ubuntu 노트북에서 실제 터미널로 방향키·Home·F키·ESC가 아무 동작도 안 하고 space만 비상정지인지 직접 확인.
 - WinError 10014 원인(이 Windows PC 한정) 조사 여부.
 ```
@@ -88,3 +88,10 @@
 4. config: `stt.chain: [{provider: local_ov, model_dir: models/whisper-small, device: CPU, kind: whisper}, (Gemini는 크레딧 있을 때 예비)]`. CPU/GPU 지연 비교 후 device 결정.
 5. 검증: 한국어 녹음 몇 개로 정확도·지연 측정 → UI 🎤로 확인. UI 모델 정보에 "Whisper · OpenVINO · CPU"처럼 표시되는지 확인(온디바이스 평가 항목).
 - TTS: Gemini(크레딧 충전 시) 유지, 안 되면 pyttsx3(OS TTS)를 예비로.
+
+### 결과 (2026-10-22)
+- 완료: STT를 OpenVINO Whisper 로컬로 전환. 커밋 `1284e6a`(연결·워밍업·CLI), `e006840`(generate 락, CLI 없는 파일 처리). `openvino-genai==2026.4.1.0`, 모델 `OpenVINO/whisper-small-int8-ov`(257MB), 테스트 172개.
+- 측정: small CPU 1.2~1.8초/문장, GPU 0.43~0.49초(첫 로드 25초 → 캐시로 2~4초), 서버 워밍업 CPU 약 5.6초. small 5개 중 4개 정확, base는 달래기 키워드를 잃어 탈락. 기본 device는 CPU.
+- dry-run 서버에서 `/stt`에 WAV POST → 인식 → controller.chat → 작업 시작까지 확인.
+- 남은 것: TTS 결정 완료: 사용자가 Gemini 크레딧을 충전하고 Gemini TTS만 쓴다(OS TTS 예비는 만들지 않음). 충전 후 TTS → STT 왕복 검사 예정, 시연 노트북에서 설치·모델 받기·`python -m snackbot.stt` 속도 확인(CPU/GPU 선택). 순서는 docs/DEMO_RUNBOOK.md 2-1.
+- Windows 환경 변수의 예전 GEMINI_API_KEY는 사용자가 지웠다(지우기 전에 연 터미널은 예전 값을 가지므로 새 터미널에서 실행).
