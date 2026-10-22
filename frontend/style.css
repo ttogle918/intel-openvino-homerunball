@@ -111,7 +111,7 @@ body[data-state=REFUSING] .state-badge{background:var(--red);color:#fff;animatio
 body[data-state=DONE] .state-badge{background:var(--green-bg);color:var(--green)}
 body[data-state=ESTOP] .state-badge{background:var(--red);color:#fff}
 body[data-phase=waiting_operator] .phase-label{color:var(--red)}
-.steps{list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem}
+.steps{list-style:none;padding:0;display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem}
 .steps li{font-size:.95rem;font-weight:800;text-align:center;line-height:1.15;padding:.35rem .2rem;border-radius:.6rem;background:var(--bg2);color:var(--ink2);border:.12rem solid transparent;opacity:.7}
 .steps li.on{background:var(--orange);color:#fff;border-color:var(--ink);opacity:1;animation:pulse 1.2s infinite}
 .steps li.done{background:var(--green-bg);color:var(--green);opacity:1}

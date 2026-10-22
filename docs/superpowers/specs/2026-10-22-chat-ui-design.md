@@ -94,7 +94,7 @@ stateDiagram-v2
 | REFUSING | `resume`, `chat` (M5부터 resume) | resume → count = 0, WORKING |
 | ESTOP | `chat` | 대답만. 해제는 restart 명령으로만 |
 
-- `phase` (UI 표시용, WORKING 내부 단계): `idle | counting | thinking | acting | returning | waiting_operator`
+- `phase` (UI 표시용, WORKING 내부 단계): `idle | counting | thinking | speaking | acting | returning | waiting_operator` (speaking: 대사 소리가 나기 시작할 때까지 동작 대기, 최대 `voice.sync_timeout_s`)
 - 옮기기 실패가 `max_retry`를 넘으면 WORKING 유지 + `phase=waiting_operator`. 재개 명령으로 다시 시도. count 불변.
 - 동시성: controller의 상태 변경은 락 하나로 보호. brain의 LLM 호출(decide/chat)은 provider 내부 락으로 직렬화.
 

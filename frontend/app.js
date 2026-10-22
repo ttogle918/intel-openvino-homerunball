@@ -7,9 +7,9 @@ const S = { state: 'IDLE', phase: 'idle', count: 0, remaining: null, vision_meth
   th: { safe_max: 3, force_refuse: 6 }, name: '과자', got: false, cycles: [], mock: false };
 
 const STATE_KO = { IDLE: '대기', WORKING: '작업 중', REFUSING: '거부 중', DONE: '완료', ESTOP: '비상정지' };
-const PHASE_KO = { idle: '쉬는 중', counting: '개수 세는 중', thinking: '생각 중', acting: '옮기는 중', returning: '제자리로', waiting_operator: '도움 필요' };
+const PHASE_KO = { idle: '쉬는 중', counting: '개수 세는 중', thinking: '생각 중', speaking: '말하는 중', acting: '옮기는 중', returning: '제자리로', waiting_operator: '도움 필요' };
 const METHOD_KO = { yolo: 'YOLO', vlm: 'VLM', opencv: 'OpenCV', fake: '테스트 값' };
-const STEP_ORDER = ['counting', 'thinking', 'acting', 'returning'];
+const STEP_ORDER = ['counting', 'thinking', 'speaking', 'acting', 'returning'];
 
 /* ---------- render ---------- */
 function renderState() {
@@ -277,6 +277,7 @@ function createMock(emit) {
         pushState({ state: 'WORKING', phase: 'counting', skill: null }); continue;
       }
       if (st.count > TH.safe_max && Math.random() < .7) say('robot', chatter[rnd(0, chatter.length - 1)]);
+      pushState({ phase: 'speaking', skill: 'oranda_pickup' }); await sleep(900); if (t !== tok) return;
       pushState({ phase: 'acting', skill: 'oranda_pickup' }); await sleep(2600); if (t !== tok) return;
       pushState({ phase: 'returning', skill: null }); await sleep(1100); if (t !== tok) return;
       const ok = Math.random() > .1;

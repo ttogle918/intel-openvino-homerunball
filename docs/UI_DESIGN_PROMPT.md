@@ -37,7 +37,7 @@
 
 ## 상태와 단계
 state: IDLE(대기) | WORKING(작업 중) | REFUSING(거부 중) | DONE(완료) | ESTOP(비상정지)
-phase: idle | counting(개수 세는 중) | thinking(생각 중) | acting(옮기는 중) | returning(제자리로) | waiting_operator(도움 필요)
+phase: idle | counting(개수 세는 중) | thinking(생각 중) | speaking(대사 소리 시작 대기) | acting(옮기는 중) | returning(제자리로) | waiting_operator(도움 필요)
 - 버튼 활성화
   - 재개: REFUSING이거나 phase가 waiting_operator일 때만
   - 재시작: ESTOP일 때만
