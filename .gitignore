@@ -15,3 +15,6 @@ outputs/
 traind-model/
 .env
 .pytest_cache/
+
+# Claude Design 미리보기 이미지
+frontend/.thumbnail

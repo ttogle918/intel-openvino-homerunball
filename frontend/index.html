@@ -3,73 +3,118 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>snackbot dev</title>
-<style>
-  body { font-family: system-ui, "Malgun Gothic", sans-serif; margin: 16px; background: #faf7f2; color: #222; }
-  #wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  #cam { width: 100%; min-height: 240px; background: #ccc; }
-  #state { font-size: 1.3rem; font-weight: 700; }
-  #log { height: 320px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; background: #fff; }
-  .user { color: #087f3c; } .robot { color: #a14d00; } .system { color: #c00; }
-  body.estop { outline: 8px solid #d00; outline-offset: -8px; }
-  @media (max-width: 760px) { #wrap { grid-template-columns: 1fr; } }
-</style>
+<title>과자 옮기기 로봇 관제</title>
+<link rel="stylesheet" href="style.css">
 </head>
-<body>
-<p><b>개발용 임시 화면</b> — Claude Design 결과물(index.html · app.js · style.css)로 교체한다.</p>
-<div id="wrap">
-  <div><img id="cam" src="/stream/front" alt="카메라 없음"></div>
-  <div>
-    <div id="state">연결 중…</div>
-    <div id="info"></div>
-    <div id="log"></div>
-    <form id="f"><input id="t" placeholder="예: 오란다 3개 옮겨줘" autocomplete="off" style="width:70%"> <button>보내기</button></form>
-    <p><button data-cmd="resume">재개</button> <button data-cmd="estop">비상정지</button> <button data-cmd="restart">재시작</button></p>
-    <div id="cycle"></div>
+<body data-state="IDLE" data-phase="idle">
+<div class="frame-alert" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand"><span class="brand-mark"></span><h1>과자 옮기기 관제실</h1></div>
+  <div class="top-right">
+    <span id="mockTag" class="pill pill-mock" hidden>목업 모드</span>
+    <span id="conn" class="pill pill-off"><i></i><b>연결 끊김</b></span>
   </div>
-</div>
-<script>
-  const $ = (id) => document.getElementById(id);
-  let ws;
-  function add(m) {
-    const d = document.createElement("div");
-    d.className = m.role;
-    d.textContent = `${m.role}${m.source === "voice" ? " 🎤" : ""}: ${m.text}`;
-    $("log").appendChild(d);
-    $("log").scrollTop = $("log").scrollHeight;
-  }
-  function connect() {
-    ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-    ws.onmessage = (e) => {
-      const m = JSON.parse(e.data);
-      if (m.type === "info") {
-        $("info").textContent = `대상: ${m.target.name} · ` +
-          Object.entries(m.models).map(([k, v]) => `${k}=${v}`).join(" · ");
-      } else if (m.type === "state") {
-        $("state").textContent = `${m.state} / ${m.phase} · count ${m.count} ` +
-          `(${m.thresholds.safe_max}/${m.thresholds.force_refuse}) · 남은 ${m.remaining} (${m.vision_method})`;
-        document.body.classList.toggle("estop", m.state === "ESTOP");
-      } else if (m.type === "message") {
-        add(m);
-      } else if (m.type === "cycle") {
-        $("cycle").textContent = `cycle ${m.n}: ${m.result} ${JSON.stringify(m.ms)}`;
-      }
-    };
-    ws.onclose = () => {
-      $("state").textContent = "연결 끊김 — 2초 후 재연결";
-      setTimeout(connect, 2000);
-    };
-  }
-  $("f").onsubmit = (e) => {
-    e.preventDefault();
-    const t = $("t").value.trim();
-    if (t && ws.readyState === 1) ws.send(JSON.stringify({ type: "chat", text: t }));
-    $("t").value = "";
-  };
-  document.querySelectorAll("[data-cmd]").forEach((b) => {
-    b.onclick = () => ws.readyState === 1 && ws.send(JSON.stringify({ type: "command", name: b.dataset.cmd }));
-  });
-  connect();
-</script>
+</header>
+
+<main class="main">
+  <section class="cam card" aria-label="카메라">
+    <img id="camImg" alt="" hidden>
+    <div id="camEmpty" class="cam-empty"><div class="stripes"></div><span id="camEmptyText">카메라 없음</span></div>
+    <div class="cam-live"><i></i>FRONT</div>
+    <div class="count-overlay">
+      <div class="count-name" id="cntName">과자</div>
+      <div class="count-row"><span class="count-num" id="cntNum">–</span><span class="count-unit">개 남음</span></div>
+      <div class="count-method" id="cntMethod"></div>
+    </div>
+    <div class="cam-refuse" id="camRefuse"><b>거부 중</b><span>달래 주면 다시 일할지도 몰라요</span></div>
+    <div class="cam-estop" id="camEstop"><b>비상정지</b></div>
+  </section>
+
+  <aside class="side">
+    <section class="robot-card card">
+      <div class="robot-stage">
+        <div class="robot" id="robot" data-mood="fresh">
+          <div class="r-antenna"></div>
+          <div class="r-head">
+            <div class="r-eye l"></div><div class="r-eye r"></div>
+            <div class="r-cheek l"></div><div class="r-cheek r"></div>
+            <div class="r-mouth"></div>
+          </div>
+          <div class="r-body"><div class="r-belly"></div></div>
+          <div class="r-sweat"></div>
+        </div>
+      </div>
+      <div class="robot-info">
+        <div class="badge-row">
+          <span class="state-badge" id="stateBadge">대기</span>
+          <span class="phase-label" id="phaseLabel">쉬는 중</span>
+        </div>
+        <ol class="steps" id="steps">
+          <li data-p="counting">개수<br>세기</li>
+          <li data-p="thinking">생각</li>
+          <li data-p="acting">옮기기</li>
+          <li data-p="returning">복귀</li>
+        </ol>
+        <div class="fatigue">
+          <div class="fatigue-head"><span>피로도</span><span id="fatigueTier" class="tier">쌩쌩</span></div>
+          <div class="gauge" id="gauge">
+            <div class="gauge-fill" id="gaugeFill"></div>
+            <div class="gauge-mark" id="gaugeMark"></div>
+          </div>
+          <div class="gauge-scale"><span>0</span><span id="gaugeCount">0회</span><span id="gaugeMax">한계 –</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="chat card">
+      <div class="chat-log" id="chatLog"><div class="chat-empty" id="chatEmpty">대화가 없어요. 말을 걸어 보세요.</div></div>
+      <div class="voice-status" id="voiceStatus" hidden></div>
+      <form class="chat-form" id="chatForm" autocomplete="off">
+        <input id="chatInput" type="text" placeholder="로봇에게 말하기  (예: 과자 옮겨줘)" maxlength="200">
+        <button type="button" class="mic" id="micBtn" aria-label="누르고 말하기">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+          <span>누르고 말하기</span>
+        </button>
+        <button type="submit" class="send">보내기</button>
+      </form>
+    </section>
+  </aside>
+
+  <footer class="bottom">
+    <section class="perf card">
+      <div class="perf-head">
+        <h2>성능</h2>
+        <div class="success"><span>성공률</span><b id="succRate">–</b><small id="succDetail"></small></div>
+        <div class="dots" id="cycleDots" title="최근 사이클"></div>
+      </div>
+      <div class="timings" id="timings">
+        <div class="tm" data-k="vision"><label>개수 세기</label><b>–</b><div class="bar"><i></i></div></div>
+        <div class="tm" data-k="llm"><label>LLM</label><b>–</b><div class="bar"><i></i></div></div>
+        <div class="tm" data-k="act"><label>ACT</label><b>–</b><div class="bar"><i></i></div></div>
+        <div class="tm" data-k="return"><label>복귀</label><b>–</b><div class="bar"><i></i></div></div>
+      </div>
+    </section>
+
+    <section class="models card">
+      <h2>모델 · 실행 위치</h2>
+      <dl id="models">
+        <div data-k="act"><dt>제어</dt><dd>–</dd></div>
+        <div data-k="vision"><dt>비전</dt><dd>–</dd></div>
+        <div data-k="llm"><dt>대화</dt><dd>–</dd></div>
+        <div data-k="stt"><dt>음성</dt><dd>–</dd></div>
+      </dl>
+    </section>
+
+    <section class="ctrl">
+      <div class="ctrl-small">
+        <button class="btn btn-resume" id="btnResume" disabled>재개</button>
+        <button class="btn btn-restart" id="btnRestart" disabled>재시작</button>
+      </div>
+      <button class="btn-estop" id="btnEstop" disabled><span class="octo"></span><b>비상정지</b></button>
+    </section>
+  </footer>
+</main>
+<script src="app.js"></script>
 </body>
 </html>
