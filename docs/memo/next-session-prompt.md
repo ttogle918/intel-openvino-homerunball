@@ -72,3 +72,9 @@
 - 시연 전 Ubuntu 노트북에서 실제 터미널로 방향키·Home·F키·ESC가 아무 동작도 안 하고 space만 비상정지인지 직접 확인.
 - WinError 10014 원인(이 Windows PC 한정) 조사 여부.
 ```
+
+## 부록: NVIDIA 음성 모델 확인 결과 (2026-10-22)
+- `integrate.api.nvidia.com/v1/models`(OpenAI 호환, 우리 코드가 쓰는 곳) 83개 중 STT/TTS 없음 (riva-translate는 번역).
+- build.nvidia.com의 음성 NIM(Parakeet/Canary/Whisper Large v3 ASR, Magpie 등 TTS)은 Riva gRPC(`grpc.nvcf.nvidia.com:443` + function-id, `nvidia-riva-client`)로 호출 → 새 어댑터 필요 (호출 방식은 문서로 직접 확인 못 함).
+- 한국어: STT는 Whisper Large v3 가능, Parakeet는 문서상 en/vi/es/zh만. TTS는 한국어 지원 모델을 확인 못 함.
+- 선택지: A) Gemini STT/TTS 유지(크레딧 충전) B) NVIDIA Whisper STT(gRPC) + Gemini TTS C) OpenVINO Whisper 로컬 STT(온디바이스 평가에 유리) + Gemini/OS TTS. 사용자 결정 대기.
