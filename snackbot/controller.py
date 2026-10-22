@@ -97,7 +97,12 @@ class Controller:
         elif r["intent"] == "resume":
             self._resume()
 
-    def command(self, name):
+    def generation(self):
+        """현재 세션 번호. 콘솔 키 워커가 restart를 접수한 시점의 값을 command(expect_gen=)로 되돌려준다."""
+        with self._lock:
+            return self._gen
+
+    def command(self, name, expect_gen=None):
         if name == "start":
             self._start_task(None, announce=True)
         elif name == "resume":
@@ -105,7 +110,10 @@ class Controller:
         elif name == "estop":
             self._estop()
         elif name == "restart":
-            self._restart()
+            if expect_gen is None:
+                self._restart()
+            else:
+                self._restart(expect_gen)
         elif name == "quit":
             self.stop()
         else:
@@ -154,8 +162,12 @@ class Controller:
             self.notify("비상정지됨")
         self._publish()
 
-    def _restart(self):
+    def _restart(self, expect_gen=None):
         with self._lock:
+            if expect_gen is not None and self._gen != expect_gen:
+                # 접수 뒤에 비상정지 등이 끼어들었다: 나중에 누른 비상정지를 풀면 안 된다
+                log.info("restart 거부: 접수 뒤 세션이 바뀜 (%s != %s)", expect_gen, self._gen)
+                return False
             if self.state != ESTOP or self.phase == "returning":
                 return False
             self.phase = "returning"

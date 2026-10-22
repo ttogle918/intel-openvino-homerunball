@@ -593,3 +593,23 @@ def test_sync_timeout_null_uses_default(cfg):
     cfg["voice"]["sync_timeout_s"] = None
     c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills())
     assert c.sync_timeout_s == 8
+
+
+def test_restart_with_stale_generation_is_rejected_and_estop_stays(cfg):
+    c, _ = make(cfg)
+    c.command("estop")
+    g = c.generation()
+    c.command("estop")  # 접수 뒤에 비상정지가 다시 들어왔다: 세션 번호가 올라간다
+    c.command("restart", expect_gen=g)
+    assert c.state == "ESTOP" and c.phase == "idle"
+    assert c.skills.estopped  # 하드웨어 토크 유지/래치도 풀리지 않았다
+
+
+def test_restart_with_current_generation_and_without_expect_gen_behave_as_before(cfg):
+    c, _ = make(cfg)
+    c.command("estop")
+    c.command("restart", expect_gen=c.generation())
+    assert c.state == "IDLE"
+    c.command("estop")
+    c.command("restart")
+    assert c.state == "IDLE"

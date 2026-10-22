@@ -67,6 +67,10 @@ def handle_key(ch, controller, quit_fn, submit=None, clear=None):
         if clear is not None:
             clear()  # 대기 중인 restart 등이 estop 뒤에 실행되어 estop을 풀면 안 된다
         controller.command(name)  # 논블로킹이라 항상 인라인, 다른 무엇보다 먼저
+    elif name == "restart" and submit is not None:
+        # 접수 시점의 세션 번호를 함께 넘긴다: 그 뒤에 비상정지가 끼어들면 controller가 락 안에서 거부한다
+        gen_fn = getattr(controller, "generation", None)
+        submit(name, gen_fn() if gen_fn is not None else None)
     elif name is not None:
         if submit is None:
             controller.command(name)
@@ -87,11 +91,11 @@ class CommandWorker:
         self._closed = False
         threading.Thread(target=self._run, name="key-commands", daemon=True).start()
 
-    def submit(self, name):
+    def submit(self, name, expect_gen=None):
         with self._cond:
             if self._closed:
                 return
-            self._pending.append(name)
+            self._pending.append((name, expect_gen))
             self._cond.notify()
 
     def clear(self):
@@ -111,9 +115,12 @@ class CommandWorker:
                     self._cond.wait()
                 if self._closed:
                     return
-                name = self._pending.popleft()  # 여기서 꺼낸 명령은 시작된 것으로 본다
+                name, expect_gen = self._pending.popleft()  # 꺼낸 뒤에 끼어든 estop은 expect_gen이 막는다
             try:
-                self._controller.command(name)
+                if expect_gen is None:
+                    self._controller.command(name)
+                else:
+                    self._controller.command(name, expect_gen=expect_gen)
             except Exception:
                 log.exception("명령 실행 실패: %s", name)
 
@@ -128,6 +135,8 @@ def read_windows_key(getch):
     if ch in (chr(0), chr(0xE0)):
         getch()
         return None
+    if ch == "\x1b":
+        return None  # VT 입력 모드의 ESC [ H 같은 시퀀스: 꼬리가 키로 새지 않게 ESC 창을 연다
     return ch
 
 
@@ -136,14 +145,15 @@ def read_posix_chunk(fd):
 
     ESC가 하나라도 섞인 입력은 방향키·Alt 조합 등 시퀀스일 수 있어 꼬리가 키로 오인된다.
     그런 입력에서는 space(비상정지)만 인정한다 (비상정지가 한 번 더 걸려도 안전).
-    반환: 키 문자열 · None(인정할 글자 없음) · ""(EOF)."""
+    반환: (keys, had_esc). keys는 인정한 글자들, had_esc는 입력에 ESC가 있었는지.
+    ESC가 든 입력은 space가 남아 있어도 had_esc=True다 (호출자가 ESC 창을 연다). EOF는 ("", False)."""
     data = os.read(fd, 32)
     if not data:
-        return ""
+        return "", False
     text = data.decode("utf-8", errors="replace")
     if "\x1b" not in text:
-        return text
-    return " " * text.count(" ") or None
+        return text, False
+    return " " * text.count(" "), True
 
 
 def enter_cbreak():
@@ -178,7 +188,8 @@ def restore_terminal():
 def read_key():
     if sys.platform == "win32":
         import msvcrt
-        return read_windows_key(msvcrt.getwch)
+        ch = read_windows_key(msvcrt.getwch)
+        return ("", True) if ch is None else (ch, False)
     return read_posix_chunk(sys.stdin.fileno())
 
 
@@ -208,7 +219,7 @@ def _read_keys(controller, quit_fn, submit, clear=None, clock=time.monotonic):
     last_esc = None  # 마지막으로 ESC/시퀀스를 버린 시각
     while not controller.stopped:
         try:
-            ch = read_key()
+            result = read_key()
         except (EOFError, OSError):
             print(KEY_OFF_MSG, file=sys.stderr, flush=True)
             return
@@ -222,17 +233,22 @@ def _read_keys(controller, quit_fn, submit, clear=None, clock=time.monotonic):
             continue
         errors = 0
         now = clock()
-        if ch is None:
-            last_esc = now  # 버린 방향키/F키/ESC 입력: 꼬리가 뒤따라 올 수 있다
-            continue
-        if ch == "":
-            print(KEY_OFF_MSG, file=sys.stderr, flush=True)
-            return  # EOF
-        if last_esc is not None and now - last_esc <= ESC_WINDOW:
-            ch = " " * ch.count(" ")  # 나뉘어 들어온 시퀀스 꼬리: space만 인정
-            last_esc = now
+        ch, had_esc = result
+        if had_esc:
+            last_esc = now  # ESC가 든 입력(space가 남아 있어도): 꼬리가 뒤따라 올 수 있다
             if not ch:
                 continue
+        elif ch == "":
+            print(KEY_OFF_MSG, file=sys.stderr, flush=True)
+            return  # EOF
+        elif last_esc is not None and now - last_esc <= ESC_WINDOW:
+            kept = " " * ch.count(" ")  # 나뉘어 들어온 시퀀스 꼬리: space만 인정
+            last_esc = now
+            if len(kept) != len(ch):
+                log.debug("ESC 창 안의 입력을 버림: %r", ch.replace(" ", ""))
+            if not kept:
+                continue
+            ch = kept
         for one in ch:
             if controller.stopped:
                 break  # 종료 요청 뒤의 글자는 처리하지 않는다
