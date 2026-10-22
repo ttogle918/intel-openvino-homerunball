@@ -418,3 +418,198 @@ def test_loop_exception_in_estop_hints_restart(cfg):
         assert texts and "재시작" in texts[-1] and "재개" not in texts[-1]
     finally:
         c.stop()
+
+
+class RecordingBrain(Brain):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.chat_hist, self.decide_hist = [], []
+
+    def chat(self, text, state, count, history=None):
+        self.chat_hist.append(history)
+        return super().chat(text, state, count, history=history)
+
+    def decide(self, remaining, count, state, speech_text=None, history=None):
+        self.decide_hist.append(history)
+        return super().decide(remaining, count, state, speech_text, history=history)
+
+
+def test_controller_passes_history_and_restart_clears_it(cfg):
+    c = Controller(cfg, RecordingBrain(cfg, rng=FirstRng()), FakeSkills())
+    c.chat("안녕")
+    c.chat("2개 옮겨줘")
+    first, second = c.brain.chat_hist
+    assert first == []  # 현재 발화는 포함하지 않는다
+    assert [m["text"] for m in second if m["role"] == "user"] == ["안녕"]
+    c.step()
+    assert any(m["role"] == "user" and m["text"] == "2개 옮겨줘" for m in c.brain.decide_hist[-1])
+    c.command("estop")
+    assert len(c.history) > 0
+    c.command("restart")
+    assert [m["role"] for m in c.history] == ["system"]  # 재시작 안내만 남는다
+    assert c.state == "IDLE"
+
+
+class EventVoice:
+    """speak가 호출마다 Event를 돌려주는 가짜 voice. 테스트가 직접 set 한다."""
+
+    def __init__(self):
+        self.events, self.spoken = [], []
+
+    def speak(self, text):
+        ev = threading.Event()
+        self.events.append(ev)
+        self.spoken.append(text)
+        return ev
+
+
+def _make_voiced(cfg, voice, timeout=8):
+    cfg["voice"]["sync_timeout_s"] = timeout
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills(), voice=voice)
+    c.state, c.phase, c.remaining = "WORKING", "idle", 3
+    return c
+
+
+def _step_in_thread(c):
+    out = []
+    t = threading.Thread(target=lambda: out.append(c.step()), daemon=True)
+    t.start()
+    return t, out
+
+
+def _wait_for(cond, timeout=2):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end and not cond():
+        time.sleep(0.01)
+    return cond()
+
+
+def test_skill_waits_until_speech_starts(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    time.sleep(0.3)
+    assert c.skills.runs == []
+    v.events[0].set()
+    t.join(3)
+    assert c.skills.runs == ["oranda_pickup"] and out == ["success"]
+
+
+def test_already_set_event_does_not_wait(cfg):
+    class Instant(EventVoice):
+        def speak(self, text):
+            ev = super().speak(text)
+            ev.set()
+            return ev
+
+    c = _make_voiced(cfg, Instant())
+    t0 = time.monotonic()
+    assert c.step() == "success"
+    assert time.monotonic() - t0 < 1
+
+
+def test_speech_wait_timeout_proceeds_and_logs_ms(cfg, tmp_path):
+    c = _make_voiced(cfg, EventVoice(), timeout=0.3)
+    c.log_path = tmp_path / "c.jsonl"
+    assert c.step() == "success"
+    assert c.skills.runs == ["oranda_pickup"]
+    ms = json.loads(c.log_path.read_text(encoding="utf-8").splitlines()[0])["ms"]
+    assert 250 <= ms["speech_wait"] < 2000
+
+
+def test_estop_while_waiting_for_speech_skips_skill(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    c.command("estop")
+    t.join(3)
+    assert not t.is_alive()
+    assert out == [None] and c.skills.runs == [] and c.state == "ESTOP"
+
+
+def test_stop_while_waiting_for_speech_skips_skill(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    c._stop.set()
+    t.join(3)
+    assert not t.is_alive() and c.skills.runs == []
+
+
+def test_done_skill_does_not_wait_for_speech(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    c.remaining = 0
+    t0 = time.monotonic()
+    assert c.step() == "done"
+    assert time.monotonic() - t0 < 1
+
+
+def test_no_voice_or_none_event_does_not_wait(cfg):
+    c = _make_voiced(cfg, None)
+    assert c.step() == "success"
+
+    class NoneVoice:
+        def speak(self, text):
+            return None
+
+    c = _make_voiced(cfg, NoneVoice())
+    assert c.step() == "success"
+
+
+def test_other_robot_messages_do_not_wait(cfg):
+    v = EventVoice()
+    cfg["voice"]["sync_timeout_s"] = 8
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills(), voice=v)
+    t0 = time.monotonic()
+    c.command("start")  # IDLE: 안내 대사를 내지만 기다리지 않는다
+    assert len(v.spoken) == 1
+    c.state, c.phase = "REFUSING", "idle"
+    c.command("resume")
+    assert len(v.spoken) == 2
+    assert time.monotonic() - t0 < 1
+    assert c.state == "WORKING" and c.skills.runs == []
+
+
+def test_estop_restart_start_during_wait_drops_old_decision(cfg):
+    v = EventVoice()
+    c = _make_voiced(cfg, v)
+    t, out = _step_in_thread(c)
+    assert _wait_for(lambda: c.phase == "speaking")
+    # 폴링 사이에 한꺼번에 일어난 것처럼: 대기 스레드가 중간 상태를 못 보게 락을 잡고 처리한다
+    with c._lock:
+        c._estop()
+        c._restart()
+        c._start_task(None)
+    t.join(3)
+    assert not t.is_alive()
+    assert out == [None] and c.skills.runs == []
+
+
+def test_sync_timeout_null_uses_default(cfg):
+    cfg["voice"]["sync_timeout_s"] = None
+    c = Controller(cfg, Brain(cfg, rng=FirstRng()), FakeSkills())
+    assert c.sync_timeout_s == 8
+
+
+def test_restart_with_stale_generation_is_rejected_and_estop_stays(cfg):
+    c, _ = make(cfg)
+    c.command("estop")
+    g = c.generation()
+    c.command("estop")  # 접수 뒤에 비상정지가 다시 들어왔다: 세션 번호가 올라간다
+    c.command("restart", expect_gen=g)
+    assert c.state == "ESTOP" and c.phase == "idle"
+    assert c.skills.estopped  # 하드웨어 토크 유지/래치도 풀리지 않았다
+
+
+def test_restart_with_current_generation_and_without_expect_gen_behave_as_before(cfg):
+    c, _ = make(cfg)
+    c.command("estop")
+    c.command("restart", expect_gen=c.generation())
+    assert c.state == "IDLE"
+    c.command("estop")
+    c.command("restart")
+    assert c.state == "IDLE"

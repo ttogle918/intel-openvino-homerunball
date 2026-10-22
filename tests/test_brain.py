@@ -137,7 +137,69 @@ def test_chat_llm_bad_n_falls_back_to_text(cfg):
     assert r["n"] == 4
 
 
+def test_chat_text_n_wins_over_llm_n(cfg):
+    # 문장에서 읽은 개수가 있으면 LLM 값은 무시한다 (횟수는 코드가 정한다)
+    r = make(cfg, '{"intent": "start_task", "say": "네", "n": 20}').chat("3개 옮겨줘", "IDLE", 0)
+    assert r["n"] == 3
+
+
 def test_chat_in_estop_uses_estop_line(cfg):
     b = make(cfg)
     r = b.chat("안녕", "ESTOP", 2)
     assert r["intent"] == "chat" and "비상정지" in r["say"]
+
+
+def _msgs(role_texts):
+    return [{"type": "message", "role": r, "text": t, "ts": 0} for r, t in role_texts]
+
+
+def _sent(b):
+    return b.chain.members[0].provider.messages
+
+
+def test_chat_memory_order_roles_and_current_last(cfg):
+    b = make(cfg, '{"intent": "chat", "say": "민수님!", "n": null}')
+    hist = _msgs([("user", "내 이름은 민수야"), ("robot", "반가워요 민수님"), ("system", "알림")])
+    b.chat("내 이름이 뭐라고 했지?", "IDLE", 0, history=hist)
+    m = _sent(b)
+    assert [x["role"] for x in m] == ["system", "user", "assistant", "user"]
+    assert "보리" in m[0]["content"] and "'오란다'" in m[0]["content"]
+    assert "{robot_name}" not in m[0]["content"] and "{target}" not in m[0]["content"]
+    assert m[1]["content"] == "내 이름은 민수야" and m[2]["content"] == "반가워요 민수님"
+    assert json.loads(m[3]["content"])["text"] == "내 이름이 뭐라고 했지?"
+
+
+def test_memory_respects_turns_and_drops_leading_assistant(cfg):
+    cfg["brain"]["memory_turns"] = 3
+    b = make(cfg, '{"skill": "oranda_pickup", "say": "네"}')
+    hist = _msgs([("user", "u1"), ("robot", "r1"), ("user", "u2"), ("robot", "r2")])
+    b.decide(2, 0, "WORKING", None, hist)
+    m = _sent(b)
+    # 마지막 3개 = r1,u2,r2 -> 맨 앞 assistant r1 제거 -> u2,r2, 현재 요청
+    assert [(x["role"], x["content"]) for x in m[1:3]] == [("user", "u2"), ("assistant", "r2")]
+    assert [x["role"] for x in m] == ["system", "user", "assistant", "user"]
+
+
+def test_memory_merges_same_roles_and_ignores_blank(cfg):
+    b = make(cfg, '{"intent": "chat", "say": "응", "n": null}')
+    hist = _msgs([("user", "a"), ("user", "b"), ("robot", "  "), ("robot", "c")])
+    b.chat("d", "IDLE", 0, history=hist)
+    m = _sent(b)
+    assert [(x["role"], x["content"]) for x in m[1:3]] == [("user", "a\nb"), ("assistant", "c")]
+    assert [x["role"] for x in m] == ["system", "user", "assistant", "user"]
+
+
+def test_memory_user_tail_merges_with_current_request(cfg):
+    b = make(cfg, '{"intent": "chat", "say": "응", "n": null}')
+    b.chat("d", "IDLE", 0, history=_msgs([("user", "앞말")]))
+    m = _sent(b)
+    assert [x["role"] for x in m] == ["system", "user"]
+    assert m[1]["content"].startswith("앞말\n")
+
+
+def test_no_history_unchanged_and_default_persona(cfg):
+    cfg["target"].pop("robot_name", None)
+    b = make(cfg, '{"intent": "chat", "say": "응", "n": null}')
+    b.chat("d", "IDLE", 0)
+    m = _sent(b)
+    assert [x["role"] for x in m] == ["system", "user"] and "보리" in m[0]["content"]

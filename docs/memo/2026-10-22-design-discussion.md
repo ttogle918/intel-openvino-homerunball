@@ -25,6 +25,7 @@
 | 18 | 남은 일·미확인 | git 인덱스 정리, physicalai 시그니처 등 |
 | 19 | 파이썬 패키지 | 루트 `.py`들을 `snackbot/`으로, 화면은 `frontend/` |
 | 20 | 구현 계획과 dori-dori 결과물 | 계획 2개로 분리 (소프트웨어 → 로봇), M4는 06의 RobotRuntime 방식 |
+| 21 | 음성(STT/TTS) provider | STT는 OpenVINO Whisper 로컬, TTS는 Gemini, 대화는 Claude 우선 · 이름 보리 |
 
 ---
 
@@ -232,3 +233,19 @@
 - 06 실습은 스킬마다 runtime.yaml + `RobotRuntime.from_config` → `run(duration_s)`로 정책을 돌린다 (0.3.0 시그니처 확인됨). M4는 이 방식을 기반으로 하고, 그리퍼 정지 조건·비상정지는 `stop_event`/`callbacks`로 거는 방법을 먼저 확인한다.
 - 런타임이 카메라를 잡고 있는 동안 화면 영상·개수 세기를 어떻게 할지는 M4 숙제.
 - `traind-model/`은 약 1GB라 git에서 제외했다.
+
+## 21. 음성(STT/TTS) provider
+
+**결정:** STT는 OpenVINO Whisper 로컬(C안). TTS는 Gemini(크레딧 충전 필요), 예비로 OS TTS. 대화 LLM은 Claude → NVIDIA → 규칙, 캐릭터 이름 "보리", 대화 기억 최근 12개.
+
+**상세**
+- Claude(Anthropic)는 음성 모델이 없다. OpenAI 키는 무효(401), Gemini는 크레딧 소진(402)으로 실제 확인 못 함.
+- NVIDIA: OpenAI 호환 API에는 음성 모델 없음. build.nvidia.com 음성 NIM은 Riva gRPC라 어댑터가 따로 필요하고, 한국어 TTS는 확인되지 않았다.
+- OpenVINO Whisper를 고른 이유: 코드(`OpenVINOProvider(kind="whisper")`)가 이미 있고, 노트북 안에서 돌아 네트워크·크레딧에 영향받지 않으며, "on-device" 평가 항목에도 맞는다.
+- 실행 순서는 `docs/memo/next-session-prompt.md` 끝의 "결정" 절. 결과는 같은 파일의 "결과" 절.
+- 구현 결과 (커밋 `1284e6a`, `e006840`): `openvino-genai==2026.4.1.0`, 모델 `OpenVINO/whisper-small-int8-ov`(257MB, torch·변환 불필요), 서버 시작 때 백그라운드 워밍업.
+- 측정 (이 개발 PC, Windows TTS 한국어 문장 5개): small CPU 1.2~1.8초/문장, GPU 0.43~0.49초(첫 로드 25초, CACHE_DIR `models/ov_cache`로 2~4초), 서버 워밍업 CPU 약 5.6초.
+- small 채택 이유: 5개 중 4개 정확하고 "힘내 줘"→"힘내죠"여도 달래기 키워드('힘내', '부탁')가 남는다. base(85MB)는 0.4초로 빠르지만 "오랜다", "보리아", "한 번만 더"→"한 번 더"(달래기 키워드 손실)라 탈락.
+- 기본은 CPU. GPU로 바꾸면 config의 device와 label을 같이 바꾼다.
+- TTS: 결제를 연결하지 않은 새 프로젝트의 무료 등급 Gemini 키로 `gemini-2.5-flash-preview-tts` 동작, TTS → STT 왕복 검사 통과 (문장당 TTS 약 4초). 3.8 TTS 모델은 말투 지시문까지 읽어서 제외. 대사 소리가 나기 시작하면 동작을 시작하도록 맞춘다 (사용자 결정 A안).
+- 후보 비교와 선택 이유 전체: `docs/VOICE_PROVIDERS.md`.

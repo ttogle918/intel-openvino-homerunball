@@ -56,7 +56,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 <div class="tools">
   <button type="button" onclick="document.querySelectorAll('details').forEach(d => d.open = true)">모두 펼치기</button>
   <button type="button" onclick="document.querySelectorAll('details').forEach(d => d.open = false)">모두 접기</button>
-  <span class="intro" style="margin:0;align-self:center">총 20개 항목</span>
+  <span class="intro" style="margin:0;align-self:center">총 21개 항목</span>
 </div>
 <details>
   <summary><span class="num">1</span><span class="head"><span class="title">디렉토리 구조</span>
@@ -263,6 +263,16 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 <li>06 실습은 스킬마다 runtime.yaml + <code>RobotRuntime.from_config</code> → <code>run(duration_s)</code>로 정책을 돌린다 (0.3.0 시그니처 확인됨). M4는 이 방식을 기반으로 하고, 그리퍼 정지 조건·비상정지는 <code>stop_event</code>/<code>callbacks</code>로 거는 방법을 먼저 확인한다.</li>
 <li>런타임이 카메라를 잡고 있는 동안 화면 영상·개수 세기를 어떻게 할지는 M4 숙제.</li>
 <li><code>traind-model/</code>은 약 1GB라 git에서 제외했다.</li>
+</ul></div>
+</details>
+<details>
+  <summary><span class="num">21</span><span class="head"><span class="title">음성(STT/TTS) provider</span>
+  <span class="desc">STT는 OpenVINO Whisper 로컬(C안). TTS는 Gemini(크레딧 충전 필요), 예비로 OS TTS. 대화 LLM은 Claude → NVIDIA → 규칙, 캐릭터 이름 "보리", 대화 기억 최근 12개.</span></span></summary>
+  <div class="body"><ul>
+<li>Claude(Anthropic)는 음성 모델이 없다. OpenAI 키는 무효(401), Gemini는 크레딧 소진(402)으로 실제 확인 못 함.</li>
+<li>NVIDIA: OpenAI 호환 API에는 음성 모델 없음. build.nvidia.com 음성 NIM은 Riva gRPC라 어댑터가 따로 필요하고, 한국어 TTS는 확인되지 않았다.</li>
+<li>OpenVINO Whisper를 고른 이유: 코드(<code>OpenVINOProvider(kind="whisper")</code>)가 이미 있고, 노트북 안에서 돌아 네트워크·크레딧에 영향받지 않으며, "on-device" 평가 항목에도 맞는다.</li>
+<li>실행 순서는 <code>docs/memo/next-session-prompt.md</code> 끝의 "결정" 절.</li>
 </ul></div>
 </details>
 </main>

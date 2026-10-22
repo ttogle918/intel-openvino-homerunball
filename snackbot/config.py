@@ -23,3 +23,25 @@ def load_env(path=".env"):
             env[key.strip()] = value.strip().strip('"').strip("'")
     env.update(os.environ)
     return env
+
+
+def load_poses(path="poses.yaml"):
+    p = Path(path)
+    if not p.exists():
+        return {}
+    with open(p, encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def save_pose(path, name, values):
+    poses = load_poses(path)
+    poses[name] = [round(float(v), 2) for v in values]
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(poses, f, default_flow_style=None, sort_keys=True)
+    return poses
+
+
+def load_calibration(path):
+    """SO101 캘리브레이션: 관절 이름 → {id, drive_mode, homing_offset, range_min, range_max}. YAML 또는 JSON."""
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f)

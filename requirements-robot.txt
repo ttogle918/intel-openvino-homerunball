@@ -1,0 +1,5 @@
+# 로봇 노트북 전용 (Ubuntu 24.04, Python 3.12+). requirements.txt와 함께 설치한다:
+#   .venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt
+physicalai==0.3.0
+# physicalai-so101-plugin==0.2.0   # 필요 없음: SO101은 physicalai 본체(physicalai.robot.so101)에 있다. 본체에 없을 때만 설치
+feetech-servo-sdk

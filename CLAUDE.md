@@ -4,7 +4,7 @@
 
 ## 프로젝트
 - 하드웨어: SO-ARM101 (팔로워 1대, 학습용 리더 1대), 카메라 3대(외부 + 손목)
-- 소프트웨어: physical-ai-studio로 학습한 ACT(OpenVINO 결과물, `physicalai` 런타임), LLM(API 또는 로컬), TTS, STT, FastAPI + 웹 UI
+- 소프트웨어: physical-ai-studio로 학습한 ACT(OpenVINO 결과물, `physicalai` 런타임), LLM(API 또는 로컬), TTS, STT(OpenVINO Whisper 로컬), FastAPI + 웹 UI
 - 기간: 2일 해커톤
 - 시연: 섞인 트레이에서 목표 과자(지금은 **오란다**)만 빈 트레이로 옮긴다. 채팅·음성으로 작업을 시키고,
   몇 번 하면 지쳐서 도리도리로 거부하며, 달래면(채팅·음성·r 키) 다시 일한다.
@@ -36,6 +36,7 @@
 - `docs/DECISION_LOGIC.md` — 횟수 가드 규칙, LLM 프롬프트, JSON 스키마, fallback
 - `docs/DATASET_GUIDE.md` — ACT 데이터셋 녹화 규칙과 체크리스트
 - `docs/DEMO_RUNBOOK.md` — 시연 당일 준비와 장애 대응
+- `docs/VOICE_PROVIDERS.md` — STT·TTS 선택 이유와 검토한 후보
 - `docs/memo/` — 의논 기록
 
 ## 파일 구조 (목표)
@@ -73,12 +74,15 @@
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt   # Linux: .venv/bin/python
 cp .env.example .env                                      # 쓸 API 키만 채운다
+.venv/Scripts/python -m pip install huggingface_hub       # STT 모델 받기용
+.venv/Scripts/hf download OpenVINO/whisper-small-int8-ov --local-dir models/whisper-small   # 257MB (Linux: .venv/bin/hf)
 ```
 ```bash
 .venv/Scripts/python -m snackbot --dry-run            # 로봇 없이 전체 흐름 + UI (http://localhost:8000)
 .venv/Scripts/python -m snackbot --dry-run --no-ui    # 콘솔만
 .venv/Scripts/python -m snackbot                      # 실제 로봇
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg   # 모듈 단독 테스트
+.venv/Scripts/python -m snackbot.stt a.wav b.wav      # Whisper 확인 (워밍업 후 파일마다 텍스트·source·ms)
 .venv/Scripts/python -m tools.save_pose home          # 현재 팔 자세를 home_pose로 저장
 .venv/Scripts/python -m tools.save_pose lift          # 현재 팔 자세를 lift_pose로 저장
 .venv/Scripts/python -m pytest

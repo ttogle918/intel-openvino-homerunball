@@ -6,8 +6,10 @@ pyyaml
 numpy
 opencv-python
 anthropic
+# STT (OpenVINO Whisper 로컬)
+openvino-genai==2026.4.1.0
 pytest
 # 선택 (필요한 환경에서만 설치)
 # pyttsx3          # voice.engine: pyttsx3
-# openvino-genai   # local_ov provider (LLM / VLM / Whisper)
 # ultralytics      # vision yolo counter, tools.export_yolo_world
+# huggingface_hub  # hf download (모델 받기)

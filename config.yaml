@@ -3,6 +3,7 @@
 
 target:
   name: 오란다
+  robot_name: 보리          # 캐릭터 이름
   initial_count: 3          # B단계: 채팅에 개수가 없을 때
 
 decision:
@@ -14,6 +15,7 @@ providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 �
   openrouter: {type: openai_compat, base_url: "https://openrouter.ai/api/v1", api_key_env: OPENROUTER_API_KEY}
   nvidia:     {type: openai_compat, base_url: "https://integrate.api.nvidia.com/v1", api_key_env: NVIDIA_API_KEY}
   openai:     {type: openai_compat, base_url: "https://api.openai.com/v1", api_key_env: OPENAI_API_KEY}
+  gemini:     {type: openai_compat, base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: GEMINI_API_KEY, native_base_url: "https://generativelanguage.googleapis.com/v1beta"}
   anthropic:  {type: anthropic, api_key_env: ANTHROPIC_API_KEY}
   ollama:     {type: openai_compat, base_url: "http://localhost:11434/v1"}
   local_ov:   {type: openvino}
@@ -21,15 +23,20 @@ providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 �
 brain:
   max_say_len: 80
   max_tokens: 1024
+  memory_turns: 12          # LLM에 넘길 최근 대화 메시지 수
   # 위에서부터 시도, 전부 실패하면 규칙. 비우면 규칙만.
-  chain: []
+  # NVIDIA 추론 모델은 생각을 끄지 않으면 8초를 넘겨 규칙으로 떨어진다 (extra_body로 끈다).
+  chain:
+    - {provider: anthropic, model: "claude-opus-5-5", effort: low, timeout_s: 8}
+    - {provider: nvidia, model: "nvidia/nemotron-3.5-lightning-30b-a3b", timeout_s: 8, extra_body: {chat_template_kwargs: {enable_thinking: false}}}
   # chain:
+  #   - {provider: gemini, model: "[모델 ID]", timeout_s: 5}
   #   - {provider: openrouter, model: "[모델 ID]", timeout_s: 5}
   #   - {provider: anthropic, model: "claude-opus-5-5", effort: low, timeout_s: 8}
   #   - {provider: local_ov, model_dir: "models/llm", device: GPU, kind: llm}
 
 vision:
-  camera: front
+  camera: tower cam
   # 비우면 B단계 (시작 개수 + 그리퍼 판정). 위에서부터 시도.
   chain: []
   # chain:
@@ -39,13 +46,47 @@ vision:
   #   - {type: fake}        # dry-run에서 A단계 흐름 확인용
 
 stt:
-  chain: []
-  # chain:
-  #   - {provider: local_ov, model_dir: "models/whisper", device: CPU, kind: whisper}
-  #   - {provider: openai, model: "[전사 모델 ID]", timeout_s: 10}
+  chain:
+    # device를 GPU로 바꾸면 label도 같이 바꾼다 (UI 모델 정보에 표시됨)
+    - {provider: local_ov, kind: whisper, model_dir: "models/whisper-small", device: CPU, language: ko,
+       cache_dir: "models/ov_cache", label: "Whisper small · OpenVINO · CPU"}
+    - {provider: gemini, model: "gemini-3.5-flash-lite", transcribe: chat, timeout_s: 15}   # 크레딧 있을 때 예비
+  #  - {provider: openai, model: "gpt-4o-mini-transcribe", timeout_s: 15}   # 키가 정상일 때의 백업
+
+robot:
+  port: /dev/ttyACM0                       # [ ] 노트북의 팔로워 포트 (ls /dev/ttyACM*). Studio 학습 PC는 /dev/ttyACM1이었다
+  calibration: calibration/follower.yaml   # python -m tools.fetch_calibration 으로 Studio에서 받는다
+
+cameras:                                   # 키 = 학습 때 카메라 이름 (정책 입력 images.<이름>). 정책이 쓰는 카메라를 모두 둔다
+  tower cam:  {device: 0, width: 1280, height: 720, fps: 30}   # [ ] 노트북의 카메라 번호
+  side cam:   {device: 4, width: 1280, height: 720, fps: 30}   # [ ] oranda_pickup용 사이드 캠: Studio에 등록한 이름·해상도 확인
+  follow cam: {device: 2, width: 1280, height: 720, fps: 30}
+
+skills:
+  fps: 30
+  device: GPU                              # CPU | GPU | NPU (정책별로 device를 따로 써도 된다)
+  # camera_map: 학습 때 Studio 카메라 이름이 위 cameras 키와 다르면 {학습 이름: config 이름}.
+  #   학습 이름은 결과물 manifest.json의 "images.<이름>"에서 확인한다. 예: {A: tower cam, B: side cam}
+  oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
+  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}}
+  gripper:                                 # python -m tools.robot_probe watch 로 값을 읽고 정한다 (0..100, 작을수록 닫힘)
+    closed_below: null                     # 이보다 작으면 "닫힘"
+    open_above: null                       # 닫힘 뒤 이보다 큰 값이 open_hold_s 동안 이어지면 "놓음" → ACT 정지
+    grasp_min: null                        # 닫힘 구간 최솟값이 이 이상이면 과자를 쥔 것 (빈 그리퍼는 끝까지 닫힌다)
+    open_hold_s: 0.5
+  home_tolerance: 5                        # 관절별 오차가 이보다 크면 스킬 전에 home_pose로 이동
+  move_s: 2.0                              # 자세 하나로 이동하는 시간 (초)
+
+poses_file: poses.yaml                     # python -m tools.robot_probe save home | save lift 가 기록
 
 voice:
-  engine: none              # none | log | pyttsx3
+  engine: gemini            # none | log | pyttsx3 | openai | gemini
+  provider: gemini          # providers의 접속 정보(키·base_url / gemini는 native_base_url)
+  model: gemini-2.5-flash-preview-tts
+  voice: Leda               # 어리고 밝은 목소리
+  instructions: "귀엽고 금방 지치는 투덜이 로봇 보리처럼 짧고 또박또박 말해:"
+  timeout_s: 20
+  sync_timeout_s: 10        # 대사 소리가 시작될 때까지 동작을 기다리는 최대 시간 (TTS 실패·지연 시 그냥 시작)
 
 dry_run:
   act_s: 1.0                # 스킬 하나에 걸리는 가짜 시간 (초)

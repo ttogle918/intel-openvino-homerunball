@@ -28,7 +28,8 @@ LINES = {
     "refusing": ["지금은 쉬는 중이에요… 달래 주면 생각해 볼게요."],
 }
 
-DECIDE_SYSTEM = """너는 과자 공장에서 {target}만 골라 옮기는 로봇팔이야.
+DECIDE_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {target}만 골라 옮기는 로봇팔이야.
+다른 이름을 지어내지 말고, 과자 이름은 정확히 '{target}'라고 써.
 성실하지만 금방 지치는 투덜이 성격이야. 말은 짧고 귀엽게, 한국어 1~2문장으로 해.
 
 매번 다음 정보를 받아:
@@ -46,7 +47,8 @@ DECIDE_SYSTEM = """너는 과자 공장에서 {target}만 골라 옮기는 로�
 출력은 JSON 한 줄만:
 {"skill": "...", "say": "..."}"""
 
-CHAT_SYSTEM = """너는 과자 공장에서 {target}만 골라 옮기는 로봇팔이야.
+CHAT_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {target}만 골라 옮기는 로봇팔이야.
+다른 이름을 지어내지 말고, 과자 이름은 정확히 '{target}'라고 써.
 성실하지만 금방 지치는 투덜이 성격이야. 말은 짧고 귀엽게, 한국어 1문장으로 해.
 
 사람이 한 말(text), 지금 상태(state), 지금까지 옮긴 횟수(count), 고를 수 있는 의도 목록(allowed)을 받아.
@@ -108,26 +110,39 @@ def parse_json(text):
     return data if isinstance(data, dict) else None
 
 
+def _merge_roles(messages):
+    """연속된 같은 role은 줄바꿈으로 합쳐 user/assistant가 번갈아 오게 한다."""
+    out = []
+    for m in messages:
+        if out and out[-1]["role"] == m["role"] and m["role"] != "system":
+            out[-1] = {**out[-1], "content": out[-1]["content"] + "\n" + m["content"]}
+        else:
+            out.append(dict(m))
+    return out
+
+
 class Brain:
     def __init__(self, cfg, chain=None, rng=None):
         self.target = cfg["target"]["name"]
+        self.robot_name = cfg["target"].get("robot_name") or "보리"
         self.decision = cfg["decision"]
         self.max_say = cfg["brain"].get("max_say_len", 80)
         self.max_tokens = cfg["brain"].get("max_tokens", 1024)
+        self.memory_turns = cfg["brain"].get("memory_turns", 12)
         self.chain = chain
         self.rng = rng or random.Random()
 
     def line(self, key):
         return self.rng.choice(LINES[key]).replace("{target}", self.target)
 
-    def decide(self, remaining, count, state, speech_text=None):
+    def decide(self, remaining, count, state, speech_text=None, history=None):
         allowed = allowed_skills(remaining, count, self.decision)
         rule_skill = self.rng.choice(allowed)
         skill, say, source = rule_skill, None, "rules"
         if self.chain:
             user = json.dumps({"remaining": remaining, "count": count, "allowed": allowed,
                                "speech_text": speech_text}, ensure_ascii=False)
-            data, source = self._ask(DECIDE_SYSTEM, user)
+            data, source = self._ask(DECIDE_SYSTEM, user, history)
             if data is not None and data.get("skill") in SKILLS:
                 skill = data["skill"] if data["skill"] in allowed else rule_skill
                 say = data.get("say")
@@ -136,35 +151,52 @@ class Brain:
         return {"skill": skill, "say": self._valid_say(say, self._skill_line(skill, count)),
                 "source": source}
 
-    def chat(self, text, state, count):
+    def chat(self, text, state, count, history=None):
         allowed = allowed_intents(state)
         intent, say, n, source = keyword_intent(text, allowed), None, parse_n(text), "rules"
         if self.chain:
             user = json.dumps({"text": text, "state": state, "count": count, "allowed": allowed},
                               ensure_ascii=False)
-            data, source = self._ask(CHAT_SYSTEM, user)
+            data, source = self._ask(CHAT_SYSTEM, user, history)
             if data is None:
                 source = "rules"
             else:
                 if data.get("intent") in allowed:
                     intent = data["intent"]
                 say = data.get("say")
-                llm_n = data.get("n")
-                if isinstance(llm_n, int) and not isinstance(llm_n, bool) and 0 < llm_n <= MAX_N:
+                llm_n = data.get("n")  # 문장에서 개수를 못 읽었을 때만 쓴다
+                if n is None and isinstance(llm_n, int) and not isinstance(llm_n, bool) and 0 < llm_n <= MAX_N:
                     n = llm_n
         if intent != "start_task":
             n = None
         return {"intent": intent, "say": self._valid_say(say, self._chat_line(intent, state)),
                 "n": n, "source": source}
 
-    def _ask(self, system, user):
-        messages = [{"role": "system", "content": system.replace("{target}", self.target)},
-                    {"role": "user", "content": user}]
+    def _ask(self, system, user, history=None):
+        system = system.replace("{robot_name}", self.robot_name).replace("{target}", self.target)
+        messages = [{"role": "system", "content": system}]
+        messages += self._memory(history)
+        messages.append({"role": "user", "content": user})
+        messages = _merge_roles(messages)
         try:
             text, source = self.chain.complete(messages, max_tokens=self.max_tokens)
         except ProviderError:
             return None, "rules"
         return parse_json(text), source
+
+    def _memory(self, history):
+        """최근 대화(user/robot)만 user/assistant 메시지로. 말투용 기억일 뿐 판단 규칙은 그대로."""
+        recent = list(history or [])[-self.memory_turns:] if self.memory_turns > 0 else []
+        out = []
+        for m in recent:
+            role = {"user": "user", "robot": "assistant"}.get(m.get("role"))
+            text = m.get("text")
+            if role and isinstance(text, str) and text.strip():
+                out.append({"role": role, "content": text.strip()})
+        out = _merge_roles(out)
+        if out and out[0]["role"] == "assistant":
+            out.pop(0)
+        return out
 
     def _valid_say(self, say, fallback_key):
         if isinstance(say, str) and say.strip() and len(say.strip()) <= self.max_say:

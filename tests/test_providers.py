@@ -183,3 +183,68 @@ def test_openvino_vlm_requires_image():
     p._pipe = object()
     with pytest.raises(ProviderError):
         p.complete([{"role": "user", "content": "q"}], image=None)
+
+
+def test_openai_compat_extra_body_is_merged_into_request():
+    seen = {}
+
+    def handler(request):
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    p = OpenAICompat("https://e.test/v1", "k", "m", 5, transport=httpx.MockTransport(handler),
+                     extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+    p.complete([{"role": "user", "content": "x"}])
+    assert seen["body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert seen["body"]["model"] == "m"
+
+
+def test_anthropic_sends_alternating_roles_merged_and_user_first():
+    calls = {}
+
+    def create(**kw):
+        calls.update(kw)
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="ok")])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    p = AnthropicProvider("k", "m", client=client)
+    p.complete([{"role": "system", "content": "s1"}, {"role": "system", "content": "s2"},
+                {"role": "assistant", "content": "먼저"},
+                {"role": "user", "content": "a"}, {"role": "user", "content": "b"},
+                {"role": "assistant", "content": "c"}, {"role": "user", "content": "d"}], image=b"jpg")
+    assert calls["system"] == "s1\ns2"
+    assert [m["role"] for m in calls["messages"]] == ["user", "assistant", "user"]
+    assert calls["messages"][0]["content"] == [{"type": "text", "text": "a\nb"}]
+    assert calls["messages"][1]["content"] == [{"type": "text", "text": "c"}]
+    last = calls["messages"][2]["content"]
+    assert last[0]["type"] == "image" and last[1] == {"type": "text", "text": "d"}
+
+
+def test_openai_compat_transcribe_chat_mode():
+    import base64
+    import json
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": " 과자 옮겨줘 \n"}}]})
+
+    p = OpenAICompat("https://e.test/v1", "k", "gm", 5, transport=httpx.MockTransport(handler),
+                     transcribe_mode="chat")
+    assert p.transcribe(b"RIFFwav") == "과자 옮겨줘"
+    assert seen[0].url.path == "/v1/chat/completions"
+    body = json.loads(seen[0].content)
+    parts = body["messages"][0]["content"]
+    assert body["model"] == "gm" and body["messages"][0]["role"] == "user"
+    assert parts[0]["type"] == "text" and "받아써" in parts[0]["text"]
+    assert parts[1] == {"type": "input_audio", "input_audio": {
+        "data": base64.b64encode(b"RIFFwav").decode(), "format": "wav"}}
+
+
+def test_build_chain_passes_transcribe_mode():
+    from snackbot.providers import build_chain
+    cfg = {"g": {"type": "openai_compat", "base_url": "https://e.test/v1", "api_key_env": "K"}}
+    chain = build_chain([{"provider": "g", "model": "m", "transcribe": "chat"}], cfg, {"K": "x"})
+    assert chain.members[0].provider.transcribe_mode == "chat"
+    chain = build_chain([{"provider": "g", "model": "m"}], cfg, {"K": "x"})
+    assert chain.members[0].provider.transcribe_mode == "transcriptions"

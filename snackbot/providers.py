@@ -7,14 +7,19 @@ import base64
 import io
 import logging
 import threading
+import time
 import wave
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
 log = logging.getLogger(__name__)
 
 NEEDS_KEY = {"openai_compat", "anthropic"}
+
+
+STT_CHAT_PROMPT = "다음 한국어 음성을 들리는 그대로 받아써. 받아쓴 문장만 출력해."
 
 
 class ProviderError(Exception):
@@ -24,8 +29,11 @@ class ProviderError(Exception):
 class OpenAICompat:
     """OpenRouter, NVIDIA, OpenAI, Gemini(OpenAI 호환), Groq, Ollama — base_url과 키만 다르다."""
 
-    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None):
+    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None, extra_body=None,
+                 transcribe_mode="transcriptions"):
         self.model = model
+        self.transcribe_mode = transcribe_mode  # "transcriptions": /audio/transcriptions, "chat": 오디오 입력 chat
+        self.extra_body = dict(extra_body or {})  # 예: 추론 모델의 생각 끄기
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.http = httpx.Client(base_url=base_url.rstrip("/"), headers=headers,
                                  timeout=timeout_s, transport=transport)
@@ -37,16 +45,29 @@ class OpenAICompat:
             msgs[-1]["content"] = [{"type": "text", "text": msgs[-1]["content"]},
                                    {"type": "image_url", "image_url": {"url": url}}]
         r = self.http.post("/chat/completions",
-                           json={"model": self.model, "messages": msgs, "max_tokens": max_tokens})
+                           json={**self.extra_body, "model": self.model, "messages": msgs,
+                                 "max_tokens": max_tokens})
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"] or ""
 
     def transcribe(self, wav, language="ko"):
+        if self.transcribe_mode == "chat":
+            return self._transcribe_chat(wav)
         r = self.http.post("/audio/transcriptions",
                            files={"file": ("speech.wav", wav, "audio/wav")},
                            data={"model": self.model, "language": language})
         r.raise_for_status()
         return r.json()["text"]
+
+    def _transcribe_chat(self, wav):
+        audio = base64.standard_b64encode(wav).decode()
+        content = [{"type": "text", "text": STT_CHAT_PROMPT},
+                   {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}]
+        r = self.http.post("/chat/completions",
+                           json={**self.extra_body, "model": self.model,
+                                 "messages": [{"role": "user", "content": content}]})
+        r.raise_for_status()
+        return (r.json()["choices"][0]["message"]["content"] or "").strip()
 
 
 class AnthropicProvider:
@@ -60,14 +81,26 @@ class AnthropicProvider:
 
     def complete(self, messages, max_tokens=300, image=None):
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
-        text = "\n".join(m["content"] for m in messages if m["role"] != "system")
-        content = [{"type": "text", "text": text}]
+        turns = []  # 같은 role이 이어지면 합쳐서 user/assistant가 번갈아 오게 한다
+        for m in messages:
+            if m["role"] == "system":
+                continue
+            if turns and turns[-1]["role"] == m["role"]:
+                turns[-1]["content"] += "\n" + m["content"]
+            else:
+                turns.append({"role": m["role"], "content": m["content"]})
+        while turns and turns[0]["role"] != "user":  # Anthropic은 user로 시작해야 한다
+            turns.pop(0)
+        out = [{"role": t["role"], "content": [{"type": "text", "text": t["content"]}]} for t in turns]
         if image is not None:
-            content.insert(0, {"type": "image", "source": {
+            block = {"type": "image", "source": {
                 "type": "base64", "media_type": "image/jpeg",
-                "data": base64.standard_b64encode(image).decode()}})
-        kwargs = {"model": self.model, "max_tokens": max_tokens,
-                  "messages": [{"role": "user", "content": content}]}
+                "data": base64.standard_b64encode(image).decode()}}
+            if out and out[-1]["role"] == "user":
+                out[-1]["content"].insert(0, block)
+            else:
+                out.append({"role": "user", "content": [block]})
+        kwargs = {"model": self.model, "max_tokens": max_tokens, "messages": out}
         if system:
             kwargs["system"] = system
         if self.effort:
@@ -85,17 +118,35 @@ class OpenVINOProvider:
     """로컬 openvino_genai. kind: llm | vlm | whisper. 처음 호출할 때 파이프라인을 만든다.
     API는 M3에서 설치된 openvino_genai 버전으로 확인한다."""
 
-    def __init__(self, model_dir, device="CPU", kind="llm"):
+    def __init__(self, model_dir, device="CPU", kind="llm", language="ko", cache_dir=None):
         self.model_dir, self.device, self.kind = str(model_dir), device, kind
+        self.language = language
+        self.cache_dir = Path(cache_dir) if cache_dir else None
         self._pipe = None
+        self._lock = threading.Lock()
+        self._run_lock = threading.Lock()  # 같은 파이프라인에서 generate가 동시에 돌지 않게 한다
 
     def _pipeline(self):
-        if self._pipe is None:
-            import openvino_genai as ov_genai
-            cls = {"llm": ov_genai.LLMPipeline, "vlm": ov_genai.VLMPipeline,
-                   "whisper": ov_genai.WhisperPipeline}[self.kind]
-            self._pipe = cls(self.model_dir, self.device)
-        return self._pipe
+        with self._lock:  # 워밍업 스레드와 첫 요청이 겹쳐도 파이프라인은 하나만 만든다
+            if self._pipe is None:
+                import openvino_genai as ov_genai
+                cls = {"llm": ov_genai.LLMPipeline, "vlm": ov_genai.VLMPipeline,
+                       "whisper": ov_genai.WhisperPipeline}[self.kind]
+                if self.cache_dir is not None:
+                    self.cache_dir.mkdir(parents=True, exist_ok=True)
+                    self._pipe = cls(self.model_dir, self.device, CACHE_DIR=str(self.cache_dir))
+                else:
+                    self._pipe = cls(self.model_dir, self.device)
+            return self._pipe
+
+    def warmup(self):
+        """파이프라인을 만들고(whisper는 무음 한 번 generate까지) 걸린 초를 돌려준다."""
+        t0 = time.monotonic()
+        pipe = self._pipeline()
+        if self.kind == "whisper":
+            with self._run_lock:
+                pipe.generate([0.0] * 8000, language=f"<|{self.language}|>", task="transcribe")
+        return time.monotonic() - t0
 
     def complete(self, messages, max_tokens=300, image=None):
         pipe = self._pipeline()
@@ -108,13 +159,17 @@ class OpenVINOProvider:
             prompt = "\n".join(m["content"] for m in messages)
             bgr = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
             rgb = np.ascontiguousarray(bgr[:, :, ::-1])
-            return _text(pipe.generate(prompt, image=ov.Tensor(rgb[None]), max_new_tokens=max_tokens))
+            with self._run_lock:
+                return _text(pipe.generate(prompt, image=ov.Tensor(rgb[None]), max_new_tokens=max_tokens))
         prompt = pipe.get_tokenizer().apply_chat_template(messages, add_generation_prompt=True)
-        return _text(pipe.generate(prompt, max_new_tokens=max_tokens))
+        with self._run_lock:
+            return _text(pipe.generate(prompt, max_new_tokens=max_tokens))
 
-    def transcribe(self, wav, language="ko"):
-        return _text(self._pipeline().generate(wav_to_float32(wav), language=f"<|{language}|>",
-                                               task="transcribe"))
+    def transcribe(self, wav, language=None):
+        language = language or self.language
+        pipe, samples = self._pipeline(), wav_to_float32(wav)
+        with self._run_lock:
+            return _text(pipe.generate(samples, language=f"<|{language}|>", task="transcribe"))
 
 
 def _text(result):
@@ -194,16 +249,18 @@ def build_chain(entries, providers_cfg, env):
                 continue
             timeout = float(e.get("timeout_s", 5))
             if kind == "openai_compat":
-                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout)
+                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout, extra_body=e.get("extra_body"),
+                                        transcribe_mode=e.get("transcribe", "transcriptions"))
             elif kind == "anthropic":
                 provider = AnthropicProvider(key, e["model"], timeout, e.get("effort"))
             elif kind == "openvino":
-                provider = OpenVINOProvider(e["model_dir"], e.get("device", "CPU"), e.get("kind", "llm"))
+                provider = OpenVINOProvider(e["model_dir"], e.get("device", "CPU"), e.get("kind", "llm"),
+                                            e.get("language", "ko"), e.get("cache_dir"))
             else:
                 log.warning("알 수 없는 provider type: %s (건너뜀)", kind)
                 continue
         except Exception as ex:
             log.warning("%s 준비 실패 (건너뜀): %s", pname, ex)
             continue
-        members.append(Member(f"{pname}:{e.get('model') or e.get('model_dir')}", provider))
+        members.append(Member(e.get("label") or f"{pname}:{e.get('model') or e.get('model_dir')}", provider))
     return Chain(members)

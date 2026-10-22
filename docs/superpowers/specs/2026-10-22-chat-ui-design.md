@@ -94,7 +94,7 @@ stateDiagram-v2
 | REFUSING | `resume`, `chat` (M5부터 resume) | resume → count = 0, WORKING |
 | ESTOP | `chat` | 대답만. 해제는 restart 명령으로만 |
 
-- `phase` (UI 표시용, WORKING 내부 단계): `idle | counting | thinking | acting | returning | waiting_operator`
+- `phase` (UI 표시용, WORKING 내부 단계): `idle | counting | thinking | speaking | acting | returning | waiting_operator` (speaking: 대사 소리가 나기 시작할 때까지 동작 대기, 최대 `voice.sync_timeout_s`)
 - 옮기기 실패가 `max_retry`를 넘으면 WORKING 유지 + `phase=waiting_operator`. 재개 명령으로 다시 시도. count 불변.
 - 동시성: controller의 상태 변경은 락 하나로 보호. brain의 LLM 호출(decide/chat)은 provider 내부 락으로 직렬화.
 
@@ -189,9 +189,13 @@ vision:
 ```yaml
 stt:
   chain:
-    - {provider: local_ov, model_dir: "models/whisper", device: CPU, language: ko}
-    - {provider: openai, model: "[전사 모델 ID]"}
+    # device를 GPU로 바꾸면 label도 같이 바꾼다 (UI 모델 정보에 표시됨)
+    - {provider: local_ov, kind: whisper, model_dir: "models/whisper-small", device: CPU, language: ko,
+       cache_dir: "models/ov_cache", label: "Whisper small · OpenVINO · CPU"}
+    - {provider: gemini, model: "gemini-3.5-flash-lite", transcribe: chat, timeout_s: 15}   # 크레딧 있을 때 예비
 ```
+
+측정 (개발 PC, 한국어 TTS 문장 5개): small CPU 1.2~1.8초/문장, GPU 0.43~0.49초 (첫 로드 25초, `cache_dir`로 2~4초). 서버 워밍업 CPU 약 5.6초. small은 5개 중 4개 정확(달래기 키워드 '힘내'·'부탁' 유지)이라 기본으로 쓰고, base(85MB, 0.4초)는 "한 번만 더"→"한 번 더"처럼 키워드를 잃어 채택하지 않았다.
 
 ## 7. 로봇 연동 (skills.py, physicalai 런타임)
 
