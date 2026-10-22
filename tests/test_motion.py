@@ -2,6 +2,7 @@ import threading
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from snackbot.motion import GRIPPER, GripperWatch, MoveSource, StopAny, Switch, Tap, plan_path, remap_frames
 
@@ -58,10 +59,52 @@ def test_gripper_watch_empty_grasp():
 
 def test_gripper_watch_open_must_be_held_and_reset():
     w = GripperWatch(30, 60, 15, 0.5)
-    feed(w, [20, 80, 80, 50, 80, 80, 80])
+    feed(w, [80, 20, 80, 80], dt=0.25)           # 열림 유지 0.25s: hold_s 직전
     assert not w.done.is_set()
+    w.update(80, 1.0)                            # 열림 시작(0.5)부터 0.5s: 직후
+    assert w.done.is_set()
     w.reset()
-    assert w.min_closed is None and not w.closed_seen and not w.grasped
+    assert w.min_closed is None and not w.closed_seen and not w.grasped and not w.done.is_set()
+
+
+def test_gripper_watch_starts_closed_at_home():
+    w = GripperWatch(30, 60, 15, 0.5)
+    feed(w, [5, 5, 5], dt=0.25)                  # 홈에서 닫힘: armed 전이라 무시
+    assert not w.closed_seen and w.min_closed is None
+    feed(w, [80, 50, 25, 24, 25, 70, 80, 80, 80, 80], dt=0.25)
+    assert w.done.is_set() and w.grasped and w.min_closed == 24
+
+
+def test_gripper_watch_noise_breaks_hold():
+    w = GripperWatch(30, 60, 15, 0.5)
+    for t, v in [(0, 80), (0.25, 20), (0.5, 80), (0.75, 80), (1.0, 50), (1.25, 80)]:
+        w.update(v, t)
+    assert not w.done.is_set()
+    w.update(80, 1.5)
+    assert not w.done.is_set()
+    w.update(80, 1.75)
+    assert w.done.is_set()
+
+
+def test_gripper_watch_ignores_updates_after_done():
+    w = GripperWatch(30, 60, 15, 0.5)
+    feed(w, [80, 20, 80, 80, 80], dt=0.5)
+    assert w.done.is_set() and w.grasped
+    w.update(1, 10.0)
+    assert w.min_closed == 20 and w.grasped
+
+
+def test_move_source_rejects_empty_targets():
+    with pytest.raises(ValueError):
+        MoveSource([], steps=3)
+
+
+def test_switch_without_active_raises():
+    sw = Switch()
+    with pytest.raises(RuntimeError):
+        sw.connect(bus=None, session_id="x")
+    with pytest.raises(RuntimeError):
+        sw.update(None, {}, 0)
 
 
 def test_stop_any():
@@ -116,6 +159,7 @@ def test_tap_caches_state_frames_and_feeds_watch():
     tap, w = Tap(), GripperWatch(30, 60, 15, 0.5)
     tap.watch = w
     frame = np.zeros((2, 2, 3), np.uint8)
+    tap.on_tick(SimpleNamespace(robot_state=state([1, 2, 3, 4, 5, 80]), camera_frames={}, timestamp=0.0))
     tap.on_tick(SimpleNamespace(robot_state=state([1, 2, 3, 4, 5, 20]),
-                                camera_frames={"tower cam": SimpleNamespace(data=frame)}, timestamp=0.0))
+                                camera_frames={"tower cam": SimpleNamespace(data=frame)}, timestamp=0.1))
     assert tap.joints[GRIPPER] == 20 and tap.frames["tower cam"] is frame and w.closed_seen

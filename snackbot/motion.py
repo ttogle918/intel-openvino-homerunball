@@ -22,9 +22,13 @@ def plan_path(start, targets, steps):
 
 
 class MoveSource:
-    """현재 자세에서 targets를 차례로 선형 보간해 보낸다. 마지막 점을 보낼 때 done을 set하고 그 점을 유지한다."""
+    """현재 자세에서 targets를 차례로 선형 보간해 보낸다. 마지막 점을 보낼 때 done을 set하고 그 점을 유지한다.
+    physicalai 0.3.0 RobotRuntime.run()은 매 run마다 connect(bus=, session_id=)를 부르고 끝에 disconnect한다
+    (runtime/core.py:376, :639). 그래서 connect에서 초기화한다."""
 
     def __init__(self, targets, steps):
+        if not targets:
+            raise ValueError("targets가 비어 있다")
         self.targets = [np.asarray(t, np.float32) for t in targets]
         self.steps = max(1, int(steps))
         self.done = threading.Event()
@@ -49,37 +53,50 @@ class MoveSource:
 
 
 class GripperWatch:
-    """닫힘(< closed_below)을 한 번 본 뒤 열림(> open_above)이 hold_s 이상 이어지면 done.
-    닫힘 구간의 최솟값이 grasp_min 이상이면 과자를 쥔 것 (빈 그리퍼는 끝까지 닫힌다)."""
+    """열림(>= open_above)을 한 번 본 뒤(armed)부터 닫힘(< closed_below)을 인정한다 (홈에서 이미 닫혀 있어도 오작동 없음).
+    armed → 닫힘을 본 뒤 → 열림(> open_above)이 hold_s 이상 이어지면 done.
+    닫힘 구간의 최솟값이 grasp_min 이상이면 과자를 쥔 것 (빈 그리퍼는 끝까지 닫힌다).
+    done 이후의 update는 무시한다."""
 
     def __init__(self, closed_below, open_above, grasp_min, hold_s=0.5):
         self.closed_below, self.open_above = closed_below, open_above
         self.grasp_min, self.hold_s = grasp_min, hold_s
         self.done = threading.Event()
+        self._lock = threading.Lock()
         self.reset()
 
     def reset(self):
-        self.closed_seen = False
-        self.min_closed = None
-        self._open_since = None
-        self.done.clear()
+        with self._lock:
+            self.armed = False
+            self.closed_seen = False
+            self.min_closed = None
+            self._open_since = None
+            self.done.clear()
 
     @property
     def grasped(self):
-        return self.min_closed is not None and self.min_closed >= self.grasp_min
+        m = self.min_closed
+        return m is not None and m >= self.grasp_min
 
     def update(self, gripper, t):
-        if gripper < self.closed_below:
-            self.closed_seen = True
-            self.min_closed = gripper if self.min_closed is None else min(self.min_closed, gripper)
-            self._open_since = None
-        elif self.closed_seen and gripper > self.open_above:
-            if self._open_since is None:
-                self._open_since = t
-            elif t - self._open_since >= self.hold_s:
-                self.done.set()
-        else:
-            self._open_since = None
+        with self._lock:
+            if self.done.is_set():
+                return
+            if not self.armed:
+                if gripper < self.open_above:
+                    return
+                self.armed = True
+            if gripper < self.closed_below:
+                self.closed_seen = True
+                self.min_closed = gripper if self.min_closed is None else min(self.min_closed, gripper)
+                self._open_since = None
+            elif self.closed_seen and gripper > self.open_above:
+                if self._open_since is None:
+                    self._open_since = t
+                elif t - self._open_since >= self.hold_s:
+                    self.done.set()
+            else:
+                self._open_since = None
 
 
 class StopAny:
@@ -106,11 +123,16 @@ class Switch:
         self.active = None
         self.camera_map = None
 
+    def _src(self):
+        if self.active is None:
+            raise RuntimeError("active source 없음")
+        return self.active
+
     def connect(self, *, bus, session_id):
-        self.active.connect(bus=bus, session_id=session_id)
+        self._src().connect(bus=bus, session_id=session_id)
 
     def update(self, robot_state, camera_frames, step):
-        return self.active.update(robot_state, remap_frames(camera_frames, self.camera_map), step)
+        return self._src().update(robot_state, remap_frames(camera_frames, self.camera_map), step)
 
     def disconnect(self):
         self.active.disconnect()
