@@ -58,6 +58,7 @@ robot:
   calibration: calibration/follower.yaml   # python -m tools.fetch_calibration 으로 Studio에서 받는다
 
 cameras:                                   # 키 = 학습 때 카메라 이름 (정책 입력 images.<이름>). 정책이 쓰는 카메라를 모두 둔다
+  # device: 번호(0 → /dev/video0) 또는 {serial: "..."} (USB를 다시 꽂아도 같은 장치). python -m tools.cameras 로 확인
   tower cam:  {device: 0, width: 1280, height: 720, fps: 30}   # [ ] 노트북의 카메라 번호
   side cam:   {device: 4, width: 1280, height: 720, fps: 30}   # [ ] oranda_pickup용 사이드 캠: Studio에 등록한 이름·해상도 확인
   follow cam: {device: 2, width: 1280, height: 720, fps: 30}
