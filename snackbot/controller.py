@@ -113,14 +113,17 @@ class Controller:
         with self._lock:
             state, count, gen = self.state, self.count, self._gen
         r = self.brain.chat(text, state, count, history=hist)
+        if r["intent"] == "dori_dori":
+            # 버튼과 같은 경로 (대기 상태에서만, 횟수·피로도 미반영). LLM을 기다리는 사이 세션이 바뀌었으면 취소.
+            # 요청이 받아들여졌을 때만 대사를 낸다 (거부되면 거부 이유만 남는다)
+            if self._request_test("dori_dori", expect_gen=gen, origin="llm"):
+                self._message("robot", r["say"])
+            return
         self._message("robot", r["say"])
         if r["intent"] == "start_task":
             self._start_task(r.get("n"))
         elif r["intent"] == "resume":
             self._resume()
-        elif r["intent"] == "dori_dori":
-            # 버튼과 같은 경로 (대기 상태에서만, 횟수·피로도 미반영). LLM을 기다리는 사이 세션이 바뀌었으면 취소
-            self._request_test("dori_dori", expect_gen=gen, origin="llm")
 
     def generation(self):
         """현재 세션 번호. 콘솔 키 워커가 restart를 접수한 시점의 값을 command(expect_gen=)로 되돌려준다."""
@@ -261,10 +264,10 @@ class Controller:
         if skill not in TEST_SKILLS:
             raise ValueError(f"알 수 없는 테스트 스킬: {skill}")
         with self._lock:
-            if expect_gen is not None and self._gen != expect_gen:
-                refused = _TEST_CANCELED
-            elif self.state != IDLE:
+            if self.state != IDLE:   # 상태 확인이 먼저: 두 번 누르면 "이미 테스트 중"
                 refused = _TEST_REFUSED.get(self.state, "대기 상태에서만 테스트할 수 있어요")
+            elif expect_gen is not None and self._gen != expect_gen:
+                refused = _TEST_CANCELED
             elif not self._run_idle.is_set():
                 refused = "아직 동작이 끝나지 않았어요. 잠시 뒤 다시 눌러 주세요"
             else:
@@ -299,7 +302,7 @@ class Controller:
                 return None
             self._run_idle.clear()  # 확인과 같은 락 안: 재시작이 그 사이로 끼어들지 못한다
         t0 = time.monotonic()
-        stop_reason, grasped, record, error = None, False, None, None
+        stop_reason, grasped, record, error = None, None, None, None
         try:
             if skill == "home":
                 self._set_test_phase("returning", gen)
@@ -316,12 +319,15 @@ class Controller:
         ms = _ms(t0)
         with self._lock:
             current = self.state == TESTING and self._gen == gen
+            stale = not current and self.state != ESTOP   # 재시작이 먼저 끝났다: 지난 결과가 새 세션 화면을 덮지 않게
             if current:
                 if stop_reason == "estop":  # 스킬 쪽에서 멈췄다 (예: Ctrl+C): 사이클과 같이 비상정지로 맞춘다
                     self.state, self.phase = ESTOP, "idle"
                 else:
                     self.state, self.phase, self.skill = IDLE, "idle", None
-        if error is not None:
+        if stale:
+            log.info("테스트 결과 생략 (그 사이 세션이 바뀜): %s %s", skill, stop_reason)
+        elif error is not None:
             self.notify(f"테스트 실패: {error}")
         else:
             self.notify(self._test_text(skill, origin, stop_reason, grasped, ms, record))
@@ -333,9 +339,9 @@ class Controller:
 
     def _test_text(self, skill, origin, stop_reason, grasped, ms, record):
         """결과 한 줄: 버튼 '테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초 · 기록 …', LLM '도리도리 · …'."""
-        how = STOP_REASON_KO.get(stop_reason, str(stop_reason))
+        how = STOP_REASON_KO.get(stop_reason, "알 수 없음" if stop_reason is None else str(stop_reason))
         label = self.target_name if skill == "oranda_pickup" else TEST_LABELS[skill]
-        parts = [f"도리도리 · {how}" if origin == "llm" else f"테스트 · {label}: {how}"]
+        parts = [f"{label} · {how}" if origin == "llm" else f"테스트 · {label}: {how}"]
         if skill == "oranda_pickup":
             parts.append("쥠 성공" if grasped else "쥠 없음")
         parts.append(f"{ms / 1000:.1f}초")

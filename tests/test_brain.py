@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from conftest import FirstRng
 from snackbot.brain import (
@@ -226,8 +227,19 @@ def test_chat_rules_dori_in_idle_only_and_testing_line(cfg):
 def test_chat_llm_dori_tool_only_in_idle(cfg):
     r = make(cfg, '{"intent": "dori_dori", "say": "싫어요~", "n": null}').chat("너 싫지?", "IDLE", 0)
     assert r == {"intent": "dori_dori", "say": "싫어요~", "n": None, "source": "fake"}
-    r = make(cfg, '{"intent": "dori_dori", "say": "싫어요~", "n": null}').chat("너 싫지?", "WORKING", 2)
+
+
+@pytest.mark.parametrize("state", ["DONE", "WORKING", "REFUSING", "TESTING", "ESTOP"])
+def test_chat_llm_dori_ignored_outside_idle(cfg, state):
+    assert "dori_dori" not in allowed_intents(state)
+    r = make(cfg, '{"intent": "dori_dori", "say": "싫어요~", "n": null}').chat("너 싫지?", state, 2)
     assert r["intent"] == "chat" and r["say"] == "싫어요~"
+
+
+def test_keyword_start_beats_dori():
+    idle = allowed_intents("IDLE")
+    assert keyword_intent("도리도리 하지 말고 옮겨줘", idle) == "start_task"
+    assert keyword_intent("도리도리 그만하고 시작해", idle) == "start_task"
 
 
 def test_chat_prompt_describes_dori_tool(cfg):

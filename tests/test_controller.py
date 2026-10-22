@@ -858,6 +858,7 @@ def test_start_and_resume_refused_while_testing(cfg):
     assert c.state == "TESTING" and c.history[-1]["text"] == "테스트 중이에요. 끝난 뒤 다시 시켜 주세요"
     c.chat("2개 옮겨줘")
     assert c.state == "TESTING" and c.history[-1]["role"] == "robot"   # 채팅은 대답만, 작업 시작 없음
+    assert c.history[-1]["text"] == "지금 테스트 중이에요. 끝나면 시켜 주세요!"
     c.step_test()
     assert c.state == "IDLE" and c.count == 0 and c.remaining == 0
 
@@ -997,3 +998,109 @@ def test_chat_dori_canceled_if_session_changed_during_llm(cfg):
     c.chat("도리도리 해 봐")
     assert c.state == "IDLE" and c._pending_test is None
     assert "테스트가 취소됐어요" in c.history[-1]["text"]
+
+
+def test_chat_dori_refused_leaves_only_reason_not_speech(cfg):
+    c, _ = make(cfg)
+    c._run_idle.clear()                                       # 아직 이전 동작이 끝나지 않았다
+    c.chat("도리도리 해 봐")
+    assert c.state == "IDLE" and c._pending_test is None
+    assert [m["role"] for m in c.history] == ["user", "system"]
+    assert "아직 동작이 끝나지 않았어요" in c.history[-1]["text"]
+
+
+def test_test_twice_with_same_gen_says_already_testing(cfg):
+    c, _ = make(cfg)
+    g = c.generation()
+    assert c.command("test", skill="dori_dori", expect_gen=g) is True
+    assert c.command("test", skill="dori_dori", expect_gen=g) is False
+    assert "이미 테스트 중" in c.history[-1]["text"] and "취소" not in c.history[-1]["text"]
+
+
+def test_test_refused_in_done(cfg):
+    c, _ = make(cfg)
+    c.state = "DONE"
+    assert c.command("test", skill="dori_dori") is False
+    assert c.state == "DONE" and c._pending_test is None and c.history[-1]["role"] == "system"
+
+
+def test_llm_prefix_uses_label_and_missing_stop_reason_text(cfg):
+    c, _ = make(cfg)
+    assert c._test_text("home", "llm", "done", None, 1000, None) == "홈으로 · 완료 · 1.0초"
+    assert c._test_text("dori_dori", "button", None, None, 1000, None) == "테스트 · 도리도리: 알 수 없음 · 1.0초"
+
+
+def test_test_log_grasped_none_for_non_pickup_and_error(cfg, tmp_path):
+    class Boom(FakeSkills):
+        def run(self, name, on_phase=None):
+            raise RuntimeError("motor")
+
+    c, _ = make(cfg, Boom(), log_dir=tmp_path)
+    c.command("test", skill="home")
+    c.step_test()
+    c.command("test", skill="oranda_pickup")
+    c.step_test()
+    recs = [json.loads(x) for x in next(tmp_path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()]
+    assert [r["grasped"] for r in recs] == [None, None]
+
+
+def test_stop_during_test_ends_in_estop(cfg):
+    sk = BlockingRun()
+    c, _ = make(cfg, sk)
+    c.command("test", skill="oranda_pickup")
+    t = threading.Thread(target=c.step_test, daemon=True)
+    t.start()
+    assert sk.entered.wait(2)
+    c.stop()
+    assert sk.estopped
+    sk.release.set()
+    t.join(5)
+    assert not t.is_alive() and c.state == "ESTOP"
+
+
+def test_test_exception_after_estop_keeps_estop(cfg):
+    class BoomAfterEstop(FakeSkills):
+        ctrl = None
+
+        def run(self, name, on_phase=None):
+            self.ctrl.command("estop")
+            raise RuntimeError("motor")
+
+    sk = BoomAfterEstop()
+    c, _ = make(cfg, sk)
+    sk.ctrl = c
+    c.command("test", skill="dori_dori")
+    assert c.step_test() == "error"
+    assert c.state == "ESTOP" and c._run_idle.is_set()
+
+
+def test_home_test_go_home_estop_latches_estop(cfg):
+    class HomeEstop(FakeSkills):
+        def go_home(self):
+            return "estop"
+
+    c, _ = make(cfg, HomeEstop())
+    c.command("test", skill="home")
+    assert c.step_test() == "estop"
+    assert c.state == "ESTOP"
+
+
+def test_restart_finished_before_step_test_wraps_up_does_not_paste_old_result(cfg, monkeypatch):
+    import snackbot.controller as ctl
+
+    real_ms, fired = ctl._ms, []
+    sk = EstopDuringRun()
+    c, _ = make(cfg, sk)
+    sk.ctrl = c
+
+    def hooked(t0):
+        if not fired:                                          # finally의 set 뒤, 마지막 락 앞
+            fired.append(1)
+            c.command("restart")
+        return real_ms(t0)
+
+    monkeypatch.setattr(ctl, "_ms", hooked)
+    c.command("test", skill="dori_dori")
+    c.step_test()
+    assert fired and c.state == "IDLE"
+    assert not any("시간 초과" in m["text"] or "비상정지로 멈춤" in m["text"] for m in c.history)

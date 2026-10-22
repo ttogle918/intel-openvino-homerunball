@@ -86,12 +86,12 @@ def allowed_intents(state):
 
 
 def keyword_intent(text, allowed):
-    if "dori_dori" in allowed and any(w in text for w in DORI_WORDS):
-        return "dori_dori"
     if "resume" in allowed and any(w in text for w in RESUME_WORDS):
         return "resume"
     if "start_task" in allowed and any(w in text for w in START_WORDS):
-        return "start_task"
+        return "start_task"   # 작업 시작이 도리도리보다 우선 ("도리도리 하지 말고 옮겨줘")
+    if "dori_dori" in allowed and any(w in text for w in DORI_WORDS):
+        return "dori_dori"
     return "chat"
 
 
