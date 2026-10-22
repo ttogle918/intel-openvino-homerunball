@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+
+# 실행 로그 (발표 통계용으로 따로 보관)
+logs/*
+!logs/.gitkeep
+
+# 다운로드한 OpenVINO 모델, ACT 학습 결과
+models/*
+!models/.gitkeep
+outputs/
