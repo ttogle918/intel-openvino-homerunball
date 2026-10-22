@@ -1,5 +1,6 @@
 """TTS. speak()는 바로 반환하고 백그라운드 스레드가 순서대로 읽는다. 실패해도 예외를 내지 않는다."""
 import base64
+import contextlib
 import io
 import logging
 import queue
@@ -168,6 +169,8 @@ class Voice:
             self._abandon.set()  # 아직 도는 스레드가 손에 든 문장도 재생 대신 set 하게 한다
             self._drain(self._q)
             self._drain(self._pq)
+            with contextlib.suppress(queue.Full):
+                self._pq.put_nowait(None)  # 재생 스레드가 남지 않게 종료 신호 (비운 뒤라 들어간다)
         if self._http is not None:
             self._http.close()
 
@@ -198,6 +201,8 @@ class Voice:
         while True:
             with self._close_lock:
                 if self._abandon.is_set():
+                    return False
+                if item is not None and item[-1] != self._epoch:  # clear_pending 뒤: 넘기지 않고 버린다
                     return False
                 try:
                     self._pq.put_nowait(item)

@@ -319,9 +319,10 @@ def test_close_sets_event_of_sentence_synth_thread_holds(monkeypatch):
     assert entered.wait(2)
     evs = [v.speak(str(i)) for i in range(5)]  # 재생 큐(2칸)가 차고 합성 스레드는 손에 든 채 put 재시도
     v.close()
-    assert all(e.wait(2) for e in evs)  # 손에 든 문장은 put 재시도(0.2초 간격)가 포기를 알아챈 직후 set
+    assert all(e.wait(2) for e in evs)  # 손에 든 문장은 put 재시도 루프(0.05초 간격)가 포기를 알아챈 직후 set
     gate.set()
-    v._play_thread.join(2)
+    v._play_thread.join(0.5)
+    assert not v._play_thread.is_alive()  # 종료 신호가 재생 큐에 들어갔다
     assert played == ["playing"]  # 포기된 문장은 재생되지 않는다
     v._synth_thread.join(2)
     assert not v._synth_thread.is_alive()
@@ -357,7 +358,7 @@ def test_clear_pending_drops_queued_sentences_but_not_the_playing_one(monkeypatc
     assert entered.wait(2)
     pending = [v.speak(str(i)) for i in range(5)]
     v.clear_pending()
-    assert first.is_set() and all(e.is_set() for e in pending)
+    assert first.is_set() and all(e.wait(1) for e in pending)  # 합성 스레드가 손에 든 문장은 곧바로(<=0.05초)
     gate.set()
     after = v.speak("after")  # 비운 뒤의 새 문장은 정상 재생
     assert after.wait(2)

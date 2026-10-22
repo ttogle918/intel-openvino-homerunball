@@ -15,6 +15,9 @@ log = logging.getLogger(__name__)
 IDLE, WORKING, REFUSING, DONE, ESTOP = "IDLE", "WORKING", "REFUSING", "DONE", "ESTOP"
 
 
+_RESTART_CANCELED = "재시작이 취소됐어요: 그 사이 비상정지가 들어왔어요"
+
+
 def _ms(t0):
     return int((time.monotonic() - t0) * 1000)
 
@@ -29,6 +32,7 @@ class Controller:
         self.restart_wait_s = 5.0  # 재시작이 진행 중인 동작(skills.run)이 멈추기를 기다리는 최대 시간
         self._run_idle = threading.Event()  # set = skills.run 실행 중이 아님
         self._run_idle.set()
+        self._restart_wait_hook = None  # 테스트용: 재시작이 동작 종료를 기다리기 시작할 때 부른다
         self._gen = 0  # 세션 번호: estop/start/resume/restart 때 올라간다 (이전 세션의 결정을 버리는 용도)
         self.brain, self.skills, self.voice, self.clock = brain, skills, voice, clock
         self.vision = vision if vision is not None and vision.enabled else None
@@ -175,17 +179,23 @@ class Controller:
             if expect_gen is not None and self._gen != expect_gen:
                 # 접수 뒤에 비상정지 등이 끼어들었다: 나중에 누른 비상정지를 풀면 안 된다
                 log.info("restart 거부: 접수 뒤 세션이 바뀜 (%s != %s)", expect_gen, self._gen)
+                self.notify(_RESTART_CANCELED)
                 return False
             if self.state != ESTOP or self.phase == "returning":
                 return False
+            if expect_gen is None:
+                expect_gen = self._gen  # 인자 없는 재시작도 대기 중에 끼어든 비상정지를 따른다
         # 진행 중인 동작이 멈출 때까지 기다린다 (락 밖: 비상정지는 이 대기와 무관하게 즉시 처리된다).
         # 동작이 아직 도는 채로 토크 해제·홈 복귀를 하면 두 명령이 겹친다.
+        if self._restart_wait_hook is not None and not self._run_idle.is_set():
+            self._restart_wait_hook()
         if not self._run_idle.wait(self.restart_wait_s):
             self.notify("아직 동작이 멈추는 중이에요. 잠시 뒤 다시 재시작하세요")
             return False
         with self._lock:
-            if expect_gen is not None and self._gen != expect_gen:
+            if self._gen != expect_gen:
                 log.info("restart 거부: 대기 중 세션이 바뀜 (%s != %s)", expect_gen, self._gen)
+                self.notify(_RESTART_CANCELED)
                 return False
             if self.state != ESTOP or self.phase == "returning":
                 return False
@@ -300,14 +310,14 @@ class Controller:
             ms["act"] = total
         if r.stop_reason == "estop":
             with self._lock:
-                if self.state != ESTOP:
+                if self.state != ESTOP and self._gen == gen:  # 새 세션이 시작됐다면 건드리지 않는다
                     self.state, self.phase = ESTOP, "idle"
             self._publish()
             self._log_cycle("estop", ms, d, r)
             return "estop"
         if d["skill"] == "dori_dori":
             with self._lock:
-                if self.state != WORKING:
+                if self.state != WORKING or self._gen != gen:
                     aborted = True
                 else:
                     aborted = False
@@ -326,10 +336,10 @@ class Controller:
         c = self.vision.count(self.skills.latest_frame(self.camera))
         ms["vision"] = ms.get("vision", 0) + _ms(t0)
         with self._lock:
+            if self._gen != gen:  # 세는 동안 세션이 바뀌었다: 이전 세션의 결과로 새 세션을 덮지 않는다
+                return None
             if c is None:
                 self.vision_method = "estimate"
-                return None
-            if self._gen != gen:  # 세는 동안 세션이 바뀌었다: 이전 세션의 개수로 새 세션을 덮지 않는다
                 return None
             self.remaining, self.vision_method, self.last_boxes = c.n, c.method, c.boxes
         self._publish()

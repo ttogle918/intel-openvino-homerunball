@@ -690,8 +690,12 @@ def _estop_while_in_run(cfg, sk):
 def test_restart_waits_for_running_skill_to_finish(cfg):
     sk = BlockingRun()
     c, t = _estop_while_in_run(cfg, sk)
+    waiting = threading.Event()
+    c._restart_wait_hook = waiting.set
     r = threading.Thread(target=lambda: c.command("restart"), daemon=True)
     r.start()
+    assert waiting.wait(5)  # 재시작이 동작 종료를 기다리는 중임을 확인한 뒤에 풀어 준다
+    assert sk.done_at_release is None
     sk.release.set()
     r.join(5)
     t.join(5)
@@ -720,3 +724,53 @@ def test_estop_clears_pending_speech(cfg):
     c = _make_voiced(cfg, v)
     c.command("estop")
     assert v.cleared == 1
+
+
+def test_two_overlapping_restarts_release_only_once(cfg):
+    sk = BlockingRun()
+    c, t = _estop_while_in_run(cfg, sk)
+    waiting = threading.Semaphore(0)
+    c._restart_wait_hook = waiting.release
+    results = []
+    rs = [threading.Thread(target=lambda: results.append(c._restart()), daemon=True) for _ in range(2)]
+    for r in rs:
+        r.start()
+    assert waiting.acquire(timeout=5) and waiting.acquire(timeout=5)
+    sk.release.set()
+    for r in rs + [t]:
+        r.join(5)
+    assert sorted(results) == [False, True] and sk.homed == 1 and c.state == "IDLE"
+
+
+def test_restart_after_skill_exception_works(cfg):
+    class Boom(FakeSkills):
+        def run(self, name, on_phase=None):
+            raise RuntimeError("motor")
+
+    c, _ = make(cfg, Boom())
+    c.chat("2개 옮겨줘")
+    try:
+        c.step()
+    except RuntimeError:
+        pass
+    assert c._run_idle.is_set()
+    c.command("estop")
+    c.command("restart")
+    assert c.state == "IDLE"
+
+
+def test_no_arg_restart_follows_estop_during_wait(cfg):
+    sk = BlockingRun()
+    c, t = _estop_while_in_run(cfg, sk)
+    waiting = threading.Event()
+    c._restart_wait_hook = waiting.set
+    out = []
+    r = threading.Thread(target=lambda: out.append(c._restart()), daemon=True)
+    r.start()
+    assert waiting.wait(5)
+    c.command("estop")  # 대기 중에 비상정지가 다시 들어왔다
+    sk.release.set()
+    r.join(5)
+    t.join(5)
+    assert out == [False] and c.state == "ESTOP" and sk.estopped and sk.homed == 0
+    assert "재시작이 취소됐어요" in c.history[-1]["text"]
