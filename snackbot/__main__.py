@@ -27,11 +27,27 @@ log = logging.getLogger(__name__)
 
 
 def build(cfg, env, dry_run=True):
-    if not dry_run:
-        raise SystemExit("실제 로봇 연결(physicalai)은 M4 계획에서 구현합니다. 지금은 --dry-run으로 실행하세요.")
-    from .skills import DrySkills
+    if dry_run:
+        from .skills import DrySkills
 
-    skills = DrySkills(cfg)
+        skills, act = DrySkills(cfg), "dry-run"
+    else:
+        from .config import load_poses
+        from .robot import POLICIES, RobotSkills
+
+        # 포즈가 없으면 여기서 SystemExit (physicalai를 import하기 전). connect()는 main이 부른다.
+        skills = RobotSkills(cfg, load_poses(cfg.get("poses_file", "poses.yaml")))
+        act = f"ACT · OpenVINO · {cfg['skills'].get('device', 'CPU')}"
+        loaded = [n for n in POLICIES if n in skills.policies]
+        if len(loaded) < len(POLICIES):
+            missing = [n for n in POLICIES if n not in skills.policies]
+            act += f" ({'·'.join(loaded) + '만' if loaded else '정책 없음'}, {'·'.join(missing)} 모델 없음)"
+        if "oranda_pickup" not in skills.policies:
+            print("경고: 과자 옮기기 모델이 없어 작업 시작은 안 돼요: dori_dori·home만 확인 가능", file=sys.stderr, flush=True)
+        chain = cfg["vision"].get("chain") or []
+        if any(e.get("type") == "fake" for e in chain):
+            log.warning("실제 로봇에서는 fake counter를 쓰지 않는다 (vision.chain에서 뺐다)")
+            cfg = {**cfg, "vision": {**cfg["vision"], "chain": [e for e in chain if e.get("type") != "fake"]}}
     providers = cfg.get("providers", {})
     llm = build_chain(cfg["brain"].get("chain"), providers, env)
     vision = build_vision(cfg["vision"], providers, env, remaining_fn=lambda: skills.tray)
@@ -43,7 +59,7 @@ def build(cfg, env, dry_run=True):
         "llm": llm.describe(),
         "vision": " → ".join(c.name for c in vision.counters) or "추정 (시작 개수 − 성공 수)",
         "stt": stt.chain.describe() if stt else "없음",
-        "act": "dry-run",
+        "act": act,
     }}
     camera = cfg["vision"].get("camera", "front")
     return {"controller": controller, "skills": skills, "voice": voice, "stt": stt, "info": info,
@@ -301,10 +317,13 @@ def main(argv=None):
         threading.Thread(target=parts["stt"].warmup, name="stt-warmup", daemon=True).start()
 
     print("키: s 시작 · r 재개 · h 재시작 · space 비상정지 · q 종료", flush=True)
-    controller.start()
-    if sys.stdin.isatty():
-        threading.Thread(target=key_loop, args=(controller, quit_fn), name="keys", daemon=True).start()
     try:
+        connect = getattr(parts["skills"], "connect", None)
+        if connect is not None:
+            connect()  # 실제 로봇: 연결 + 정책 warmup. 실패(SystemExit)해도 finally에서 close()
+        controller.start()
+        if sys.stdin.isatty():
+            threading.Thread(target=key_loop, args=(controller, quit_fn), name="keys", daemon=True).start()
         if args.no_ui:
             controller.wait_stopped()
         else:

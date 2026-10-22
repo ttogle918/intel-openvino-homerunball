@@ -27,9 +27,133 @@ def test_build_with_fake_counter_reports_vision(cfg):
         parts["voice"].close()
 
 
-def test_build_real_robot_not_yet(cfg):
-    with pytest.raises(SystemExit):
+def test_build_real_robot_requires_poses(cfg, tmp_path):
+    cfg["poses_file"] = str(tmp_path / "none.yaml")
+    with pytest.raises(SystemExit, match="home_pose"):
         build(cfg, {}, dry_run=False)
+
+
+@pytest.fixture
+def real_cfg(cfg, tmp_path, monkeypatch):
+    """physicalai 없이 build(dry_run=False)가 돌도록 런타임·정책 로드를 가짜로 바꾼 cfg."""
+    import snackbot.robot as robot
+    from snackbot.config import save_pose
+
+    poses = tmp_path / "poses.yaml"
+    save_pose(poses, "home_pose", [0] * 6)
+    save_pose(poses, "lift_pose", [0] * 6)
+    cfg["poses_file"] = str(poses)
+    cfg["skills"]["gripper"].update(closed_below=30, open_above=60, grasp_min=15)
+    monkeypatch.setattr(robot, "build_runtime", lambda c, s, t: object())
+    monkeypatch.setattr(robot, "build_policies", lambda c: ({}, {}))
+    return cfg
+
+
+def test_build_real_robot_drops_fake_counter(real_cfg):
+    real_cfg["vision"]["chain"] = [{"type": "fake"}]
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        assert parts["controller"].vision is None
+        assert parts["info"]["models"]["act"].startswith("ACT · OpenVINO")
+    finally:
+        parts["voice"].close()
+
+
+def test_build_real_robot_act_info_lists_loaded_policies(real_cfg, monkeypatch, capsys):
+    import snackbot.robot as robot
+    monkeypatch.setattr(robot, "build_policies", lambda c: ({"dori_dori": object()}, {}))
+    real_cfg["skills"]["device"] = "GPU"
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        assert parts["info"]["models"]["act"] == "ACT · OpenVINO · GPU (dori_dori만, oranda_pickup 모델 없음)"
+        assert "작업 시작은 안 돼요" in capsys.readouterr().err
+    finally:
+        parts["voice"].close()
+
+
+def test_build_real_robot_all_policies_plain_act_info(real_cfg, monkeypatch, capsys):
+    import snackbot.robot as robot
+    monkeypatch.setattr(robot, "build_policies",
+                        lambda c: ({"oranda_pickup": object(), "dori_dori": object()}, {}))
+    real_cfg["skills"]["device"] = "GPU"
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        assert parts["info"]["models"]["act"] == "ACT · OpenVINO · GPU"
+        assert "작업 시작은 안 돼요" not in capsys.readouterr().err
+    finally:
+        parts["voice"].close()
+
+
+class _FakeController:
+    stopped = False
+
+    def __init__(self, events):
+        self.events = events
+
+    def subscribe(self, fn):
+        pass
+
+    def start(self):
+        self.events.append("start")
+
+    def stop(self):
+        self.events.append("controller.stop")
+
+    def wait_stopped(self):
+        pass
+
+
+def _patch_main(monkeypatch, events, connect):
+    import snackbot.__main__ as m
+
+    class Skills:
+        def close(self):
+            events.append("close")
+
+    skills = Skills()
+    skills.connect = connect
+    voice = type("V", (), {"close": lambda self: events.append("voice.close")})()
+    parts = {"controller": _FakeController(events), "skills": skills, "voice": voice, "stt": None,
+             "info": {}, "frame_fn": lambda: None}
+    monkeypatch.setattr(m, "build", lambda cfg, env, dry_run=True: parts)
+    monkeypatch.setattr(m, "load_config", lambda path: {})
+    monkeypatch.setattr(m, "load_env", lambda path: {})
+
+
+def test_main_connects_before_controller_start(monkeypatch):
+    import snackbot.__main__ as m
+    events = []
+    _patch_main(monkeypatch, events, lambda: events.append("connect"))
+    m.main(["--no-ui"])
+    assert events.index("connect") < events.index("start")
+    assert "close" in events and "voice.close" in events
+
+
+def test_main_connect_failure_still_closes_and_exits(monkeypatch):
+    import snackbot.__main__ as m
+    events = []
+
+    def bad():
+        events.append("connect")
+        raise SystemExit("정책 dori_dori 입력이 안 맞아요")
+
+    _patch_main(monkeypatch, events, bad)
+    with pytest.raises(SystemExit, match="입력이 안 맞아요"):
+        m.main(["--no-ui"])
+    assert "start" not in events
+    assert "close" in events and "voice.close" in events
+
+
+def test_main_connect_ctrl_c_still_closes(monkeypatch):
+    import snackbot.__main__ as m
+    events = []
+
+    def interrupted():
+        raise KeyboardInterrupt
+
+    _patch_main(monkeypatch, events, interrupted)
+    m.main(["--no-ui"])
+    assert "close" in events and "voice.close" in events
 
 
 def wait_for(cond, timeout=2.0):
