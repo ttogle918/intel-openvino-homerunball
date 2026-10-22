@@ -3,6 +3,7 @@
 
 target:
   name: 오란다
+  robot_name: 과자봇        # 캐릭터 이름
   initial_count: 3          # B단계: 채팅에 개수가 없을 때
 
 decision:
@@ -22,6 +23,7 @@ providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 �
 brain:
   max_say_len: 80
   max_tokens: 1024
+  memory_turns: 12          # LLM에 넘길 최근 대화 메시지 수
   # 위에서부터 시도, 전부 실패하면 규칙. 비우면 규칙만.
   # NVIDIA 추론 모델은 생각을 끄지 않으면 8초를 넘겨 규칙으로 떨어진다 (extra_body로 끈다).
   chain:

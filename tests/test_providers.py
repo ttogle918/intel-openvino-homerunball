@@ -197,3 +197,24 @@ def test_openai_compat_extra_body_is_merged_into_request():
     p.complete([{"role": "user", "content": "x"}])
     assert seen["body"]["chat_template_kwargs"] == {"enable_thinking": False}
     assert seen["body"]["model"] == "m"
+
+
+def test_anthropic_sends_alternating_roles_merged_and_user_first():
+    calls = {}
+
+    def create(**kw):
+        calls.update(kw)
+        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="ok")])
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    p = AnthropicProvider("k", "m", client=client)
+    p.complete([{"role": "system", "content": "s1"}, {"role": "system", "content": "s2"},
+                {"role": "assistant", "content": "먼저"},
+                {"role": "user", "content": "a"}, {"role": "user", "content": "b"},
+                {"role": "assistant", "content": "c"}, {"role": "user", "content": "d"}], image=b"jpg")
+    assert calls["system"] == "s1\ns2"
+    assert [m["role"] for m in calls["messages"]] == ["user", "assistant", "user"]
+    assert calls["messages"][0]["content"] == [{"type": "text", "text": "a\nb"}]
+    assert calls["messages"][1]["content"] == [{"type": "text", "text": "c"}]
+    last = calls["messages"][2]["content"]
+    assert last[0]["type"] == "image" and last[1] == {"type": "text", "text": "d"}

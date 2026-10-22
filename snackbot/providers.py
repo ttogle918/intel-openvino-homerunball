@@ -62,14 +62,26 @@ class AnthropicProvider:
 
     def complete(self, messages, max_tokens=300, image=None):
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
-        text = "\n".join(m["content"] for m in messages if m["role"] != "system")
-        content = [{"type": "text", "text": text}]
+        turns = []  # 같은 role이 이어지면 합쳐서 user/assistant가 번갈아 오게 한다
+        for m in messages:
+            if m["role"] == "system":
+                continue
+            if turns and turns[-1]["role"] == m["role"]:
+                turns[-1]["content"] += "\n" + m["content"]
+            else:
+                turns.append({"role": m["role"], "content": m["content"]})
+        while turns and turns[0]["role"] != "user":  # Anthropic은 user로 시작해야 한다
+            turns.pop(0)
+        out = [{"role": t["role"], "content": [{"type": "text", "text": t["content"]}]} for t in turns]
         if image is not None:
-            content.insert(0, {"type": "image", "source": {
+            block = {"type": "image", "source": {
                 "type": "base64", "media_type": "image/jpeg",
-                "data": base64.standard_b64encode(image).decode()}})
-        kwargs = {"model": self.model, "max_tokens": max_tokens,
-                  "messages": [{"role": "user", "content": content}]}
+                "data": base64.standard_b64encode(image).decode()}}
+            if out and out[-1]["role"] == "user":
+                out[-1]["content"].insert(0, block)
+            else:
+                out.append({"role": "user", "content": [block]})
+        kwargs = {"model": self.model, "max_tokens": max_tokens, "messages": out}
         if system:
             kwargs["system"] = system
         if self.effort:

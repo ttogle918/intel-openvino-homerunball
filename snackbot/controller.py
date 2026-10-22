@@ -81,10 +81,12 @@ class Controller:
         text = (text or "").strip()
         if not text:
             return
+        with self._lock:
+            hist = list(self.history)  # 현재 발화를 넣기 전 스냅샷 (brain이 현재 발화는 따로 붙인다)
         self._message("user", text, source)
         with self._lock:
             state, count = self.state, self.count
-        r = self.brain.chat(text, state, count)
+        r = self.brain.chat(text, state, count, history=hist)
         self._message("robot", r["say"])
         if r["intent"] == "start_task":
             self._start_task(r.get("n"))
@@ -161,6 +163,9 @@ class Controller:
             ok = self.state == ESTOP and self.phase == "returning"
             if ok:
                 self.state, self.phase, self.retries, self.skill = IDLE, "idle", 0, None
+                # 비상정지 후 재시작은 새 시연의 시작: LLM 대화 기억을 비운다.
+                # (UI 로그는 재접속 전까지 그대로 보인다. 작업 시작/재개 사이에는 기억을 유지한다.)
+                self.history.clear()
         if not ok:
             self.skills.estop()
         if ok:
@@ -194,7 +199,9 @@ class Controller:
                 n_before = seen
         self._set_phase("thinking")
         t0 = time.monotonic()
-        d = self.brain.decide(n_before, self.count, WORKING, None)
+        with self._lock:
+            hist = list(self.history)
+        d = self.brain.decide(n_before, self.count, WORKING, None, history=hist)
         ms["llm"] = _ms(t0)
         if not self._working():
             return None
