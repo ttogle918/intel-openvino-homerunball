@@ -113,3 +113,40 @@ def test_stt_wrapper_and_builder():
     assert STT(Chain([Member("w", FakeWhisper())])).transcribe(b"x") == "안녕"
     assert build_stt({"chain": []}, {}, {}) is None
     assert build_stt(None, {}, {}) is None
+
+
+def test_ws_receives_event_from_other_thread(cfg, tmp_path):
+    import threading
+    c, app = make_app(cfg, tmp_path)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        assert ws.receive_json() == INFO
+        assert ws.receive_json()["type"] == "state"
+        threading.Thread(target=c.notify, args=("hi",)).start()
+        e = ws.receive_json()
+        assert e["type"] == "message" and e["text"] == "hi"
+
+
+def test_ws_history_message_delivered_once(cfg, tmp_path):
+    c, app = make_app(cfg, tmp_path)
+    c.notify("old")
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        assert ws.receive_json() == INFO
+        assert ws.receive_json()["type"] == "state"
+        assert ws.receive_json()["text"] == "old"
+        ws.send_json({"type": "chat", "text": "2개 옮겨줘"})
+        got = [ws.receive_json() for _ in range(3)]
+        assert got[0]["role"] == "user" and got[1]["role"] == "robot"
+        assert got[2]["type"] == "state"
+        assert all(g.get("text") != "old" for g in got)
+
+
+def test_ws_survives_malformed_frames(cfg, tmp_path):
+    c, app = make_app(cfg, tmp_path)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_json(), ws.receive_json()
+        ws.send_text("not json")
+        ws.send_json([1, 2])
+        ws.send_json({"type": "chat", "text": "2개 옮겨줘"})
+        got = [ws.receive_json() for _ in range(3)]
+        assert got[0]["role"] == "user" and got[1]["role"] == "robot"
+        assert got[2]["type"] == "state"
