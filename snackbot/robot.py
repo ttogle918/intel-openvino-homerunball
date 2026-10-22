@@ -26,10 +26,20 @@ def _ms(t0):
     return int((time.monotonic() - t0) * 1000)
 
 
+def load_so101():
+    """physicalai 0.3.0 본체의 SO101 (Studio 백엔드와 같은 경로). 없으면 플러그인 패키지."""
+    try:
+        from physicalai.robot.so101 import SO101
+    except ImportError:
+        from physicalai_so101_plugin import SO101
+    return SO101
+
+
 def build_runtime(cfg, action_source, tap):
     from physicalai.capture import UVCCamera
     from physicalai.runtime import RobotRuntime
-    from physicalai_so101_plugin import SO101
+
+    SO101 = load_so101()
 
     r = cfg["robot"]
     robot = SO101(port=r["port"], calibration=load_calibration(r["calibration"]), role="follower")

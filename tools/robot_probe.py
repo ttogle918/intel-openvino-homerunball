@@ -16,8 +16,9 @@ JOINTS = "shoulder_pan shoulder_lift elbow_flex wrist_flex wrist_roll gripper"
 
 
 def open_robot(cfg):
-    from physicalai_so101_plugin import SO101
+    from snackbot.robot import load_so101
 
+    SO101 = load_so101()
     r = cfg["robot"]
     robot = SO101(port=r["port"], calibration=load_calibration(r["calibration"]), role="follower")
     robot.connect()
