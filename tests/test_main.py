@@ -103,8 +103,28 @@ def test_handle_key_h_restarts():
     assert wait_for(lambda: calls == ["restart"])
 
 
-def test_handle_key_restart_does_not_block_estop():
+def test_command_worker_runs_commands_in_order():
+    import queue
+    import snackbot.__main__ as m
+    calls, done = [], queue.Queue()
+
+    class C:
+        def command(self, name):
+            calls.append(name)
+            done.put(name)
+
+    submit, stop = m.start_command_worker(C())
+    quit_fn = lambda: None  # noqa: E731
+    assert handle_key("s", C(), quit_fn, submit) == "start"
+    assert handle_key("r", C(), quit_fn, submit) == "resume"
+    assert done.get(timeout=2) == "start" and done.get(timeout=2) == "resume"
+    stop()
+    assert calls == ["start", "resume"]
+
+
+def test_slow_restart_does_not_delay_estop():
     import time
+    import snackbot.__main__ as m
     calls, done = [], []
 
     class C:
@@ -115,22 +135,33 @@ def test_handle_key_restart_does_not_block_estop():
                 done.append(1)
 
     c = C()
+    submit, stop = m.start_command_worker(c)
     t0 = time.monotonic()
-    assert handle_key("h", c, lambda: None) == "restart"
+    assert handle_key("h", c, lambda: None, submit) == "restart"
     assert time.monotonic() - t0 < 0.1
-    assert handle_key(" ", c, lambda: None) == "estop"
+    assert handle_key(" ", c, lambda: None, submit) == "estop"
     assert "estop" in calls and not done  # 재시작이 끝나기 전에 estop 기록
     assert wait_for(lambda: done)
+    stop()
 
 
-def test_handle_key_background_command_error_is_logged(caplog):
+def test_command_worker_logs_error_and_continues(caplog):
+    import snackbot.__main__ as m
+    calls = []
+
     class C:
         def command(self, name):
-            raise RuntimeError("boom")
+            calls.append(name)
+            if name == "start":
+                raise RuntimeError("boom")
 
+    submit, stop = m.start_command_worker(C())
     with caplog.at_level("ERROR"):
-        handle_key("s", C(), lambda: None)
-        assert wait_for(lambda: "boom" in caplog.text)
+        submit("start")
+        submit("resume")
+        assert wait_for(lambda: calls == ["start", "resume"])
+        assert "boom" in caplog.text
+    stop()
 
 
 def _pipe_with(data):
@@ -149,22 +180,21 @@ def _close(*fds):
             pass
 
 
-@pytest.mark.parametrize("data", [b"\x1b[H", b"\x1bOS", b"\x1bq", b"\x1b", b"\x1b[A", b"\x1b["])
-def test_read_posix_chunk_discards_escape_sequences(data):
-    from snackbot.__main__ import read_posix_chunk
-    r, w = _pipe_with(data)
-    try:
-        assert read_posix_chunk(r) is None
-    finally:
-        _close(r, w)
-
-
 @pytest.mark.parametrize("data,expected", [
+    (b"\x1b[A", None),
+    (b"\x1b[H", None),
+    (b"\x1bOS", None),
+    (b"\x1bq", None),
+    (b"\x1b", None),
+    (b"\x1b\x1b[H", None),
+    (b"\x1b\x1bOS", None),
+    (b"\x1b[\x1b[A", None),
     (b"\x1b[A ", " "),
-    (b"\x1b[1;5A s", " s"),
-    (b"s\x1b[Aq", "sq"),
+    (b"s\x1b[Aq", None),
+    (b" \x1b[H", " "),
+    (b"sr", "sr"),
 ])
-def test_read_posix_chunk_keeps_keys_around_escape_sequences(data, expected):
+def test_read_posix_chunk(data, expected):
     from snackbot.__main__ import read_posix_chunk
     r, w = _pipe_with(data)
     try:
@@ -173,15 +203,12 @@ def test_read_posix_chunk_keeps_keys_around_escape_sequences(data, expected):
         _close(r, w)
 
 
-def test_read_posix_chunk_plain_keys_and_eof():
+def test_read_posix_chunk_eof():
+    import os
     from snackbot.__main__ import read_posix_chunk
-    r, w = _pipe_with(b" ")
+    r, w = os.pipe()
+    os.close(w)
     try:
-        assert read_posix_chunk(r) == " "
-        import os
-        os.write(w, b"s\x1b[A")
-        assert read_posix_chunk(r) == "s"
-        os.close(w)
         assert read_posix_chunk(r) == ""
     finally:
         _close(r, w)

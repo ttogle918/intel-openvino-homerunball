@@ -6,6 +6,7 @@ import argparse
 import atexit
 import logging
 import os
+import queue
 import sys
 import threading
 from pathlib import Path
@@ -48,7 +49,8 @@ def build(cfg, env, dry_run=True):
             "frame_fn": lambda: skills.latest_frame(camera)}
 
 
-def handle_key(ch, controller, quit_fn):
+def handle_key(ch, controller, quit_fn, submit=None):
+    """submit(name): estop 외 명령을 넘길 곳. 없으면 인라인 실행 (key_loop는 명령 워커의 submit을 넘긴다)."""
     if ch in QUIT_CHARS:
         quit_fn()
         return "quit"
@@ -56,18 +58,31 @@ def handle_key(ch, controller, quit_fn):
     if name == "quit":
         quit_fn()
     elif name == "estop":
-        controller.command(name)  # 논블로킹이라 인라인
+        controller.command(name)  # 논블로킹이라 항상 인라인, 다른 무엇보다 먼저
     elif name is not None:
-        # restart는 팔을 홈으로 보내느라 수 초 걸린다. 키 스레드가 막히면 space를 못 읽는다.
-        threading.Thread(target=_run_command, args=(controller, name), daemon=True).start()
+        if submit is None:
+            controller.command(name)
+        else:
+            submit(name)
     return name
 
 
-def _run_command(controller, name):
-    try:
-        controller.command(name)
-    except Exception:
-        log.exception("명령 실행 실패: %s", name)
+def start_command_worker(controller):
+    """명령(restart는 수 초 걸린다)을 키 스레드 밖에서 순서대로 실행한다. (submit, stop)을 돌려준다."""
+    q = queue.Queue()
+
+    def run():
+        while True:
+            name = q.get()
+            if name is None:
+                return
+            try:
+                controller.command(name)
+            except Exception:
+                log.exception("명령 실행 실패: %s", name)
+
+    threading.Thread(target=run, name="key-commands", daemon=True).start()
+    return q.put, lambda: q.put(None)
 
 
 def read_windows_key(getch):
@@ -82,31 +97,16 @@ def read_windows_key(getch):
 def read_posix_chunk(fd):
     """fd에서 버퍼 없이 한 번 읽는다 (sys.stdin.read는 시퀀스 꼬리를 파이썬 버퍼에 숨겨 키로 새게 한다).
 
-    이스케이프 시퀀스(CSI·SS3·Alt+키)만 건너뛰고 나머지 글자는 모두 돌려준다.
-    끝이 잘린 시퀀스는 버린다. 반환: 키 문자열 · None(남은 글자 없음) · ""(EOF)."""
+    ESC가 하나라도 섞인 입력은 방향키·Alt 조합 등 시퀀스일 수 있어 꼬리가 키로 오인된다.
+    그런 입력에서는 space(비상정지)만 인정한다 (비상정지가 한 번 더 걸려도 안전).
+    반환: 키 문자열 · None(인정할 글자 없음) · ""(EOF)."""
     data = os.read(fd, 32)
     if not data:
         return ""
     text = data.decode("utf-8", errors="replace")
-    out, i, n = [], 0, len(text)
-    while i < n:
-        if text[i] != "\x1b":
-            out.append(text[i])
-            i += 1
-        elif i + 1 >= n:
-            break  # 홀로 남은 ESC
-        elif text[i + 1] == "[":  # CSI: 파라미터 0x30-0x3F, 중간 0x20-0x2F, 끝 0x40-0x7E
-            i += 2
-            while i < n and "0" <= text[i] <= "?":
-                i += 1
-            while i < n and " " <= text[i] <= "/":
-                i += 1
-            i += 1  # 끝 바이트 (없으면 i > n 이 되어 루프 종료)
-        elif text[i + 1] == "O":  # SS3: ESC O + 1글자
-            i += 3
-        else:  # Alt+키
-            i += 2
-    return "".join(out) or None
+    if "\x1b" not in text:
+        return text
+    return " " * text.count(" ") or None
 
 
 def enter_cbreak():
@@ -156,6 +156,14 @@ def key_loop(controller, quit_fn):
         print(f"경고: 터미널 키 입력을 켜지 못했어요 ({e}). space 비상정지 키가 꺼져 있으니 UI 버튼을 쓰세요.",
               file=sys.stderr, flush=True)
         return
+    submit, stop_worker = start_command_worker(controller)
+    try:
+        _read_keys(controller, quit_fn, submit)
+    finally:
+        stop_worker()
+
+
+def _read_keys(controller, quit_fn, submit):
     errors = 0
     while not controller.stopped:
         try:
@@ -181,7 +189,7 @@ def key_loop(controller, quit_fn):
             if controller.stopped:
                 break  # 종료 요청 뒤의 글자는 처리하지 않는다
             try:
-                handle_key(one, controller, quit_fn)
+                handle_key(one, controller, quit_fn, submit)
             except Exception:
                 log.exception("키 처리 실패: %r", one)
 
