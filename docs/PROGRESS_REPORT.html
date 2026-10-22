@@ -89,9 +89,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <div class="wrap">
 
 <h1>snackbot 진행 보고서</h1>
-<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 기준: 마지막 커밋 <code>e006840</code> (브랜치 <code>feat/robot-m4</code>)</p>
+<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-22 갱신 · 기준: 마지막 커밋 <code>a7f14ac</code> (브랜치 <code>feat/robot-m4</code>)</p>
 
-<div class="note"><b>작성 시점 이후 진행:</b> STT를 OpenVINO Whisper 로컬로 바꾸는 작업을 끝냈다 (커밋 <code>1284e6a</code>, <code>e006840</code>; <code>openvino-genai==2026.4.1.0</code>, 모델 <code>OpenVINO/whisper-small-int8-ov</code>). 측정(Windows TTS 한국어 문장 5개): small CPU 1.2~1.8초/문장, GPU 0.43~0.49초, 서버 워밍업 약 5.6초. TTS는 결정이 났다: 사용자가 Gemini 크레딧을 충전하고 Gemini TTS만 쓴다(OS TTS 예비는 만들지 않음). 충전 후 TTS → STT 왕복 검사를 할 예정이다. 아래 표와 숫자는 이 두 커밋을 반영했고, 나머지는 <code>4ac9524</code> 기준이다.</div>
+<div class="note"><b>이후 진행:</b> TTS가 해결됐다. 결제를 연결하지 않은 새 Google 프로젝트에서 Gemini API 키를 만들었더니 무료 등급으로 Gemini TTS가 동작한다(예전 키는 402 크레딧 없음). 공식 가격표상 Flash 계열 TTS는 무료 등급이 있다. 무료 등급 하루 호출 한도는 공식 수치를 확인하지 못했으므로, 리허설을 많이 하면 AI Studio의 Rate limits 화면에서 확인한다. <b>TTS → STT 왕복 검사 통과</b>(Gemini 음성을 로컬 Whisper small로 다시 인식): "과자 세 개 옮겨줘" → "과자 3개 옮겨줘"(TTS 4.9초, STT 0.9초), "조금만 더 힘내 줘, 부탁이야" → "조금만 더 힘내줘, 부탁이야."(4.7초, 1.1초), "오란다 다 옮겼어? 고마워 보리야" → "오란다 다 옮겼어. 고마워 보리야."(3.7초, 1.6초). 24kHz→16kHz 변환은 검사 스크립트에서만 했다. 이전에 STT 로컬 Whisper 전환(<code>1284e6a</code>, <code>e006840</code>, 진행 보고서 <code>a7f14ac</code>)을 끝냈다. UI에서 🎤 마이크·음성 재생은 사용자가 브라우저로 확인 중이다(아직 결과 없음).</div>
 
 <h2 id="intro">1. 프로젝트와 시연 시나리오</h2>
 <div class="card">
@@ -112,20 +112,20 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="summary">2. 전체 진척 요약</h2>
 <div class="grid">
-  <div class="stat"><b style="color:var(--done)">21</b><span>완료</span></div>
+  <div class="stat"><b style="color:var(--done)">22</b><span>완료</span></div>
   <div class="stat"><b style="color:var(--review)">5</b><span>리뷰 대기 (구현됨, 리뷰 안 함)</span></div>
-  <div class="stat"><b style="color:var(--wip)">2</b><span>진행 중</span></div>
+  <div class="stat"><b style="color:var(--wip)">3</b><span>진행 중</span></div>
   <div class="stat"><b style="color:var(--todo)">8</b><span>남음</span></div>
   <div class="stat"><b style="color:var(--hold)">1</b><span>보류</span></div>
   <div class="stat"><b>172</b><span>자동 테스트 통과 (<code>pytest -q</code>, 12.09초)</span></div>
 </div>
-<p class="sub" style="margin-top:8px">비교표(4장) 37개 행 기준. 소프트웨어 계획 Task 1~10은 모두 완료, 로봇 연결(M4)은 Task 1만 완료.</p>
+<p class="sub" style="margin-top:8px">비교표(4장) 39개 행 기준. 소프트웨어 계획 Task 1~10은 모두 완료, 로봇 연결(M4)은 Task 1만 완료.</p>
 
 <div class="card">
 <div class="prow"><span class="n">설계 마일스톤 M0~M7</span><div class="bar"><i class="d" style="width:75%"></i><i class="w" style="width:12.5%"></i></div><span class="v">완료 6 · 진행 1 · 남음 1</span></div>
 <div class="prow"><span class="n">소프트웨어 Task 1~10</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 10 / 10</span></div>
 <div class="prow"><span class="n">M4 로봇 Task 1~6</span><div class="bar"><i class="d" style="width:16.7%"></i></div><span class="v">완료 1 · 남음 5</span></div>
-<div class="prow"><span class="n">그 밖의 연결·정리 (13개)</span><div class="bar"><i class="d" style="width:30.8%"></i><i class="r" style="width:38.5%"></i><i class="w" style="width:7.7%"></i></div><span class="v">완료 4 · 리뷰 대기 5 · 진행 1 · 남음 2 · 보류 1</span></div>
+<div class="prow"><span class="n">그 밖의 연결·정리 (15개)</span><div class="bar"><i class="d" style="width:33.3%"></i><i class="r" style="width:33.3%"></i><i class="w" style="width:13.3%"></i></div><span class="v">완료 5 · 리뷰 대기 5 · 진행 2 · 남음 2 · 보류 1</span></div>
 </div>
 <p class="sub">범례: <span class="badge b-done">완료</span> <span class="badge b-review">리뷰 대기</span> <span class="badge b-wip">진행 중</span> <span class="badge b-todo">남음</span> <span class="badge b-hold">보류</span></p>
 
@@ -200,7 +200,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>대화 기억(최근 12개), 캐릭터 이름 "보리", 재시작 때 초기화</td><td><span class="badge b-review">리뷰 대기</span></td><td><code>b2fc422</code></td></tr>
 <tr><td>콘솔 키 단순화 (ESC 섞이면 space만, 명령 워커 1개) + 정지 때 대기열 비우기</td><td><span class="badge b-review">리뷰 대기</span></td><td><code>620cdfa</code> <code>b2f4c6e</code> (비상정지 경로라 opus 리뷰 필요)</td></tr>
 <tr><td>진입점에서 make_voice로 음성 설정 연결</td><td><span class="badge b-review">리뷰 대기</span></td><td><code>982692d</code></td></tr>
-<tr><td>음성 인식·합성을 Gemini로 (STT gemini-3.5-flash-lite, TTS gemini-2.5-flash-preview-tts)</td><td><span class="badge b-review">리뷰 대기</span></td><td><code>6db1ac4</code>. 계정 크레딧 소진(402)으로 실제 호출 미확인. STT는 로컬 Whisper가 먼저 쓰이고, TTS는 Gemini만 쓰기로 결정(크레딧 충전 후 왕복 검사 예정, OS TTS 예비 없음)</td></tr>
+<tr><td>음성 인식·합성을 Gemini로 (STT gemini-3.5-flash-lite, TTS gemini-2.5-flash-preview-tts)</td><td><span class="badge b-review">리뷰 대기</span></td><td><code>6db1ac4</code>. 구현은 리뷰 안 됨. 새 무료 키로 TTS 동작 확인(아래 행). STT는 로컬 Whisper가 먼저 쓰이고, TTS는 Gemini만 쓴다(OS TTS 예비 없음)</td></tr>
+<tr><td>Gemini TTS 무료 키 동작과 TTS → STT 왕복 검사</td><td><span class="badge b-done">완료</span></td><td>모델 <code>gemini-2.5-flash-preview-tts</code>(voice Leda) 유지. 문장 3개 모두 로컬 Whisper가 핵심 단어를 되받아 인식. 새 모델 <code>gemini-3.8-flash-tts</code>(4.6~5.0초), <code>gemini-3.8-flash-lite-tts</code>(3.0~3.8초)는 말투 지시문까지 소리 내어 읽어 채택 안 함. TTS는 대기열 스레드라 로봇 루프를 막지 않고 문장당 약 4초 늦게 들린다</td></tr>
+<tr><td>UI에서 🎤 마이크 입력과 음성 재생 확인</td><td><span class="badge b-wip">진행 중</span></td><td>사용자가 브라우저로 확인 중 (결과 아직 없음). dry-run <code>/stt</code> 업로드 → 인식 → 채팅 → 작업 시작 흐름은 확인함</td></tr>
 <tr><td>OpenAI STT/TTS 엔진 (예비)</td><td><span class="badge b-hold">보류</span></td><td><code>bd1c9ee</code>. 키가 401(무효)이라 예비로만 남김</td></tr>
 <tr><td>STT를 OpenVINO Whisper 로컬로 (결정 21번)</td><td><span class="badge b-done">완료</span></td><td>결정은 <code>4ac9524</code>, 구현 <code>1284e6a</code> <code>e006840</code> (small CPU 기본, Gemini 예비). 노트북에서 설치·속도 확인은 남음</td></tr>
 <tr><td>oranda_pickup ACT 학습 (Studio)</td><td><span class="badge b-wip">진행 중</span></td><td>Studio에서 학습 중. 끝나면 <code>exports/openvino</code>가 나온다 (외부 작업)</td></tr>
@@ -284,7 +286,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <details><summary>Task 1 프로젝트 기반 (config, 테스트 설정) <span class="badge b-done">완료</span></summary><div class="body">
 <p><span class="k">만든 것:</span> <code>snackbot/config.py</code>(config.yaml + .env 로드), <code>config.yaml</code>, <code>.env.example</code>(키 이름만), <code>requirements.txt</code>(작은 패키지만; openvino-genai, ultralytics, pyttsx3는 선택/lazy import), <code>tests/conftest.py</code>.</p>
 <p><span class="k">동작:</span> API 키는 <code>.env</code>(git 제외). 환경 변수가 <code>.env</code>보다 우선한다.</p>
-<p><span class="k">주의:</span> 이 PC의 Windows 환경 변수에 예전(무효) <code>GEMINI_API_KEY</code>가 남아 있으면 <code>.env</code>를 덮어써 400 API_KEY_INVALID가 난다 (사용자에게 지웠는지 확인 필요). minor: .env 파서가 인라인 주석과 빈 키를 그대로 둔다(수용).</p>
+<p><span class="k">주의:</span> 이 PC의 Windows 환경 변수에 예전 <code>GEMINI_API_KEY</code>가 남아 있으면(또는 키 삭제 전에 연 터미널이면) <code>.env</code>를 덮어쓴다. 사용자가 지웠으니 새 터미널에서 실행한다. minor: .env 파서가 인라인 주석과 빈 키를 그대로 둔다(수용).</p>
 <p><span class="k">확인:</span> <code>.venv/Scripts/python -m pytest tests/test_config.py -q</code></p>
 </div></details>
 
@@ -379,7 +381,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tbody>
 <tr><td>Claude (대화 LLM, <code>claude-opus-5-5</code>, effort low)</td><td><span class="badge b-done">동작 확인</span></td><td>1.8~3.6초. 대화 기억 테스트 통과</td></tr>
 <tr><td>NVIDIA (<code>nemotron-3.5-lightning-30b-a3b</code>)</td><td><span class="badge b-review">연결됨</span></td><td>추론 모드를 끄는 <code>extra_body</code> 필요(안 끄면 8초를 넘겨 규칙으로 떨어짐). 대화 2순위</td></tr>
-<tr><td>Gemini (STT/TTS)</td><td><span class="badge b-hold">402</span></td><td>계정 크레딧 소진. 요청 형식(특히 STT의 input_audio)은 충전 후 검증 필요. Windows 환경 변수의 낡은 키 주의</td></tr>
+<tr><td>Gemini (TTS)</td><td><span class="badge b-done">동작 확인</span></td><td>결제 연결 없는 새 프로젝트의 무료 키로 동작(예전 키는 402). 왕복 검사 통과. 무료 등급 하루 한도는 미확인(AI Studio Rate limits 화면에서 확인). Gemini STT는 로컬 Whisper 예비라 따로 검증 안 함. Windows 환경 변수/터미널의 낡은 키 주의</td></tr>
 <tr><td>OpenAI (STT/TTS 예비)</td><td><span class="badge b-hold">401</span></td><td>키 무효. 예비로만 남김</td></tr>
 <tr><td>NVIDIA 음성 NIM</td><td><span class="badge b-todo">미채택</span></td><td>OpenAI 호환 API 83개 모델에 STT/TTS 없음. Riva gRPC 어댑터가 따로 필요, 한국어 TTS 확인 못 함</td></tr>
 <tr><td>OpenVINO Whisper (로컬 STT)</td><td><span class="badge b-done">동작 확인</span></td><td>small CPU 1.2~1.8초/문장, GPU 0.43~0.49초. dry-run <code>/stt</code> 왕복 확인</td></tr>
@@ -408,7 +410,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>16</td><td>개수 세기</td><td>B → A 순서. 끝·성공 판정용</td></tr>
 <tr><td>17</td><td>그리퍼 정지</td><td>"닫힘 → 열림" 전이</td></tr>
 <tr><td>19</td><td>패키지</td><td><code>snackbot/</code> 하나, 화면은 <code>frontend/</code></td></tr>
-<tr><td>21</td><td>음성</td><td>STT는 OpenVINO Whisper 로컬, TTS는 Gemini(예비 OS TTS), 대화는 Claude 우선, 이름 "보리"</td></tr>
+<tr><td>21</td><td>음성</td><td>STT는 OpenVINO Whisper 로컬, TTS는 Gemini(OS TTS 예비 없음, 무료 키로 동작 확인), 대화는 Claude 우선, 이름 "보리"</td></tr>
 </tbody></table></div>
 <p class="sub">의논 기록 전체(1~21번): <code>docs/memo/2026-10-22-design-discussion.md</code>. 최종 기준은 <code>docs/superpowers/specs/2026-10-22-chat-ui-design.md</code>.</p>
 
@@ -429,9 +431,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <h3>다음 할 일 (순서)</h3>
 <ol>
 <li><b>STT 로컬 Whisper: 완료</b> (<code>1284e6a</code>, <code>e006840</code>). 남은 것은 시연 노트북에서 openvino-genai 설치, <code>hf download OpenVINO/whisper-small-int8-ov --local-dir models/whisper-small</code>, <code>python -m snackbot.stt</code>로 속도 확인, CPU/GPU 선택(device와 label을 같이 바꾼다).</li>
-<li><b>TTS 결정 완료:</b> 사용자가 Gemini 크레딧을 충전하고 Gemini TTS만 쓴다(OS TTS 예비는 만들지 않음). 충전 전에는 402라 소리 없이 진행한다.</li>
+<li><b>TTS 완료:</b> 무료 Gemini 키로 동작하고 왕복 검사도 통과했다(OS TTS 예비는 만들지 않음).</li>
+<li>UI에서 🎤 마이크 입력과 음성 재생 확인 (사용자가 확인 중).</li>
 <li>리뷰 안 된 커밋 리뷰 (<code>b2f4c6e</code>는 opus).</li>
-<li>Gemini 크레딧 충전 후 TTS → STT 왕복 검사(예: "과자 세 개 옮겨줘" 생성 → 로컬 Whisper 인식 → "옮겨" 포함 확인)와 UI 소리 확인.</li>
 <li>M4 Task 2~6 실행 (motion.py → robot.py → tools → 진입점 → 문서).</li>
 <li>M4가 끝나면 <code>feat/robot-m4</code>를 main에 병합, homerunball에 subtree push (origin에는 push하지 않음).</li>
 <li>챗봇 추가 후보: 긴 대화 요약, 서버 쪽 입력 길이 제한 (스트리밍은 보류).</li>
@@ -442,7 +444,9 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <li>(완료) 과거 stash@{0}과 rescue 백업은 사용자 승인으로 삭제했다.</li>
 <li>시연 전 Ubuntu 노트북 실제 터미널에서 방향키·Home·F키·ESC가 아무 동작도 안 하고 space만 비상정지인지 직접 확인.</li>
 <li>WinError 10014(이 Windows PC 한정) 원인을 조사할지 여부.</li>
-<li>Windows 환경 변수의 낡은 <code>GEMINI_API_KEY</code>는 사용자가 지웠다. 지우기 전에 연 터미널은 예전 값을 가지므로 새 터미널에서 실행.</li>
+<li>Windows 환경 변수의 낡은 <code>GEMINI_API_KEY</code>는 사용자가 지웠다. Claude Code나 터미널이 키 삭제 전에 열렸다면 예전 키를 물려받으므로 새 터미널에서 실행.</li>
+<li>Gemini 무료 등급 하루 호출 한도 확인 (리허설을 많이 하면 주의; AI Studio의 Rate limits 화면).</li>
+<li>무료 TTS 대안 조사 결과(채택 안 함, 기록용): edge-tts(키 없음, 한국어 SunHi/InJoon/Hyunsu, 1.1초, 비공식 엔드포인트, mp3), Supertonic 3(Supertone, 99M, 한국어 포함 31개 언어, ONNX라 OpenVINO로 온디바이스 가능, OpenRAIL-M) — 온디바이스 평가를 노릴 때의 후보.</li>
 <li>노트북의 OpenVINO 디바이스 문자열(GPU/NPU), 팔로워 포트, 카메라 번호, 그리퍼 열림/닫힘 기준값(<code>tools/gripper_stats.py</code>, <code>robot_probe</code>).</li>
 </ul>
 
