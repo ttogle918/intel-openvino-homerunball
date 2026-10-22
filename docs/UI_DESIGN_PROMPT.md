@@ -1,8 +1,5 @@
 # Claude Design 프롬프트: 과자 옮기기 로봇 관제 화면
 
-> 아래 코드 블록을 Claude Design에 그대로 붙여넣는다. 서버 연동 계약이 바뀌면 이 문서와
-> `docs/superpowers/specs/2026-10-22-chat-ui-design.md` 8장을 함께 고친다.
-
 ````text
 # 과자 옮기기 로봇 관제 화면 만들기
 
@@ -44,7 +41,7 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | acting(옮기
 - 버튼 활성화
   - 재개: REFUSING이거나 phase가 waiting_operator일 때만
   - 재시작: ESTOP일 때만
-  - 비상정지: IDLE / DONE / ESTOP이 아닐 때
+  - 비상정지: IDLE / DONE이 아닐 때, ESTOP이라도 phase가 returning(재시작으로 홈 복귀 중)이면 켠다
 - ESTOP일 때는 화면 전체를 빨간 테두리 등으로 확실히 표시
 
 ## 기술 조건 (반드시 지킬 것)
@@ -80,7 +77,7 @@ phase: idle | counting(개수 세는 중) | thinking(생각 중) | acting(옮기
 
 사이클 결과 (한 사이클이 끝날 때마다):
 {"type":"cycle","n":5,"result":"success","ms":{"vision":820,"llm":1100,"act":14200,"return":3100}}
-- result: success | fail | refuse | done
+- result: success | fail | refuse | done | estop
 - ms의 키는 일부 빠질 수 있음
 
 화면 → 서버

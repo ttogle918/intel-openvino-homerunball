@@ -52,7 +52,7 @@ function renderState() {
   const st = S.state;
   $('#btnResume').disabled = !(st === 'REFUSING' || S.phase === 'waiting_operator');
   $('#btnRestart').disabled = st !== 'ESTOP';
-  $('#btnEstop').disabled = !S.got || st === 'IDLE' || st === 'DONE' || st === 'ESTOP';
+  $('#btnEstop').disabled = !S.got || st === 'IDLE' || st === 'DONE' || (st === 'ESTOP' && S.phase !== 'returning');
 }
 
 function renderInfo(m) {
@@ -66,7 +66,7 @@ function renderInfo(m) {
 }
 
 function renderCycles() {
-  const real = S.cycles.filter((c) => c.result !== 'done');
+  const real = S.cycles.filter((c) => c.result !== 'done' && c.result !== 'estop');
   const ok = real.filter((c) => c.result === 'success').length;
   $('#succRate').textContent = real.length ? Math.round((ok / real.length) * 100) + '%' : '–';
   $('#succDetail').textContent = real.length ? `${ok}/${real.length}` : '';

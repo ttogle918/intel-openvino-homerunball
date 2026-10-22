@@ -30,7 +30,7 @@
 | 로봇/ACT | LeRobot + PyTorch, 2단계 OpenVINO | **physicalai 런타임 + OpenVINO 결과물** (처음부터) |
 | 진행 판정 (끝·성공) | VLM 개수 전후 비교 | **B → A 순서** (6.0절). B: 시작 개수 + 그리퍼 쥠 판정. A: counter 체인(YOLO → VLM → OpenCV)으로 개수 비교 |
 | LLM | 로컬 OpenVINO | **provider 체인**: API(OpenRouter/NVIDIA/유료) → (선택) 로컬 → 규칙 |
-| 진행자 키 | r / space / q | + `s` (작업 시작, `--no-ui`용) |
+| 진행자 키 | r / space / q | + `s` (작업 시작, `--no-ui`용), `h` (재시작: 홈 복귀 후 IDLE) |
 | 비상정지 | 미정 | **토크 유지**, 마지막 목표 자세 고정 |
 
 ## 3. 파일 구조
@@ -84,7 +84,7 @@ stateDiagram-v2
     DONE --> IDLE: 완료 멘트 후 자동
     WORKING --> ESTOP: space · UI 비상정지
     REFUSING --> ESTOP
-    ESTOP --> IDLE: restart (home_pose 복귀 후)
+    ESTOP --> IDLE: restart (h 키 · UI 재시작, home_pose 복귀 후)
 ```
 
 | 상태 | 채팅 허용 intent | 처리 |
@@ -266,7 +266,7 @@ target:
 
 - `GET /` → `frontend/index.html`, `frontend/` 정적 파일
 - `WS /ws`
-  - 서버 → 화면: `info`(target, models), `state`(state, phase, count, remaining, skill, vision_method, thresholds), `message`(role, text, source, ts), `cycle`(n, result, ms)
+  - 서버 → 화면: `info`(target, models), `state`(state, phase, count, remaining, skill, vision_method, thresholds), `message`(role, text, source, ts), `cycle`(n, result: success | fail | refuse | done | estop, ms)
   - 화면 → 서버: `chat`(text), `command`(resume | estop | restart)
   - 접속 직후: `info` 1개, `state` 1개, 최근 `message` 50개
   - 화면은 서버 메시지로만 그린다 (보낸 채팅도 서버 에코로 표시)
