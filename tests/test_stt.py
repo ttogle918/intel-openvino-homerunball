@@ -124,3 +124,46 @@ def test_stt_warmup_skips_missing_and_survives_failure(caplog):
 
 def test_wav_helper_still_works():
     assert len(wav_to_float32(make_wav())) == 160
+
+
+def test_generate_never_runs_concurrently(monkeypatch, fake_genai):
+    state = {"now": 0, "max": 0}
+    gate, started = threading.Event(), threading.Event()
+
+    def slow_generate(self, samples, **kwargs):
+        state["now"] += 1
+        state["max"] = max(state["max"], state["now"])
+        started.set()
+        gate.wait(2)
+        state["now"] -= 1
+        return "x"
+
+    monkeypatch.setattr(FakeWhisper, "generate", slow_generate)
+    p = OpenVINOProvider("m", kind="whisper")
+    t1 = threading.Thread(target=p.warmup)
+    t1.start()
+    assert started.wait(2)
+    t2 = threading.Thread(target=lambda: p.transcribe(make_wav()))
+    t2.start()
+    time.sleep(0.1)
+    assert state["now"] == 1  # 두 번째는 첫 generate가 끝나길 기다린다
+    gate.set()
+    t1.join()
+    t2.join()
+    assert state["max"] == 1
+
+
+def test_cli_missing_wav_continues(capsys, monkeypatch):
+    from snackbot import stt as stt_mod
+    class S:
+        chain = types.SimpleNamespace(transcribe=lambda wav: ("ok", "src"))
+        def warmup(self): pass
+    monkeypatch.setattr(stt_mod, "build_stt", lambda *a, **k: S())
+    good = make_wav()
+    import pathlib, tempfile
+    with tempfile.TemporaryDirectory() as d:
+        g = pathlib.Path(d) / "g.wav"
+        g.write_bytes(good)
+        assert stt_mod.main([str(pathlib.Path(d) / "nope.wav"), str(g), "--config", "config.yaml"]) == 0
+    out = capsys.readouterr().out
+    assert "nope.wav" in out and "ok · src" in out

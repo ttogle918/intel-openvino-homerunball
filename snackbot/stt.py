@@ -54,7 +54,11 @@ def main(argv=None):
         return 1
     stt.warmup()
     for path in a.wavs:
-        wav = Path(path).read_bytes()
+        try:
+            wav = Path(path).read_bytes()
+        except OSError as e:
+            print(f"{path}: 파일을 못 읽었어요 · {e}")
+            continue
         t0 = time.monotonic()
         try:
             text, source = stt.chain.transcribe(wav)

@@ -124,6 +124,7 @@ class OpenVINOProvider:
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self._pipe = None
         self._lock = threading.Lock()
+        self._run_lock = threading.Lock()  # 같은 파이프라인에서 generate가 동시에 돌지 않게 한다
 
     def _pipeline(self):
         with self._lock:  # 워밍업 스레드와 첫 요청이 겹쳐도 파이프라인은 하나만 만든다
@@ -143,7 +144,8 @@ class OpenVINOProvider:
         t0 = time.monotonic()
         pipe = self._pipeline()
         if self.kind == "whisper":
-            pipe.generate([0.0] * 8000, language=f"<|{self.language}|>", task="transcribe")
+            with self._run_lock:
+                pipe.generate([0.0] * 8000, language=f"<|{self.language}|>", task="transcribe")
         return time.monotonic() - t0
 
     def complete(self, messages, max_tokens=300, image=None):
@@ -157,14 +159,17 @@ class OpenVINOProvider:
             prompt = "\n".join(m["content"] for m in messages)
             bgr = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
             rgb = np.ascontiguousarray(bgr[:, :, ::-1])
-            return _text(pipe.generate(prompt, image=ov.Tensor(rgb[None]), max_new_tokens=max_tokens))
+            with self._run_lock:
+                return _text(pipe.generate(prompt, image=ov.Tensor(rgb[None]), max_new_tokens=max_tokens))
         prompt = pipe.get_tokenizer().apply_chat_template(messages, add_generation_prompt=True)
-        return _text(pipe.generate(prompt, max_new_tokens=max_tokens))
+        with self._run_lock:
+            return _text(pipe.generate(prompt, max_new_tokens=max_tokens))
 
     def transcribe(self, wav, language=None):
         language = language or self.language
-        return _text(self._pipeline().generate(wav_to_float32(wav), language=f"<|{language}|>",
-                                               task="transcribe"))
+        pipe, samples = self._pipeline(), wav_to_float32(wav)
+        with self._run_lock:
+            return _text(pipe.generate(samples, language=f"<|{language}|>", task="transcribe"))
 
 
 def _text(result):
