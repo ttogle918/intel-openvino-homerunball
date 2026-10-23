@@ -248,6 +248,6 @@ body[data-state=REFUSING] .state-badge{animation-name:shakeS}
 .ctrl-left .ctrl-small{flex:1;flex-direction:row;gap:.6rem;min-height:0}
 .ctrl-test{flex:none;display:flex;flex-direction:column;gap:.3rem}
 .ctrl-test-label{font-size:.95rem;font-weight:800;color:var(--ink2)}
-.ctrl-test-btns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem}
+.ctrl-test-btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));gap:.5rem}
 .btn-test{font-size:1.1rem;padding:.45rem .3rem;border-radius:.8rem;background:var(--amber-bg);color:var(--ink);box-shadow:.18rem .18rem 0 var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body[data-state=TESTING] .state-badge{background:var(--amber-bg);color:var(--amber)}
