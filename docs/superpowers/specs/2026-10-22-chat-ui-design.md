@@ -359,6 +359,20 @@ Studio(`192.168.0.6:7860`, 프로젝트 `dori-dori`)에서 읽은 설정 (조회
 - `tools/gripper_stats.py`(데이터셋 통계) 대신 `tools/robot_probe.py watch`로 실제 그리퍼 값을 보고 정한다. 포즈는 `poses.yaml` (`robot_probe save home|lift`).
 - 대사와 동작: 그 사이클 대사의 소리가 나기 시작하면 동작을 시작한다 (`voice.sync_timeout_s`, 실패·초과면 바로). 현장 절차: `docs/DEMO_RUNBOOK.md` 2-2절.
 
+## 11.7 확인된 사실 (2026-10-23, oranda 모델·데이터셋)
+
+로봇·카메라는 이 PC에 연결하지 않았다. 아래는 모델 파일, Studio 조회 API(GET만), 데이터셋 복사본에서 확인한 것이다. 노트북 실기는 아직 하지 않았다.
+
+- **모델:** `traind-model/pickup/exports/openvino` (git 제외). manifest 입력은 `state`(6), `images.follow`, `images.a`, `images.b`(각 3×720×1280, letterbox 384), 출력 `action`(100, 6), resnet18 ACT. 개발 PC OpenVINO CPU 추론은 청크당 140~230 ms. 녹화 대비 30스텝 예측 MAE는 1.3~2.6 (가만히 있기 기준 1.9~4.7).
+- **카메라 이름은 정책에 영향이 없다:** `images.a`와 `images.b`를 서로 바꿔도 출력이 bit 단위로 같다 (ACT가 카메라별 위치 임베딩 없이 토큰을 한 집합으로 다룬다). 이미지 집합만 맞으면 된다. 다만 `vision.camera`(A단계 개수 세기)와 UI 라벨은 이름에 의존한다.
+- **Studio:** 프로젝트 `oranda`(20ca705b-b5a7-435b-9e49-6ae515a68e11), 환경 77201d65-2793-4ae4-b57c-9100c3c40fd0, 데이터셋 `last`(2fad5952-320a-42e2-b2a1-73e367f64e82): 31 에피소드, 5~18초, task `"PIck up the Snack and place it in the empty tray"`, AV1 영상. 복사본이 `project/data/last`(311MB, `/data/` git 제외)에 있고, dori-dori 프로젝트에도 같은 복사본(`last`, `final_oranda_pickup`)이 있다.
+- **runtime-config:** 팔로워 캘리브레이션은 dori-dori 환경과 oranda 환경이 같다. 카메라 `a` = 번호 0 (USB 14.0-3, dori의 tower cam과 같은 장치), `b` = 번호 4 (14.0-4), `follow` = 번호 2 (시리얼 20240307110322). **a와 b는 시리얼이 같아(zvcai231100001) 번호로만 지정할 수 있다.** Studio PC 포트는 팔로워 `/dev/ttyACM1`, 리더 `/dev/ttyACM0`.
+- **config 반영:** `camera_map {a: tower cam, b: side cam, follow: follow cam}`, `follow cam`은 시리얼 지정, oranda·dori replay 데이터셋 id (dori는 `dori_dori_4`, 83f518ed-2d84-4807-ae01-5d7cf1904ea6, 에피소드 0), 그리퍼 `closed_below 56.0 / open_above 56.5 / grasp_min 52 / open_hold_s 0.15`.
+- **그리퍼 값(데이터셋 31개):** 홈·빈손 닫힘 50, 과자 쥠 54~56, 놓음 56~64. "작을수록 닫힘"이 데이터로 확인됐다. `snackbot.motion.GripperWatch`를 31개 궤적에 그대로 돌리면 23개는 놓는 순간에 정확히 멈추고 조기 정지는 0, 8개는 멈추지 않아 `max_time_s 20`으로 끝난다. 쥠 값과 `closed_below`의 여유가 0~0.1뿐이라 **`tools.robot_probe watch`로 실제 오란다를 쥔 값을 꼭 확인한다.**
+- **열린 문제 (리뷰 I-2):** 멈추지 않은 8개 중 7개가 `grasped=False`다. B단계(`vision.chain: []`)는 `success = r.grasped`라서 성공한 시도의 약 23%가 실패로 세어져 재시도할 수 있다(과자를 한 개 더 옮길 수 있고 count는 늘지 않는다). 후속 코드안: `closed_seen` 뒤에 `open_above`보다 큰 값을 한 번이라도 보면 `min_closed`를 고정한다(첫 닫힘 구간만 쥠 판정에 사용). 미적용, 사용자 결정 대기. 당장은 `오란다 1회` 결과 문구로 오판 빈도를 기록한다.
+- **기타 주의:** `lift_pose`는 그리퍼를 닫은 채 저장한다 (잘못 멈춰도 과자를 쥔 채 홈으로 온다). `max_time_s 20`은 가장 긴 에피소드(17.7초)보다 2.3초 길 뿐이라 첫 실기에서 timeout 이후 동작을 눈으로 확인한다.
+- **replays/:** 가짜 데이터를 실제 Studio 녹화로 교체했다 (`tools.fetch_replays`: oranda 에피소드 0 6.1초 카메라 3대, dori_dori_4 에피소드 0 10.5초 카메라 2대). dry-run `/api/replay`가 이를 재생한다.
+
 ## 12. 미확인 사항 (M0에서 확인)
 
 - ~~physicalai 런타임 설치 경로·시그니처~~ → 11.6에서 확인 (PyPI physicalai 0.3.0, SO101은 본체)

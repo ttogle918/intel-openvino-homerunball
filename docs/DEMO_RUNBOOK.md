@@ -47,19 +47,20 @@ gantt
 준비
 - [ ] 코드: homerunball 저장소 `feat/robot-m4`(또는 main) 받기
 - [ ] 로봇 패키지: `.venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt` (physicalai 0.3.0. SO101은 physicalai 본체 `physicalai.robot.so101`에 있어 플러그인은 필요 없다)
-- [ ] 정책 결과물 복사 (git 제외 폴더): `traind-model/dori-dori-model/exports/openvino/` (act.xml, act.bin, manifest.json). 과자 모델은 나오면 `traind-model/oranda-pickup-model/exports/openvino/`. **모델 폴더가 없는 정책은 건너뛰고 경고만 낸다** → 과자 모델 없이도 `home`·`dori_dori` 확인 가능
-- [ ] 카메라: `ls /dev/video*` (또는 `v4l2-ctl --list-devices`)로 번호를 보고 `config.yaml`의 `cameras.<이름>.device`를 고친다. 런타임은 config의 카메라를 **모두** 연다 → 사이드 캠이 아직 없으면 `side cam` 줄을 주석 처리한다
+- [ ] 정책 결과물 복사 (git 제외 폴더): `traind-model/dori-dori-model/exports/openvino/` (act.xml, act.bin, manifest.json). 과자 모델은 **`traind-model/pickup/exports/openvino/`** (개발 PC에 있다, 2026-10-23). **모델 폴더가 없는 정책은 건너뛰고 경고만 낸다** → 한쪽 모델만 있어도 `home`·그 정책 확인 가능
+- [ ] 카메라: `ls /dev/video*` (또는 `v4l2-ctl --list-devices`)로 번호를 보고 `config.yaml`의 `cameras.<이름>.device`를 고친다. 런타임은 config의 카메라를 **모두** 연다. Studio PC 기준 값은 이미 들어 있다: `tower cam`=0(학습 이름 a), `side cam`=4(b), `follow cam`=시리얼 20240307110322(follow). **tower·side는 시리얼이 같아(zvcai231100001) 번호로만 지정된다** → 노트북에서 번호가 다르면 `tools.cameras` 사진으로 확인해 고친다 (a/b를 바꿔도 정책 출력은 같지만 UI 라벨·A단계 개수 세기 카메라가 바뀐다)
+- [ ] 포트 주의: `/dev/ttyACMn` 번호는 꽂는 순서로 바뀐다. 리더 팔이 같이 꽂혀 있고 그쪽이 `robot.port`의 번호를 받으면 **리더 팔을 팔로워로 열어 토크를 켠다.** 리더는 빼 두거나, `ls -l /dev/serial/by-id/`로 팔로워 어댑터의 경로를 찾아 `robot.port`에 쓴다 (꽂는 순서와 무관하게 고정)
 
 | 순서 | 명령 | 확인할 것 → 고칠 곳 |
 |---|---|---|
-| 1 | `ls /dev/ttyACM*` | 팔로워 포트 → `config.yaml` `robot.port` (Studio 학습 PC는 `/dev/ttyACM1`, 리더 팔은 다른 번호) |
+| 1 | `ls -l /dev/serial/by-id/` (그리고 `ls /dev/ttyACM*`) | 팔로워 포트 → `config.yaml` `robot.port`. 지금 값 `/dev/ttyACM1`은 Studio PC 기준(팔로워 ACM1, 리더 ACM0)이라 노트북에서는 다를 수 있다. **by-id 경로 권장** (위 포트 주의 참고) |
 | 2 | `python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project 0d36a88a-0078-47f9-972e-d5dd3e94a262 --env 24aadb64-3457-411c-8411-48529eada534` | Studio에서 팔로워 캘리브레이션을 받아 `calibration/follower.yaml`에 저장 (조회만 한다). **녹화 때와 같은 캘리브레이션**이어야 정책이 맞게 움직인다 |
-| 3 | `python -m tools.robot_probe watch` | 연결 확인. 토크가 꺼져 손으로 움직일 수 있고 관절값 6개가 0.2초마다 찍힌다 (Ctrl+C로 끝, 끝나면 그 자세로 토크 유지). **그리퍼를 쥐었다 폈다 하며 값이 작을수록 닫히는지** 확인. 과자 모델을 쓸 때는 열림·닫힘·과자를 쥔 값으로 `skills.gripper`의 `closed_below`, `open_above`, `grasp_min`을 정한다 (과자 모델이 없으면 비워 둬도 된다) |
-| 4 | 팔을 손으로 홈 자세에 두고 `python -m tools.robot_probe save home`, 과자 위로 들어 올린 자세에서 `save lift` | `poses.yaml`에 `home_pose`, `lift_pose` 저장 (5번 읽어 평균) |
+| 3 | `python -m tools.robot_probe watch` | 연결 확인. 토크가 꺼져 손으로 움직일 수 있고 관절값 6개가 0.2초마다 찍힌다 (Ctrl+C로 끝, 끝나면 그 자세로 토크 유지). **그리퍼를 쥐었다 폈다 하며 값이 작을수록 닫히는지** 확인 (데이터셋에서는 확인됨). `skills.gripper`는 oranda 데이터셋 31개에서 이미 채워져 있다 (`closed_below 56.0`, `open_above 56.5`, `grasp_min 52`, `open_hold_s 0.15`). 데이터상 홈·빈손 닫힘 50, 과자 쥠 54~56, 놓음 56~64로 폭이 좁고 쥠 값과 `closed_below`의 여유가 0~0.1뿐이다 → **실제 오란다를 쥐고 `watch` 값을 읽어** 쥔 값이 56.0 아래인지, 놓을 때 56.5 위로 올라가는지 확인하고 아니면 조정한다 |
+| 4 | 팔을 손으로 홈 자세에 두고 `python -m tools.robot_probe save home`, 과자 위로 들어 올린 자세에서 `save lift` (**lift는 그리퍼를 닫은 채 저장**: 놓기 감지를 잘못해도 과자를 쥔 채 홈으로 돌아와 떨어뜨리지 않는다) | `poses.yaml`에 `home_pose`, `lift_pose` 저장 (5번 읽어 평균) |
 | 5 | `python -m snackbot.robot home` | 다른 자세에서 홈으로 천천히(`skills.move_s`) 이동. 도중에 **Ctrl+C → 그 자리에서 토크 유지, 팔이 떨어지지 않는지** 확인 |
 | 6 | `python -m snackbot.robot dori_dori` | 실제 ACT 정책이 노트북에서 OpenVINO로 도는 첫 확인 (카메라 `tower cam`·`follow cam`). 시작할 때 정책 입력을 한 번 미리 돌려 보므로, 카메라 이름이 모델과 다르면 바로 안내와 함께 멈춘다 → `skills.dori_dori.camera_map` 또는 `cameras` 이름 확인. 도리도리 뒤 홈 복귀 |
-| 7 | (과자 모델이 나오면) `manifest.json`의 `images.<이름>` 확인 → 다르면 `skills.oranda_pickup.camera_map` | Studio 카메라 이름과 config 이름 맞추기 |
-| 8 | (과자 모델) `python -m snackbot.robot oranda_pickup` | 집기 → 놓기(그리퍼 닫힘→열림) 감지 → lift → home. 출력의 `stop_reason`이 `gripper_open`, `grasped`가 맞는지 |
+| 7 | (과자 모델) `manifest.json`의 `images.<이름>` 확인 | 입력은 `images.follow`, `images.a`, `images.b` (3×720×1280). config에 `camera_map {a: tower cam, b: side cam, follow: follow cam}`가 이미 있다 |
+| 8 | (과자 모델) `python -m snackbot.robot oranda_pickup` | 집기 → 놓기(그리퍼 닫힘→열림) 감지 → lift → home. 출력의 `stop_reason`이 `gripper_open`, `grasped`가 맞는지. 개발 PC 시뮬레이션(31개 녹화): 23개 놓는 순간 정지, 조기 정지 0, 8개는 정지 없이 `max_time_s 20`까지(timeout, 그리퍼를 유지한 채 lift). 첫 실행에서 timeout 이후 동작도 눈으로 본다 |
 | 9 | `python -m snackbot` (실제 로봇 + UI, M4 Task 5 이후) | 채팅 시작 → 옮기기 → 거부(도리도리) → 달래기 → 완료 전체 흐름 |
 
 - 비상정지는 토크를 켠 채 그 자리를 유지한다. 단, 프로그램을 끝낼 때(Ctrl+C 뒤 종료)는 SO101이 그 순간의 실제 자세를 목표로 다시 잡고 포트를 닫는다.
@@ -74,6 +75,7 @@ gantt
 - [ ] 값싼 같은 모델 카메라는 시리얼이 비거나 서로 같을 수 있다 (현장 확인). 그러면 번호로 지정하고, USB 포트를 바꿔 꽂으면 이 절차를 다시 한다
 
 **녹화 받기 (로봇이 안 될 때 대비, Studio가 켜진 PC와 같은 네트워크에서)**
+- 개발 PC에서는 이미 받아 두었다 (2026-10-23, `replays/`는 git 제외 → 노트북에서는 아래 명령으로 다시 받는다). config에 id가 들어 있다: oranda 데이터셋 `last` 2fad5952-320a-42e2-b2a1-73e367f64e82 에피소드 0 (6.1초, 카메라 3대), dori_dori 데이터셋 `dori_dori_4` 83f518ed-2d84-4807-ae01-5d7cf1904ea6 에피소드 0 (10.5초, 카메라 2대). 영상은 AV1이다. 이전 가짜 데이터는 치워 두었다 (삭제는 안 함)
 - [ ] Studio에서 보여 줄 에피소드를 연다 → 주소창 `/projects/<프로젝트>/datasets/<데이터셋 id>/episodes/<번호>`에서 id와 번호를 `config.yaml` `skills.oranda_pickup.replay`, `skills.dori_dori.replay`에 쓴다 (`{dataset: <id>, episode: <번호>}`)
 - [ ] `.venv/bin/python -m tools.fetch_replays --studio http://192.168.0.6:7860 --skill oranda_pickup` (dori_dori도 같은 방법. 조회만 한다. `--dataset`, `--episode`로 config 값을 덮어쓸 수 있다) → `replays/<스킬>/episode.json` + 카메라별 `.mp4`
 - [ ] 카메라 이름이 config와 다르게 학습됐으면(`camera_map`) 자동으로 config 이름으로 바꿔 저장한다. "config cameras에 없어요" 주의가 나오면 `camera_map` 확인
@@ -107,6 +109,8 @@ gantt
 **오란다 1회로 그리퍼 기준값 맞추기 (과자 모델이 나오면)**
 - [ ] `오란다 1회` 결과가 `놓기 감지로 끝남 · 쥠 성공`인지 본다
 - [ ] `시간 초과로 끝남`이면 `skills.gripper.open_above`·`closed_below`·`open_hold_s` 또는 `skills.oranda_pickup.max_time_s`를, 과자를 쥐었는데 `쥠 없음`이면 `grasp_min`을 조정한다 (`python -m tools.robot_probe watch` 값 참고)
+- 현재 값(56.0 / 56.5 / 52 / 0.15)은 녹화 31개 기준이다. 쥠 값과 `closed_below`의 여유가 0~0.1뿐이라 더 큰 과자는 쥔 값이 56 이상이 되어 "닫힘"으로 안 잡히고 timeout으로 끝날 수 있다 (안전한 방향). 첫 몇 번은 결과 문구(놓기 감지 / 시간 초과, 쥠 성공 / 없음)를 기록해 오판 빈도를 본다
+- **알려진 문제(미수정):** 녹화 시뮬레이션에서 정지하지 않은 8개 중 7개가 `쥠 없음`이었다. 과자 옮기기(B단계)는 `쥠 성공`을 성공으로 세므로 성공한 시도의 약 23%가 실패로 기록돼 재시도(과자를 한 개 더 옮김, 개수는 안 늘어남)할 수 있다. 잦으면 진행자가 `r`로 개입하고, 후속 코드 수정(첫 닫힘 구간만 쥠 판정)은 사용자 결정 대기
 
 ## 3. 진행자 대본 예시
 1. "이 로봇은 과자 공장 직원입니다. 오란다만 골라내요." → 시작
