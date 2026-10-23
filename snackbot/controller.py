@@ -68,6 +68,7 @@ class Controller:
         self.refuse_total = 0         # 거부 시점을 정하는 전체 개수: 맨 처음 센 값 (되살림으로 total이 늘어도 바꾸지 않는다)
         self._total_counted = False   # total을 카메라로 정했는가
         self._revived = False         # "0인데 카메라가 아직 본다"로 남은 개수를 되살렸는가 (작업당 한 번)
+        self._higher_streak = 0       # 사이클 앞 세기가 남은 개수보다 많이 본 연속 횟수 (2번째에 정정, 아니면 0으로)
         self.vision_method = "estimate"
         self.vision_choice = "auto"   # 개수 세기 방법: auto(체인 순서) | off(B단계) | counter 이름
         self.last_count = None        # 마지막 "지금 세기" 결과 {n, method, ms, ts} (화면 표시용)
@@ -220,6 +221,7 @@ class Controller:
                 self._gen += 1
                 self.remaining = self.total = self.refuse_total = n or self.initial_count
                 self.refused = self._total_counted = self._revived = False
+                self._higher_streak = 0
                 self.count = self.retries = 0
                 self.skill, self.vision_method, self.last_boxes = None, "estimate", None
                 self.state, self.phase = WORKING, "idle"
@@ -491,6 +493,7 @@ class Controller:
                             and self._gen == gen and self.state == WORKING):
                         # 0까지 줄었는데 카메라는 아직 본다 (첫 세기 과소·잘못 쥠): 작업당 한 번만 되살려 이어서 한다
                         self._revived = revived = True
+                        self._higher_streak = 0
                         # 이미 옮긴 수(= total, remaining이 0이었다) 뒤에 이어 센다: LLM의 this_item이 "세 번째"로 이어진다
                         # (거부 시점 refuse_total은 처음 센 값 그대로: 되살린 몫으로 새 거부를 만들지 않는다)
                         self.total += seen
@@ -615,6 +618,7 @@ class Controller:
         t0 = time.monotonic()
         c = self._sample(gen, only)
         ms["vision"] = ms.get("vision", 0) + _ms(t0)
+        corrected = 0
         with self._lock:
             if self._gen != gen:  # 세는 동안 세션이 바뀌었다: 이전 세션의 결과로 새 세션을 덮지 않는다
                 return None
@@ -626,10 +630,27 @@ class Controller:
                 if set_total and not self._total_counted and self.count == 0 and not self.refused:
                     self._total_counted = True    # 작업의 첫 개수 세기 성공(옮기기 전): 이 값이 전체 개수 (한 번만)
                     self.total = self.refuse_total = self.remaining = c.n
-                else:
-                    if c.n > self.remaining:      # 깜빡임이나 손이 보인 것: 남은 개수는 늘리지 않는다
+                elif c.n > self.remaining:
+                    if self.remaining > 0 and self._higher_streak >= 1:
+                        # 사이클 앞 세기가 연속 두 번 더 많이 봤다: 한 번의 깜빡임·손이 아니라 처음이 틀린 것 (정정)
+                        # (남은 개수 0은 되살림 규칙이 따로 맡는다: 겹쳐 적용하지 않는다)
+                        self._higher_streak = 0
+                        grow = c.n - self.remaining
+                        if self.count == 0 and not self.refused:
+                            self.total = self.refuse_total = c.n   # 아직 하나도 안 옮겼다: 첫 개수를 바로잡는다
+                        else:
+                            self.total += grow                      # 번호는 이어 센다 (refuse_total은 그대로)
+                        self.remaining = c.n
+                        corrected = c.n
+                    else:
+                        self._higher_streak += 1      # 한 번만 더 많이 보인 것은 무시한다 (깜빡임·손)
                         log.info("카메라가 남은 개수(%d)보다 많이 봤어요: %d (남은 개수 유지)", self.remaining, c.n)
+                else:
+                    self._higher_streak = 0
                     self.remaining = min(c.n, self.remaining)
+        if corrected:
+            log.info("카메라에 %d개 보여 남은 개수를 고칩니다 (연속 두 번)", corrected)
+            self.notify(f"카메라에 {corrected}개 보여요. 남은 개수를 {corrected}개로 고칠게요")
         self._publish()
         return c.n
 

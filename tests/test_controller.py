@@ -296,6 +296,53 @@ def test_pre_count_higher_than_remaining_keeps_remaining(cfg):
     assert c.step() == "success" and (c.remaining, c.count) == (1, 2)    # 앞 세기 6(손)은 무시
 
 
+def test_field_sequence_first_count_one_then_two_two_corrects_total_before_move(cfg):
+    # 실기: 첫 세기 1(손이 보임), 이어 2, 2: 연속 두 번 더 많이 보면 아직 안 옮겼으니 첫 개수를 2로 바로잡는다
+    cfg["decision"]["refuse"] = "half"
+    c, ev = make(cfg, FakeSkills(grasps=[False, False, False]),
+                 vision=FakeVision(*[Count(n, "opencv") for n in (1, 1, 2, 2, 2, 2)]))   # 사이클마다 (앞, 뒤)
+    c.chat("과자 옮겨줘")
+    assert c.step() == "fail" and (c.total, c.remaining) == (1, 1)       # 첫 세기 1(손이 보임)
+    assert c.step() == "fail" and (c.total, c.remaining) == (1, 1)       # 앞 세기 2 (첫 번째 높음): 무시
+    assert c.step() == "fail"                                            # 앞 세기 2 (두 번째 높음): 정정
+    assert (c.total, c.refuse_total, c.remaining, c.count) == (2, 2, 2, 0)
+    assert c.snapshot()["refuse_at"] is None                             # 2개 기준: 거부 시점 없음
+    assert any("남은 개수를 2개로 고칠게요" in e.get("text", "") for e in ev if e["type"] == "message")
+
+
+def test_single_higher_pre_count_is_ignored_and_streak_resets(cfg):
+    cfg["decision"]["max_retry"] = 9
+    c, _ = make(cfg, FakeSkills(grasps=[False] * 4),
+                vision=FakeVision(*[Count(n, "opencv") for n in (2, 2, 3, 3, 2, 2, 3, 3)]))   # 사이클마다 (앞, 뒤)
+    c.chat("과자 옮겨줘")
+    c.step()
+    c.step()                                  # 앞 세기 3: 한 번만 높다
+    assert c._higher_streak == 1 and (c.total, c.remaining) == (2, 2)
+    c.step()                                  # 앞 세기 2: 연속이 끊긴다
+    assert c._higher_streak == 0
+    c.step()                                  # 앞 세기 3: 다시 한 번만
+    assert (c.total, c.remaining, c._higher_streak) == (2, 2, 1)
+
+
+def test_increase_after_moves_grows_total_but_not_refuse_total(cfg):
+    cfg["decision"]["refuse"] = "half"
+    seq = [3, 2, 4, 4, 4, 4]
+    c, _ = make(cfg, FakeSkills(grasps=[True, False, False]), vision=FakeVision(*[Count(n, "opencv") for n in seq]))
+    c.chat("과자 옮겨줘")
+    assert c.step() == "success" and (c.total, c.remaining, c.count) == (3, 2, 1)
+    c.step()                                  # 앞 세기 4 (첫 번째 높음)
+    assert c.total == 3 and c.remaining == 2
+    c.step()                                  # 앞 세기 4 (두 번째 높음): total 3 + (4 - 2)
+    assert (c.total, c.remaining, c.refuse_total) == (5, 4, 3) and c.count == 1
+
+
+def test_higher_streak_resets_on_new_task_and_revive(cfg):
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision())
+    c._higher_streak = 1
+    c.chat("과자 옮겨줘")
+    assert c._higher_streak == 0
+
+
 def test_fail_without_release_keeps_remaining(cfg):
     c, _ = make(cfg, FakeSkills(grasps=[False]), vision=FakeVision(Count(2, "opencv"), Count(4, "opencv")))
     c.chat("과자 옮겨줘")
