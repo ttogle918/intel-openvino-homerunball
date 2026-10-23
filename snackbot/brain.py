@@ -176,7 +176,7 @@ class Brain:
             info = {"remaining": remaining, "count": count, "allowed": allowed, "speech_text": speech_text}
             if total is not None:   # 이번 작업에서 이미 옮긴 수 (실패·재개 뒤에도 맞는 순번 대사용, 코드가 센 값)
                 moved = max(0, total - remaining)
-                info.update(moved=moved, this_item=moved + 1)
+                info.update(moved=moved, this_item=min(moved + 1, total))
             if half:
                 info.update(total=total, refuse_at=None if refused else at)
             user = json.dumps(info, ensure_ascii=False)

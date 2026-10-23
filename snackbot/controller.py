@@ -44,7 +44,8 @@ class Controller:
         self.target_name = cfg["target"]["name"]
         self.initial_count = cfg["target"]["initial_count"]
         self.camera = cfg["vision"].get("camera", "front")
-        self.frames = max(1, int(cfg["vision"].get("frames") or 5))     # 한 번 셀 때 읽는 프레임 수 (중앙값)
+        frames = cfg["vision"].get("frames")
+        self.frames = max(1, 5 if frames is None else int(frames))      # 한 번 셀 때 읽는 프레임 수 (중앙값, 0 이하면 1)
         gap = cfg["vision"].get("frame_gap_s")
         self.frame_gap_s = 0.1 if gap is None else float(gap)
         sync = (cfg.get("voice") or {}).get("sync_timeout_s")
@@ -63,6 +64,7 @@ class Controller:
         self.total = 0                # 이번 작업의 전체 개수 (시작 개수, 첫 개수 세기 성공 때 한 번 교체)
         self.refused = False          # 이번 작업에서 이미 거부했는가 (작업당 한 번, 재개로는 초기화하지 않는다)
         self._total_counted = False   # total을 카메라로 정했는가
+        self._revived = False         # "0인데 카메라가 아직 본다"로 남은 개수를 되살렸는가 (작업당 한 번)
         self.vision_method = "estimate"
         self.vision_choice = "auto"   # 개수 세기 방법: auto(체인 순서) | off(B단계) | counter 이름
         self.last_count = None        # 마지막 "지금 세기" 결과 {n, method, ms, ts} (화면 표시용)
@@ -214,7 +216,7 @@ class Controller:
             if not busy:
                 self._gen += 1
                 self.remaining = self.total = n or self.initial_count
-                self.refused = self._total_counted = False
+                self.refused = self._total_counted = self._revived = False
                 self.count = self.retries = 0
                 self.skill, self.vision_method, self.last_boxes = None, "estimate", None
                 self.state, self.phase = WORKING, "idle"
@@ -480,8 +482,18 @@ class Controller:
             self._set_phase("counting")
             seen = self._count(ms, gen, set_total=True, only=count_args[1])
             if seen is not None:
+                revived = False
                 with self._lock:
-                    n_before = min(seen, self.remaining)   # 깜빡임·손으로 늘어 보여도 남은 개수는 늘리지 않는다
+                    if (self.remaining == 0 and seen > 0 and not self._revived
+                            and self._gen == gen and self.state == WORKING):
+                        # 0까지 줄었는데 카메라는 아직 본다 (첫 세기 과소·잘못 쥠): 작업당 한 번만 되살려 이어서 한다
+                        self._revived = revived = True
+                        self.remaining = seen
+                    n_before = self.remaining   # 깜빡임·손으로 늘어 보여도 남은 개수는 늘리지 않는다 (_count가 이미 min)
+                if revived:
+                    log.info("남은 개수 0인데 카메라에 %d개 보여 이어서 합니다 (작업당 1회)", seen)
+                    self.notify(f"카메라에 아직 {seen}개 보여요. 이어서 옮길게요")
+                    self._publish()
         else:
             with self._lock:
                 self.vision_method = "estimate"   # 끔: 카메라 대신 추정 (화면에 지난 counter 이름이 남지 않게)
@@ -576,7 +588,7 @@ class Controller:
                 raise error
             return None
         ns = sorted(c.n for c in results)
-        median = ns[(len(ns) - 1) // 2]
+        median = ns[len(ns) // 2]   # 짝수 개면 위쪽 중앙값 (남은 개수가 일찍 0이 되는 쪽이 위험하다)
         return next(c for c in results if c.n == median)
 
     def _count(self, ms, gen, set_total=False, only=None, update_remaining=True):
@@ -636,7 +648,8 @@ class Controller:
                 self.remaining, self.vision_method, self.last_boxes = c.n, c.method, c.boxes
                 self.last_count = {"n": c.n, "method": c.method, "ms": ms, "ts": self.clock()}
         if c is None:
-            self.notify("개수를 세지 못했어요" + (f": {error}" if error else ""))
+            if error is not None or self.generation() == gen:   # 세션이 바뀌어 중단된 것은 알리지 않는다
+                self.notify("개수를 세지 못했어요" + (f": {error}" if error else ""))
         elif current:
             self._publish()
         try:
@@ -676,8 +689,6 @@ class Controller:
                     self.remaining = max(0, n_before - 1) if seen is None else min(seen, n_before - 1)
                 else:
                     self.retries += 1
-                    if seen is not None:
-                        self.remaining = min(seen, n_before)
                 waiting = not success and self.retries > self.decision["max_retry"]
                 self.phase = "waiting_operator" if waiting else "idle"
         if aborted:

@@ -28,6 +28,8 @@ class FakeSkills:
         grasped = self.grasps.pop(0) if self.grasps else True
         if on_phase:
             on_phase("returning")
+        if grasped == "no_release":   # 쥐었지만 놓기를 감지하지 못한 채 시간 초과
+            return RunResult("timeout", True, 1)
         return RunResult("gripper_open" if grasped else "timeout", grasped, 1)
 
     def latest_frame(self, cam=None):
@@ -209,7 +211,67 @@ def test_multi_frame_count_ignores_failed_frames(cfg):
     cfg["vision"]["frames"], cfg["vision"]["frame_gap_s"] = 3, 0
     c, _ = make(cfg, vision=FrameVision(3, None, 2))
     c.count_now()
-    assert c.last_count["n"] == 2        # [2, 3]의 아래쪽 중앙값
+    assert c.last_count["n"] == 3        # [2, 3]의 위쪽 중앙값 (일찍 0이 되는 쪽을 피한다)
+
+
+def test_sample_frame_exception_skipped_then_raises_when_all_fail(cfg):
+    cfg["vision"]["frames"], cfg["vision"]["frame_gap_s"] = 3, 0
+
+    class Boom(FrameVision):
+        def count(self, frame, only=None):
+            if not self.counts:
+                raise RuntimeError("프레임 오류")
+            n = self.counts.pop(0)
+            if n == "x":
+                raise RuntimeError("프레임 오류")
+            return Count(n, "opencv", [[n]])
+    c, _ = make(cfg, vision=Boom("x", 2, "x"))
+    assert c._sample(c.generation()).n == 2             # 일부 예외는 삼킨다
+    c2, _ = make(cfg, vision=Boom("x", "x", "x"))
+    with pytest.raises(RuntimeError):                   # 전부 실패하면 올린다
+        c2._sample(c2.generation())
+
+
+def test_frames_zero_is_one_and_gap_default(cfg):
+    cfg["vision"]["frames"] = 0
+    c, _ = make(cfg)
+    assert c.frames == 1
+
+
+def test_grasped_without_release_and_no_decrease_is_fail(cfg, tmp_path):
+    # 쥐었지만 놓기(gripper_open) 미감지(timeout) + 개수 감소 없음 -> 실패 (판정은 vision)
+    c, _ = make(cfg, FakeSkills(grasps=["no_release"]),
+                vision=FakeVision(Count(3, "opencv"), Count(3, "opencv")), log_dir=tmp_path)
+    c.chat("과자 옮겨줘")
+    assert c.step() == "fail" and (c.count, c.remaining) == (0, 3)
+    assert _cycles(tmp_path)[0]["judge"] == "vision"
+
+
+def test_zero_remaining_but_camera_sees_more_revives_once_then_done(cfg):
+    # 실기 증상: 처음 2로 읽혔지만 카메라는 계속 3 + 그리퍼는 매번 쥠·놓음 -> 0이 돼도 한 번은 이어서 한다
+    c, ev = make(cfg, FakeSkills(), vision=FakeVision(*[Count(n, "opencv") for n in (2,) + (3,) * 14]))
+    c.chat("과자 옮겨줘")
+    results = [c.step() for _ in range(6)]
+    assert results[:2] == ["success", "success"] and c.total == 2
+    assert results[2] == "success"                                   # 0인데 3개 보임: 되살려 계속
+    assert any("카메라에 아직 3개" in e.get("text", "") for e in ev if e["type"] == "message")
+    assert results[3:5] == ["success", "success"]
+    assert results[5] == "done" and c.state == "IDLE"                # 두 번째 0은 그대로 done
+
+
+def test_undercount_first_then_revive_covers_real_three(cfg):
+    # 첫 세기 과소(실제 3, 2로 읽힘): 0이 돼도 카메라가 보는 만큼 이어서 옮기고 끝낸다
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision(*[Count(n, "opencv") for n in (2, 3, 3, 2, 2, 1, 1, 0, 0)]))
+    c.chat("과자 옮겨줘")
+    results = [c.step() for _ in range(5)]
+    assert results == ["success"] * 4 + ["done"] and c.state == "IDLE"
+
+
+def test_revive_flag_resets_on_new_task(cfg):
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision())
+    c._revived = True
+    c.chat("과자 옮겨줘")
+    assert c._revived is False
 
 
 def test_multi_frame_start_count_flicker_median_sets_total(cfg):
