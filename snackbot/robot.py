@@ -108,6 +108,8 @@ def load_so101():
 
 
 def build_runtime(cfg, action_source, tap):
+    from snackbot.wincam import patch_camera_query
+    patch_camera_query()   # Windows 카메라 목록 JSON 버그 보정 (UVCCamera 열기 전)
     from physicalai.capture import UVCCamera
     from physicalai.runtime import RobotRuntime
 
