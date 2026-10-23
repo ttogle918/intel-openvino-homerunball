@@ -170,8 +170,8 @@ class Controller:
             hist = list(self.history)  # 현재 발화를 넣기 전 스냅샷 (brain이 현재 발화는 따로 붙인다)
         self._message("user", text, source)
         with self._lock:
-            state, count, gen = self.state, self.count, self._gen
-        r = self.brain.chat(text, state, count, history=hist)
+            state, count, gen, phase = self.state, self.count, self._gen, self.phase
+        r = self.brain.chat(text, state, count, history=hist, phase=phase)
         if r["intent"] == "dori_dori":
             # 버튼과 같은 경로 (대기 상태에서만, 횟수·피로도 미반영). LLM을 기다리는 사이 세션이 바뀌었으면 취소.
             # 거부되면 대사 없이 거부 이유만 남는다
@@ -738,18 +738,36 @@ class Controller:
                 else:
                     self.retries += 1
                 waiting = not success and self.retries > self.decision["max_retry"]
-                self.phase = "waiting_operator" if waiting else "idle"
+                self.phase = "acting" if waiting else "idle"   # 연속 실패: 투덜대고 도리도리한 뒤 waiting_operator
         if aborted:
             self._log_cycle("estop", ms, d, r)
             return "estop"
         if waiting:
-            self.notify("도와주세요! 확인한 뒤 재개를 눌러 주세요.")
+            self._give_up(gen)
         elif not success:
             self._message("robot", self.brain.line("fail"))
         self._publish()
         result = "success" if success else "fail"
         self._log_cycle(result, ms, d, r, judge=judge)
         return result
+
+    def _give_up(self, gen):
+        """연속으로 놓쳤다: 투덜대는 대사 → (소리가 시작되면) 도리도리 1번 → 진행자 확인 대기.
+        횟수·피로도·작업당 거부(refused)에는 넣지 않는다. 비상정지·세션 변경이면 도중에 그만둔다."""
+        started = self._message("robot", self.brain.line("give_up"))
+        self._wait_speech(started, gen)
+        with self._lock:
+            go = self.state == WORKING and self._gen == gen
+        if go:
+            try:
+                self.skills.run("dori_dori")
+            except Exception as e:
+                log.warning("연속 실패 도리도리 실패: %s", e)
+        with self._lock:
+            if self.state != WORKING or self._gen != gen:
+                return   # 비상정지·새 작업: 대기 상태로 덮지 않는다
+            self.phase = "waiting_operator"
+        self.notify("두 번 놓쳤어요. 확인한 뒤 \"이어서 해줘\"라고 하거나 재개를 눌러 주세요.")
 
     def _finish(self, ms, d, gen):
         with self._lock:

@@ -10,7 +10,7 @@ SKILLS = ("oranda_pickup", "dori_dori", "done")
 MAX_N = 20
 
 START_WORDS = ("옮겨", "집어", "시작", "일해")
-RESUME_WORDS = ("조금만", "부탁", "힘내", "한 번만", "한번만")
+RESUME_WORDS = ("조금만", "부탁", "힘내", "한 번만", "한번만", "이어서", "계속", "재개")
 DORI_WORDS = ("도리도리", "고개 저어", "고개를 저어")
 KOREAN_N = {"하나": 1, "한": 1, "둘": 2, "두": 2, "셋": 3, "세": 3, "넷": 4, "네": 4, "다섯": 5,
             "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10}
@@ -22,6 +22,7 @@ LINES = {
     "dori_dori": ["싫어요! 힘들어요!", "오늘은 여기까지예요…"],
     "done": ["다 옮겼어요! 칭찬해 주세요.", "{target} 정리 완료!"],
     "fail": ["어라, 놓쳤네요. 다시 해볼게요."],
+    "give_up": ["으아, 또 놓쳤잖아요! 손이 미끄러워서 못 하겠어요!", "두 번이나 놓쳤어요… 안 할래요, 좀 도와줘요!"],
     "resume": ["알겠어요… 조금만 더 할게요."],
     "chat": ["저는 과자 옮기는 로봇이에요. '과자 옮겨줘'라고 해 주세요!"],
     "busy": ["지금 일하는 중이에요! 이따 얘기해요."],
@@ -57,7 +58,7 @@ CHAT_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {targe
 
 사람이 한 말(text), 지금 상태(state), 지금까지 옮긴 횟수(count), 고를 수 있는 의도 목록(allowed)을 받아.
 - start_task: 과자를 옮기라는 작업 지시
-- resume: 거부 중일 때 달래거나 다시 해 달라는 부탁
+- resume: 거부 중일 때 달래거나 다시 해 달라는 부탁, 또는 "도와주세요" 대기 중에 이어서·계속·재개하라는 말
 - dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)
 - chat: 그 밖의 말
 반드시 allowed 안에서 intent를 골라. 작업 지시에 개수가 있으면 n에 숫자, 없으면 null.
@@ -97,7 +98,9 @@ def allowed_skills(remaining, count, decision, total=None, refused=False, refuse
     return ["oranda_pickup", "dori_dori"]
 
 
-def allowed_intents(state):
+def allowed_intents(state, phase=None):
+    if state == "WORKING" and phase == "waiting_operator":
+        return ["resume", "chat"]   # "도와주세요" 대기: "이어서 해줘"·"재개"로 다시 시도
     if state == "IDLE":
         return ["start_task", "chat", "dori_dori"]   # dori_dori: 도리도리 1회 (스킬 테스트와 같은 경로)
     if state == "DONE":
@@ -193,8 +196,8 @@ class Brain:
         line_key = self._skill_line(skill, count, tired if half else None)
         return {"skill": skill, "say": self._valid_say(say, line_key), "source": source}
 
-    def chat(self, text, state, count, history=None):
-        allowed = allowed_intents(state)
+    def chat(self, text, state, count, history=None, phase=None):
+        allowed = allowed_intents(state, phase)
         intent, say, n, source = keyword_intent(text, allowed), None, parse_n(text), "rules"
         if self.chain:
             user = json.dumps({"text": text, "state": state, "count": count, "allowed": allowed},

@@ -244,8 +244,8 @@ body[data-state=REFUSING] .state-badge{animation-name:shakeS}
 /* 스킬 테스트 줄 (설계: docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md 3장) */
 .bottom{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) 42rem}
 .ctrl{grid-template-columns:minmax(0,1fr) 14rem}
-.ctrl-left{display:flex;flex-direction:column;gap:.6rem;min-width:0;min-height:0}
-.ctrl-left .ctrl-small{flex:1;flex-direction:row;gap:.6rem;min-height:0}
+.ctrl-left{display:flex;flex-direction:column;gap:.6rem;min-width:0;min-height:0;overflow-y:auto}   /* 낮은 창에서도 홈으로까지 스크롤로 닿게 */
+.ctrl-left .ctrl-small{flex:none;flex-direction:row;gap:.6rem;min-height:2.8rem}   /* 줄이 늘어도 재개·재시작이 납작해지지 않게 */
 .ctrl-test{flex:none;display:flex;flex-direction:column;gap:.3rem}
 .ctrl-test-label{font-size:.95rem;font-weight:800;color:var(--ink2)}
 .ctrl-test-btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));gap:.5rem}

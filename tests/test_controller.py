@@ -122,14 +122,31 @@ def test_command_resume_from_refusing(cfg):
 
 
 def test_failures_then_waiting_operator(cfg):
-    c, ev = make(cfg, FakeSkills(grasps=[False] * 3))
+    # max_retry 1: 두 번 연속 놓치면 투덜대고 도리도리 한 번 → 진행자 확인 대기
+    c, ev = make(cfg, FakeSkills(grasps=[False] * 2))
     c.chat("2개 옮겨줘")
-    assert [c.step(), c.step(), c.step()] == ["fail", "fail", "fail"]
-    assert (c.phase, c.count, c.remaining) == ("waiting_operator", 0, 2)
-    assert [e for e in ev if e["type"] == "message"][-1]["role"] == "system"
+    assert [c.step(), c.step()] == ["fail", "fail"]
+    assert (c.phase, c.count, c.remaining, c.refused) == ("waiting_operator", 0, 2, False)
+    assert c.skills.runs[-1] == "dori_dori"
+    msgs = [e for e in ev if e["type"] == "message"]
+    assert msgs[-1]["role"] == "system" and "이어서 해줘" in msgs[-1]["text"]
+    from snackbot.brain import LINES
+    assert msgs[-2]["role"] == "robot" and msgs[-2]["text"] in LINES["give_up"]
     assert c.step() is None
     c.command("resume")
     assert c.phase == "idle" and c.retries == 0
+    assert c.step() == "success"
+
+
+@pytest.mark.parametrize("text", ["이어서 해줘", "재개", "계속 해 줘"])
+def test_chat_resumes_from_waiting_operator(cfg, text):
+    c, _ = make(cfg, FakeSkills(grasps=[False] * 2))
+    c.chat("2개 옮겨줘")
+    for _ in range(2):
+        c.step()
+    assert c.phase == "waiting_operator"
+    c.chat(text)
+    assert c.state == "WORKING" and c.phase == "idle" and c.retries == 0
     assert c.step() == "success"
 
 
@@ -299,6 +316,7 @@ def test_pre_count_higher_than_remaining_keeps_remaining(cfg):
 def test_field_sequence_first_count_one_then_two_two_corrects_total_before_move(cfg):
     # 실기: 첫 세기 1(손이 보임), 이어 2, 2: 연속 두 번 더 많이 보면 아직 안 옮겼으니 첫 개수를 2로 바로잡는다
     cfg["decision"]["refuse"] = "half"
+    cfg["decision"]["max_retry"] = 9   # 연속 실패 대기와 무관하게 개수 보정만 본다
     c, ev = make(cfg, FakeSkills(grasps=[False, False, False]),
                  vision=FakeVision(*[Count(n, "opencv") for n in (1, 1, 2, 2, 2, 2)]))   # 사이클마다 (앞, 뒤)
     c.chat("과자 옮겨줘")
@@ -732,7 +750,7 @@ class RecordingBrain(Brain):
         super().__init__(*a, **k)
         self.chat_hist, self.decide_hist = [], []
 
-    def chat(self, text, state, count, history=None):
+    def chat(self, text, state, count, history=None, phase=None):
         self.chat_hist.append(history)
         return super().chat(text, state, count, history=history)
 
@@ -1307,7 +1325,7 @@ def test_chat_dori_canceled_if_session_changed_during_llm(cfg):
     class SlowBrain(Brain):
         ctrl = None
 
-        def chat(self, text, state, count, history=None):
+        def chat(self, text, state, count, history=None, phase=None):
             r = super().chat(text, state, count, history=history)
             self.ctrl._estop()                                     # LLM을 기다리는 사이 비상정지·재시작
             self.ctrl._restart()
