@@ -37,7 +37,8 @@ DECIDE_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {tar
 
 매번 다음 정보를 받아:
 - remaining: 트레이에 남은 {target} 개수
-- count: 지금까지 옮긴 횟수
+- count: 재개 이후 성공 횟수 (재개하면 0으로 돌아가니 "몇 번째"를 말할 때 쓰지 마)
+- moved, this_item: (있으면) 이번 작업에서 이미 옮긴 개수와 지금 옮길 차례의 번호(moved+1). "첫 번째/두 번째" 같은 말은 this_item 기준으로만 해. 모르면 번호는 말하지 마.
 - allowed: 이번에 고를 수 있는 행동 목록
 - speech_text: 사람이 한 말 (없으면 null)
 - total, refuse_at: (있으면) 전체 개수와 "몇 개를 옮긴 뒤 거부하는지". 거부는 코드가 정하니 그 전 한 번쯤 힘들다는 예고만 해.
@@ -173,6 +174,9 @@ class Brain:
         tired = at is not None and not refused and max(0, total - remaining) == at - 1
         if self.chain:
             info = {"remaining": remaining, "count": count, "allowed": allowed, "speech_text": speech_text}
+            if total is not None:   # 이번 작업에서 이미 옮긴 수 (실패·재개 뒤에도 맞는 순번 대사용, 코드가 센 값)
+                moved = max(0, total - remaining)
+                info.update(moved=moved, this_item=moved + 1)
             if half:
                 info.update(total=total, refuse_at=None if refused else at)
             user = json.dumps(info, ensure_ascii=False)

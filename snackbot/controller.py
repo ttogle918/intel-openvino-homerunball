@@ -1,7 +1,8 @@
 """상태 머신과 사이클 루프. FastAPI를 모른다 (server.py가 이 모듈을 부른다).
 
 한 사이클(step): (A단계면 개수 세기) → brain.decide → 대사 → 스킬 실행 → 성공 판정.
-성공 판정: A단계면 개수 감소, 아니면(또는 counter 실패 시) 그리퍼 쥠(grasped).
+성공 판정: A단계면 개수 감소 또는 그리퍼 "쥠 → 놓기" 감지(개수가 깜빡여도 성공으로 본다), 아니면(또는 counter 실패 시) 그리퍼 쥠(grasped).
+개수는 여러 프레임의 중앙값으로 세고, 남은 개수는 깜빡임 때문에 늘지 않는다.
 스킬 테스트(TESTING): command("test", skill=)는 대기(IDLE)에서만 받아 요청 슬롯에 넣고, 루프 스레드가 step_test()로
 한 번 실행한다. 횟수·피로도·사이클 통계에는 넣지 않는다 (설계: docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md).
 """
@@ -43,6 +44,9 @@ class Controller:
         self.target_name = cfg["target"]["name"]
         self.initial_count = cfg["target"]["initial_count"]
         self.camera = cfg["vision"].get("camera", "front")
+        self.frames = max(1, int(cfg["vision"].get("frames") or 5))     # 한 번 셀 때 읽는 프레임 수 (중앙값)
+        gap = cfg["vision"].get("frame_gap_s")
+        self.frame_gap_s = 0.1 if gap is None else float(gap)
         sync = (cfg.get("voice") or {}).get("sync_timeout_s")
         self.sync_timeout_s = 10.0 if sync is None else float(sync)
         self.restart_wait_s = 5.0  # 재시작이 진행 중인 동작(skills.run)이 멈추기를 기다리는 최대 시간
@@ -476,7 +480,8 @@ class Controller:
             self._set_phase("counting")
             seen = self._count(ms, gen, set_total=True, only=count_args[1])
             if seen is not None:
-                n_before = seen
+                with self._lock:
+                    n_before = min(seen, self.remaining)   # 깜빡임·손으로 늘어 보여도 남은 개수는 늘리지 않는다
         else:
             with self._lock:
                 self.vision_method = "estimate"   # 끔: 카메라 대신 추정 (화면에 지난 counter 이름이 남지 않게)
@@ -550,10 +555,35 @@ class Controller:
             return "refuse"
         return self._judge(n_before, ms, d, r, gen, count_args)
 
-    def _count(self, ms, gen, set_total=False, only=None):
-        """A단계 개수 세기. 실패하면 None (그 사이클은 B로 판정). only: 사이클 시작에 고른 counter (None이면 체인 전체)."""
+    def _sample(self, gen, only=None):
+        """여러 프레임을 읽어 센 뒤 개수의 중앙값을 낸다 (깜빡임 제거). 중앙값과 같은 n을 낸 첫 프레임의 Count를 돌려준다.
+        세션이 바뀌었거나 종료 중이면 None. 모두 실패하면 None (프레임 읽기 예외는 전부 실패했을 때만 올린다)."""
+        results, error = [], None
+        for i in range(self.frames):
+            if i and (self._stop.wait(self.frame_gap_s) or self.generation() != gen):
+                break
+            try:
+                c = self.vision.count(self.skills.latest_frame(self.camera), only=only)
+            except Exception as e:
+                error = e
+                continue
+            if c is not None:
+                results.append(c)
+        if self.generation() != gen:
+            return None
+        if not results:
+            if error is not None:
+                raise error
+            return None
+        ns = sorted(c.n for c in results)
+        median = ns[(len(ns) - 1) // 2]
+        return next(c for c in results if c.n == median)
+
+    def _count(self, ms, gen, set_total=False, only=None, update_remaining=True):
+        """A단계 개수 세기. 실패하면 None (그 사이클은 B로 판정). only: 사이클 시작에 고른 counter (None이면 체인 전체).
+        update_remaining: 사이클 앞 세기만 남은 개수를 정한다 (뒤 세기는 _judge가 정한다)."""
         t0 = time.monotonic()
-        c = self.vision.count(self.skills.latest_frame(self.camera), only=only)
+        c = self._sample(gen, only)
         ms["vision"] = ms.get("vision", 0) + _ms(t0)
         with self._lock:
             if self._gen != gen:  # 세는 동안 세션이 바뀌었다: 이전 세션의 결과로 새 세션을 덮지 않는다
@@ -561,12 +591,15 @@ class Controller:
             if c is None:
                 self.vision_method = "estimate"
                 return None
-            self.remaining, self.vision_method, self.last_boxes = c.n, c.method, c.boxes
-            if set_total and not self._total_counted and self.count == 0 and not self.refused:
-                self._total_counted = True    # 작업의 첫 개수 세기 성공(옮기기 전): 이 값이 전체 개수 (한 번만)
-                self.total = c.n
-            elif c.n > self.total:            # 도중에 과자가 늘었다: 거부 시점은 그대로 둔다
-                log.info("카메라가 전체(%d)보다 많이 봤어요: %d", self.total, c.n)
+            self.vision_method, self.last_boxes = c.method, c.boxes
+            if update_remaining:
+                if set_total and not self._total_counted and self.count == 0 and not self.refused:
+                    self._total_counted = True    # 작업의 첫 개수 세기 성공(옮기기 전): 이 값이 전체 개수 (한 번만)
+                    self.total = self.remaining = c.n
+                else:
+                    if c.n > self.remaining:      # 깜빡임이나 손이 보인 것: 남은 개수는 늘리지 않는다
+                        log.info("카메라가 남은 개수(%d)보다 많이 봤어요: %d (남은 개수 유지)", self.remaining, c.n)
+                    self.remaining = min(c.n, self.remaining)
         self._publish()
         return c.n
 
@@ -591,7 +624,7 @@ class Controller:
         t0 = time.monotonic()
         c, error = None, None
         try:
-            c = self.vision.count(self.skills.latest_frame(self.camera), only=only)
+            c = self._sample(gen, only)
         except Exception as e:   # 프레임을 못 읽는 경우 등
             log.warning("지금 세기 실패: %r", e)
             error = e
@@ -625,18 +658,26 @@ class Controller:
         count_on, only = count_args or self._count_args()   # step이 사이클 시작에 읽은 값을 그대로 쓴다
         if count_on:
             self._set_phase("counting")
-            seen = self._count(ms, gen, only=only)
-        success = seen < n_before if seen is not None else r.grasped
+            seen = self._count(ms, gen, only=only, update_remaining=False)
+        released = bool(r.grasped and r.stop_reason == "gripper_open")   # 쥐었다가 놓음 = 옮겼다
+        if seen is not None and seen < n_before:
+            success, judge = True, "vision"
+        elif seen is not None:
+            success, judge = released, "gripper" if released else "vision"   # 개수가 깜빡여도 그리퍼가 옮겼다고 하면 성공
+        else:
+            success, judge = bool(r.grasped), "gripper"
         with self._lock:
             aborted = self.state != WORKING or self._gen != gen
             if not aborted:
                 if success:
                     self.count += 1
                     self.retries = 0
-                    if seen is None:
-                        self.remaining = max(0, n_before - 1)
+                    # 성공 뒤 남은 개수: 깜빡임으로 늘지 않는다 (센 값이 있으면 그 값, 없으면 하나 줄임)
+                    self.remaining = max(0, n_before - 1) if seen is None else min(seen, n_before - 1)
                 else:
                     self.retries += 1
+                    if seen is not None:
+                        self.remaining = min(seen, n_before)
                 waiting = not success and self.retries > self.decision["max_retry"]
                 self.phase = "waiting_operator" if waiting else "idle"
         if aborted:
@@ -648,7 +689,7 @@ class Controller:
             self._message("robot", self.brain.line("fail"))
         self._publish()
         result = "success" if success else "fail"
-        self._log_cycle(result, ms, d, r)
+        self._log_cycle(result, ms, d, r, judge=judge)
         return result
 
     def _finish(self, ms, d, gen):
@@ -669,7 +710,7 @@ class Controller:
         self._publish()
         return "done"
 
-    def _log_cycle(self, result, ms, d, r=None):
+    def _log_cycle(self, result, ms, d, r=None, judge=None):
         with self._lock:
             self.cycle_n += 1
             n = self.cycle_n
@@ -678,7 +719,7 @@ class Controller:
                       "refuse_at": self._refuse_at(), "refused": self.refused, "skill": d["skill"],
                       "say": d["say"], "source": d.get("source"), "vision_method": self.vision_method,
                       "stop_reason": r.stop_reason if r else None, "grasped": r.grasped if r else None,
-                      "ms": ms}
+                      "judge": judge, "ms": ms}
         self._emit({"type": "cycle", "n": n, "result": result, "ms": dict(ms)})
         self._append_log(record)
 
