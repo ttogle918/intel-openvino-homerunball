@@ -37,6 +37,7 @@ def test_guard_table():
 
 
 def test_rules_only_decide_uses_guard_and_lines(cfg):
+    cfg["decision"]["refuse"] = "fixed"
     b = make(cfg)
     d = b.decide(2, 0, "WORKING")
     assert d["skill"] == "oranda_pickup" and d["source"] == "rules"
@@ -47,6 +48,7 @@ def test_rules_only_decide_uses_guard_and_lines(cfg):
 
 
 def test_llm_choice_used_in_free_zone(cfg):
+    cfg["decision"]["refuse"] = "fixed"
     d = make(cfg, '{"skill": "dori_dori", "say": "싫어요!"}').decide(2, 4, "WORKING")
     assert d == {"skill": "dori_dori", "say": "싫어요!", "source": "fake"}
 
@@ -76,6 +78,7 @@ def test_provider_error_falls_back(cfg):
 
 
 def test_decide_prompt_has_target_and_allowed(cfg):
+    cfg["decision"]["refuse"] = "fixed"
     fake = Scripted('{"skill": "oranda_pickup", "say": "네"}')
     Brain(cfg, chain=Chain([Member("f", fake)]), rng=FirstRng()).decide(2, 4, "WORKING")
     assert fake.messages[0]["role"] == "system" and "오란다" in fake.messages[0]["content"]
@@ -248,3 +251,34 @@ def test_chat_prompt_describes_dori_tool(cfg):
     system = fake.messages[0]["content"]
     assert "- dori_dori: 고개를 좌우로 젓는 동작 한 번 (도리도리를 해 보라고 하거나 고개를 저어 보라고 할 때만)" in system
     assert json.loads(fake.messages[-1]["content"])["allowed"] == ["start_task", "chat", "dori_dori"]
+
+
+H = {"refuse": "half", "safe_max": 3, "force_refuse": 6, "max_retry": 2}
+
+
+def test_refuse_at_values():
+    from snackbot.brain import refuse_at
+    assert [refuse_at(n) for n in (1, 2, 3, 4, 5, 6, 7)] == [None, None, 2, 2, 3, 3, 4]
+
+
+def test_half_guard_table():
+    assert allowed_skills(0, 3, H, total=6) == ["done"]
+    assert allowed_skills(6, 0, H, total=6) == ["oranda_pickup"]
+    assert allowed_skills(4, 2, H, total=6) == ["oranda_pickup"]
+    assert allowed_skills(3, 3, H, total=6) == ["dori_dori"]
+    assert allowed_skills(3, 3, H, total=6, refused=True) == ["oranda_pickup"]
+    assert allowed_skills(1, 1, H, total=2) == ["oranda_pickup"]       # 2개 이하는 거부 없음
+    assert allowed_skills(1, 2, H, total=3) == ["dori_dori"]
+    assert allowed_skills(5, 0, H, total=3) == ["oranda_pickup"]       # 늘어난 경우 moved < 0 은 0
+    assert allowed_skills(3, 3, {"safe_max": 3, "force_refuse": 6}, total=6) == ["oranda_pickup"]  # fixed 그대로
+
+
+def test_half_tired_line_only_before_refusal(cfg):
+    cfg["decision"]["refuse"] = "half"
+    b = make(cfg)
+    tired = ("으… 팔이 조금 뻐근한데요.", "이거 몇 개 남았어요?")
+    assert b.decide(6, 0, "WORKING", total=6)["say"] not in tired
+    assert b.decide(4, 2, "WORKING", total=6)["say"] in tired          # moved 2 == refuse_at 3 - 1
+    assert b.decide(4, 2, "WORKING", total=6, refused=True)["say"] not in tired
+    assert b.decide(3, 3, "WORKING", total=6)["skill"] == "dori_dori"
+    assert b.decide(3, 3, "WORKING", total=2)["say"] not in tired

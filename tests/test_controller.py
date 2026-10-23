@@ -69,6 +69,7 @@ def test_snapshot_shape(cfg):
     assert c.snapshot() == {"type": "state", "state": "IDLE", "phase": "idle", "count": 0, "remaining": 0,
                             "skill": None, "vision_method": "estimate",
                             "vision_choice": "off", "vision_options": [], "last_count": None,
+                            "total": 0, "refuse_at": None,
                             "thresholds": {"safe_max": 3, "force_refuse": 6}}
 
 
@@ -98,6 +99,7 @@ def test_b_mode_full_run_to_done_then_idle(cfg):
 
 
 def test_refuses_at_force_refuse_and_chat_resume_resets(cfg):
+    cfg["decision"]["refuse"] = "fixed"
     c, _ = make(cfg)
     c.chat("10개 옮겨줘")
     assert [c.step() for _ in range(7)] == ["success"] * 6 + ["refuse"]
@@ -215,6 +217,7 @@ class EstopReason(FakeSkills):
 
 
 def test_estop_during_dori_dori_is_not_overwritten(cfg):
+    cfg["decision"]["refuse"] = "fixed"
     sk = EstopDuringRun()
     c, _ = make(cfg, sk)
     sk.ctrl = c
@@ -353,6 +356,7 @@ def test_cycle_ms_split_reflects_real_phases(cfg):
 
 
 def test_cycle_ms_without_returning_has_no_return(cfg):
+    cfg["decision"]["refuse"] = "fixed"
     c, ev = make(cfg)
     c.chat("4개 옮겨줘")
     c.count = cfg["decision"]["force_refuse"]       # dori_dori 는 returning 단계가 없다
@@ -433,9 +437,9 @@ class RecordingBrain(Brain):
         self.chat_hist.append(history)
         return super().chat(text, state, count, history=history)
 
-    def decide(self, remaining, count, state, speech_text=None, history=None):
+    def decide(self, remaining, count, state, speech_text=None, history=None, **kw):
         self.decide_hist.append(history)
-        return super().decide(remaining, count, state, speech_text, history=history)
+        return super().decide(remaining, count, state, speech_text, history=history, **kw)
 
 
 def test_controller_passes_history_and_restart_clears_it(cfg):
@@ -1244,3 +1248,93 @@ def test_count_now_refused_when_off_failed_or_no_vision(cfg):
     assert c.command("count") is False and "꺼져" in c.history[-1]["text"]
     c2, _ = make(cfg)
     assert c2.command("count") is False and c2.remaining == 0
+
+
+def _run_task(c, n_steps):
+    return [c.step() for _ in range(n_steps)]
+
+
+@pytest.mark.parametrize("total,at", [(3, 2), (4, 2), (5, 3), (6, 3)])
+def test_half_refuses_once_at_ceil_half_and_resume_finishes(cfg, total, at):
+    c, _ = make(cfg)
+    c.chat(f"{total}개 옮겨줘")
+    assert _run_task(c, at + 1) == ["success"] * at + ["refuse"]
+    assert (c.state, c.refused, c.skills.runs[-1]) == ("REFUSING", True, "dori_dori")
+    assert c.snapshot()["refuse_at"] == at and c.snapshot()["total"] == total
+    c.command("resume")
+    assert c.refused and c.state == "WORKING" and c.count == 0     # 재개로 거부 표시는 초기화되지 않는다
+    assert _run_task(c, total - at + 1) == ["success"] * (total - at) + ["done"]
+    assert c.skills.runs.count("dori_dori") == 1
+
+
+def test_half_total_two_never_refuses(cfg):
+    c, _ = make(cfg)
+    c.chat("2개 옮겨줘")
+    assert _run_task(c, 3) == ["success", "success", "done"]
+    assert "dori_dori" not in c.skills.runs
+
+
+def test_half_new_task_resets_refused(cfg):
+    c, _ = make(cfg)
+    c.chat("3개 옮겨줘")
+    _run_task(c, 3)
+    c.command("resume")
+    _run_task(c, 2)                                  # 나머지 1개 + done
+    assert c.state == "IDLE"
+    c.chat("3개 옮겨줘")
+    assert not c.refused and c.total == 3
+    assert _run_task(c, 3) == ["success", "success", "refuse"]
+
+
+def test_half_tired_line_before_refusal(cfg, tmp_path):
+    c, ev = make(cfg, log_dir=tmp_path)
+    c.chat("6개 옮겨줘")
+    _run_task(c, 3)
+    says = [e["text"] for e in ev if e["type"] == "message" and e["role"] == "robot"]
+    assert says[1] == "오란다 하나 옮길게요!" and says[2] == "오란다 하나 옮길게요!"
+    assert says[3] == "으… 팔이 조금 뻐근한데요."   # 3번째 옮기기 (moved 2 == 3 - 1)
+    records = [json.loads(x) for x in next(tmp_path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()]
+    assert (records[0]["total"], records[0]["refuse_at"], records[0]["refused"]) == (6, 3, False)
+
+
+def test_half_first_vision_count_sets_total_once(cfg):
+    counts = [Count(6, "opencv"), Count(5, "opencv"), Count(5, "opencv"), Count(4, "opencv"),
+              Count(4, "opencv"), Count(3, "opencv"), Count(9, "opencv")]
+    c, _ = make(cfg, vision=FakeVision(*counts))
+    c.chat("과자 옮겨줘")                              # chat 개수 없음: initial_count(3) → 카메라 6으로 교체
+    assert c.step() == "success" and c.total == 6
+    assert c.step() == "success"
+    assert c.step() == "success"                      # 3개 옮김 (6 → 3)
+    assert c.total == 6
+    c.step()                                          # 다음 사이클 앞 세기가 9: total 은 그대로 (moved < 0 은 0)
+    assert c.total == 6 and c.skills.runs.count("dori_dori") == 0
+
+
+def test_half_vision_more_than_total_keeps_refuse_point(cfg):
+    counts = [Count(6, "opencv"), Count(5, "opencv"), Count(7, "opencv")]
+    c, _ = make(cfg, vision=FakeVision(*counts))
+    c.chat("과자 옮겨줘")
+    assert c.step() == "success"
+    c.step()
+    assert c.total == 6 and c.snapshot()["refuse_at"] == 3
+
+
+def test_half_vision_off_uses_chat_number(cfg):
+    c, _ = make(cfg, vision=FakeVision(Count(9, "opencv")))
+    c.set_vision_method("off")
+    c.chat("5개 옮겨줘")
+    assert _run_task(c, 4) == ["success"] * 3 + ["refuse"]
+    assert c.total == 5 and c.snapshot()["refuse_at"] == 3
+
+
+def test_half_vision_failure_uses_initial_count(cfg):
+    c, _ = make(cfg, vision=FakeVision())
+    c.command("start")                                 # initial_count 3 → 2개 뒤 거부
+    assert _run_task(c, 3) == ["success", "success", "refuse"]
+
+
+def test_fixed_snapshot_has_no_refuse_at(cfg):
+    cfg["decision"]["refuse"] = "fixed"
+    c, _ = make(cfg)
+    c.chat("6개 옮겨줘")
+    assert c.snapshot()["refuse_at"] is None

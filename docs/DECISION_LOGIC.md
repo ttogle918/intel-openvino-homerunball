@@ -10,6 +10,8 @@
 
 ## 2. 가드 규칙
 
+아래 순서도는 `refuse: fixed`(옛 방식)다. 기본 `half`는 표를 본다.
+
 ```mermaid
 flowchart TD
     START(["사이클 시작"]) --> N["남은 개수 n<br/>B: 시작 개수 − 성공 수 · A: counter"]
@@ -22,6 +24,24 @@ flowchart TD
     Q2 -->|"아니오 (4~5)"| FREE["LLM이 선택<br/>move 또는 dori_dori"]
 ```
 
+기본은 `decision.refuse: half`(아래). 옛 고정 임계값은 `refuse: fixed`로 고른다.
+
+**half (기본): 전체의 절반을 옮기면 작업당 한 번 거부**
+
+| 조건 | 결정 | 비고 |
+|---|---|---|
+| n == 0 | `done` | 최우선 |
+| 아직 거부 안 했고 전체 ≥ 3 이고 옮긴 수 ≥ ceil(전체/2) | `dori_dori` 강제 | 3→2, 4→2, 5→3, 6→3, 7→4개 옮긴 뒤 |
+| 그 밖 | `oranda_pickup` 강제 | 전체 1~2개는 거부 없음. 거부 직전 한 번은 "지친" 대사 |
+
+- 전체(`total`) = 작업의 첫 개수 세기 성공 값 (OpenCV, 옮기기 전). 세기가 꺼져 있거나 실패하면 채팅의 개수("오란다 5개 옮겨줘") → 없으면 `target.initial_count`. 한 번 정하면 바꾸지 않는다 (카메라가 나중에 더 많이 봐도 거부 시점은 그대로, 로그만 남긴다).
+- 옮긴 수 = `total − remaining` (음수면 0). 카메라 유무와 상관없이 같다.
+- 거부는 작업당 **한 번** (`refused`). 달래서 재개(채팅·🎤·`r`·버튼)한 뒤에는 거부 없이 끝까지 한다. 새 작업 시작 때만 초기화한다.
+- LLM은 대사만 쓴다 (규칙 3 그대로). `total`·`refuse_at`을 프롬프트로 받아 해석만 한다.
+- 상태 스냅샷·JSONL 사이클 로그에 `total`, `refuse_at`(`refused`는 로그)가 들어간다.
+
+**fixed (옛 방식)**
+
 | 조건 | 결정 | 비고 |
 |---|---|---|
 | n == 0 | `done` | 최우선 |
@@ -33,8 +53,9 @@ flowchart TD
 
 ```yaml
 decision:
-  safe_max: 3        # 이하면 무조건 일함
-  force_refuse: 6    # 이상이면 무조건 거부
+  refuse: half       # half(기본) | fixed
+  safe_max: 3        # fixed: 이하면 무조건 일함
+  force_refuse: 6    # fixed: 이상이면 무조건 거부
   max_retry: 2       # 옮기기 실패 시 재시도 횟수
 ```
 

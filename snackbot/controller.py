@@ -12,6 +12,8 @@ import time
 from collections import deque
 from pathlib import Path
 
+from .brain import refuse_at
+
 log = logging.getLogger(__name__)
 
 IDLE, WORKING, REFUSING, DONE, ESTOP, TESTING = "IDLE", "WORKING", "REFUSING", "DONE", "ESTOP", "TESTING"
@@ -54,6 +56,9 @@ class Controller:
         self.state, self.phase = IDLE, "idle"
         self.count = self.remaining = self.retries = self.cycle_n = 0
         self.skill = None
+        self.total = 0                # 이번 작업의 전체 개수 (시작 개수, 첫 개수 세기 성공 때 한 번 교체)
+        self.refused = False          # 이번 작업에서 이미 거부했는가 (작업당 한 번, 재개로는 초기화하지 않는다)
+        self._total_counted = False   # total을 카메라로 정했는가
         self.vision_method = "estimate"
         self.vision_choice = "auto"   # 개수 세기 방법: auto(체인 순서) | off(B단계) | counter 이름
         self.last_count = None        # 마지막 "지금 세기" 결과 {n, method, ms, ts} (화면 표시용)
@@ -80,8 +85,15 @@ class Controller:
                     "remaining": self.remaining, "skill": self.skill, "vision_method": self.vision_method,
                     "vision_choice": self._effective_choice(), "vision_options": self.vision_options(),
                     "last_count": self.last_count,
+                    "total": self.total, "refuse_at": self._refuse_at(),
                     "thresholds": {"safe_max": self.decision["safe_max"],
                                    "force_refuse": self.decision["force_refuse"]}}
+
+    def _refuse_at(self):
+        """half 모드에서 몇 개를 옮긴 뒤 거부하는지 (fixed 모드이거나 전체가 2개 이하면 None)."""
+        if self.decision.get("refuse") != "half":
+            return None
+        return refuse_at(self.total)
 
     # ---- 개수 세기 방법 ----
     def vision_options(self):
@@ -196,7 +208,8 @@ class Controller:
                 return False
             if not busy:
                 self._gen += 1
-                self.remaining = n or self.initial_count
+                self.remaining = self.total = n or self.initial_count
+                self.refused = self._total_counted = False
                 self.count = self.retries = 0
                 self.skill, self.vision_method, self.last_boxes = None, "estimate", None
                 self.state, self.phase = WORKING, "idle"
@@ -459,14 +472,16 @@ class Controller:
             gen = self._gen
         if self._count_args()[0]:
             self._set_phase("counting")
-            seen = self._count(ms, gen)
+            seen = self._count(ms, gen, set_total=True)
             if seen is not None:
                 n_before = seen
         self._set_phase("thinking")
         t0 = time.monotonic()
         with self._lock:
             hist = list(self.history)
-        d = self.brain.decide(n_before, self.count, WORKING, None, history=hist)
+        with self._lock:
+            total, refused = self.total, self.refused
+        d = self.brain.decide(n_before, self.count, WORKING, None, history=hist, total=total, refused=refused)
         ms["llm"] = _ms(t0)
         if not self._working() or self._gen != gen:
             return None
@@ -521,6 +536,7 @@ class Controller:
                     aborted = True
                 else:
                     aborted = False
+                    self.refused = True
                     self.state, self.phase = REFUSING, "idle"
             if aborted:
                 self._log_cycle("estop", ms, d, r)
@@ -530,7 +546,7 @@ class Controller:
             return "refuse"
         return self._judge(n_before, ms, d, r, gen)
 
-    def _count(self, ms, gen):
+    def _count(self, ms, gen, set_total=False):
         """A단계 개수 세기. 실패하면 None (그 사이클은 B로 판정)."""
         t0 = time.monotonic()
         _, only = self._count_args()
@@ -543,6 +559,11 @@ class Controller:
                 self.vision_method = "estimate"
                 return None
             self.remaining, self.vision_method, self.last_boxes = c.n, c.method, c.boxes
+            if set_total and not self._total_counted and self.count == 0 and not self.refused:
+                self._total_counted = True    # 작업의 첫 개수 세기 성공(옮기기 전): 이 값이 전체 개수 (한 번만)
+                self.total = c.n
+            elif c.n > self.total:            # 도중에 과자가 늘었다: 거부 시점은 그대로 둔다
+                log.info("카메라가 전체(%d)보다 많이 봤어요: %d", self.total, c.n)
         self._publish()
         return c.n
 
@@ -649,7 +670,8 @@ class Controller:
             self.cycle_n += 1
             n = self.cycle_n
             record = {"ts": self.clock(), "n": n, "result": result, "state": self.state,
-                      "count": self.count, "remaining": self.remaining, "skill": d["skill"],
+                      "count": self.count, "remaining": self.remaining, "total": self.total,
+                      "refuse_at": self._refuse_at(), "refused": self.refused, "skill": d["skill"],
                       "say": d["say"], "source": d.get("source"), "vision_method": self.vision_method,
                       "stop_reason": r.stop_reason if r else None, "grasped": r.grasped if r else None,
                       "ms": ms}

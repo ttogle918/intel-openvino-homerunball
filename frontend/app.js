@@ -42,7 +42,7 @@ function renderState() {
   f.style.width = Math.min(100, (S.count / Math.max(1, force_refuse)) * 100) + '%';
   $('#gaugeMark').style.left = (safe_max / Math.max(1, force_refuse)) * 100 + '%';
   $('#gaugeCount').textContent = `${S.count}회 옮김`;
-  $('#gaugeMax').textContent = `한계 ${force_refuse}회`;
+  $('#gaugeMax').textContent = S.total && S.refuse_at ? `전체 ${S.total} · ${S.refuse_at}개째 뒤 거부` : `한계 ${force_refuse}회`;
 
   let mood = tier === 'max' ? 'limit' : tier === 'mid' ? 'tired' : 'fresh';
   if (S.state === 'REFUSING') mood = 'refuse';
@@ -163,6 +163,7 @@ function handle(m) {
       S.vision_method = m.vision_method || null; S.skill = m.skill || null;
       S.vision_choice = m.vision_choice || 'off'; S.vision_options = Array.isArray(m.vision_options) ? m.vision_options : [];
       S.last_count = m.last_count || null;
+      S.total = m.total ?? null; S.refuse_at = m.refuse_at ?? null;
       if (m.thresholds) S.th = { safe_max: m.thresholds.safe_max, force_refuse: m.thresholds.force_refuse };
       renderState();
       onReplayState(prev);
