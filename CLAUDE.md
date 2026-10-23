@@ -61,6 +61,7 @@
 │   ├── motion.py       # 그리퍼 감시, 보간 이동, 정지 신호 (physicalai 없이 테스트)
 │   ├── twin.py         # 3D 트윈: 관절 normalized→라디안, 재생 에피소드(episode.json) 읽기
 │   ├── recorder.py     # 실행 기록: 정책 phase 관절값·프레임 → logs/runs/ (백그라운드 저장)
+│   ├── wincam.py       # Windows 카메라 목록 보정 (pynokhwa JSON 역슬래시 버그), 카메라 열기 전 호출
 │   └── robot.py        # 실제 로봇: RobotRuntime 하나 + 동작 출처 교체, 비상정지 세대, warmup
 ├── frontend/           # Claude Design 결과물 (index.html, app.js, style.css) + twin.js(3D)
 │   ├── vendor/         # three@0.186.1, urdf-loader@0.13.1 고정 파일 (import map)

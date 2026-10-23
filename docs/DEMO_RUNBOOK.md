@@ -44,6 +44,11 @@ gantt
 
 모든 명령은 project 루트에서, Ubuntu는 `.venv/bin/python`. **physical-ai-studio 세션을 먼저 닫는다** (로봇 포트는 한 프로그램만 잡는다).
 
+**시연 노트북이 Windows일 때 (2026-10-23 확인)** — 명령은 `.venv/Scripts/python`
+- physicalai 0.3.0은 Windows에서 설치·동작한다 (카메라는 pynokhwa/MediaFoundation). pynokhwa의 Windows 장치 정보 JSON 버그는 `snackbot/wincam.py`가 보정한다
+- 포트는 `COM5` 같은 이름. 장치 관리자 또는 `powershell -c "Get-CimInstance Win32_PnPEntity | ? Name -match 'COM\d' | select Name"`. 팔 두 대가 모두 `USB-Enhanced-SERIAL CH343`으로 보인다 → 이 노트북은 팔로워 COM5, 리더 COM6 (팔로워는 실행 뒤 토크가 켜져 있다). 헷갈리면 리더 USB를 빼고 남는 번호
+- 카메라 번호 0은 노트북 내장 카메라다. Windows 장치 정보에는 시리얼이 없어 `tools.cameras` 사진을 보고 번호로 지정한다 (카메라를 더 꽂으면 번호가 바뀔 수 있으니 다시 확인)
+
 준비
 - [ ] 코드: homerunball 저장소 `feat/robot-m4`(또는 main) 받기
 - [ ] 로봇 패키지: `.venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt` (physicalai 0.3.0. SO101은 physicalai 본체 `physicalai.robot.so101`에 있어 플러그인은 필요 없다)

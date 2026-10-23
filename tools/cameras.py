@@ -13,12 +13,18 @@ import cv2
 
 
 def discover():
+    from snackbot.wincam import patch_camera_query
+
+    patch_camera_query()   # Windows 카메라 목록 JSON 버그 보정
     from physicalai.capture.cameras.uvc import discover_uvc
 
     return discover_uvc(only_usable=False)   # 다른 프로그램이 쓰는 장치도 목록에는 보인다
 
 
 def open_camera(device, width, height):
+    from snackbot.wincam import patch_camera_query
+
+    patch_camera_query()
     from physicalai.capture import UVCCamera
 
     return UVCCamera(device=device, width=width, height=height, fps=30)
