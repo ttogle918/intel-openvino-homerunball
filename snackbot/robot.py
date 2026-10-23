@@ -221,22 +221,34 @@ class RobotSkills:
             frames = {name: cam.read() for name, cam in self.runtime.cameras.items()}
         with self.tap.lock:   # 3D 화면이 첫 틱 전에도 지금 자세를 그리도록
             self.tap.joints = np.asarray(obs.joint_positions, np.float32).copy()
-        for name, policy in self.policies.items():
+        for name, policy in list(self.policies.items()):
             model = self.models.get(name)
             if model is None:
                 continue
-            inputs = policy.to_model_input(obs, remap_frames(frames, self.camera_maps.get(name)))
             try:
-                chunk = model.predict_action_chunk(inputs)
-            except KeyError as e:
-                key = str(e.args[0]).splitlines()[0] if e.args else e
-                raise SystemExit(f"정책 {name} 입력이 안 맞아요: {key} — manifest.json의 images.<이름>과 "
-                                 "config cameras / camera_map 확인") from e
-            except Exception as e:   # 차원·해상도 불일치 등
-                raise SystemExit(f"정책 {name} 첫 추론이 실패했어요: {type(e).__name__}: {str(e)[:200]} — "
-                                 "state 차원, 카메라 해상도, export_dir 확인") from e
-            model.reset()
-            log.info("%s warmup 완료: chunk %s", name, getattr(chunk, "shape", "?"))
+                self._warmup(name, policy, model, obs, frames)
+            except SystemExit as e:
+                if name == "dori_dori" and self.dori_source == "script":
+                    # 코드 도리도리가 본 동작이다: 테스트 버튼용 모델 때문에 시작 전체를 막지 않는다 (버튼은 "모델 없음")
+                    log.warning("dori_dori 모델 warmup 실패, 모델 도리도리 버튼을 끄고 계속합니다: %s", e)
+                    self.policies.pop(name, None)
+                    self.models.pop(name, None)
+                    continue
+                raise
+
+    def _warmup(self, name, policy, model, obs, frames):
+        inputs = policy.to_model_input(obs, remap_frames(frames, self.camera_maps.get(name)))
+        try:
+            chunk = model.predict_action_chunk(inputs)
+        except KeyError as e:
+            key = str(e.args[0]).splitlines()[0] if e.args else e
+            raise SystemExit(f"정책 {name} 입력이 안 맞아요: {key} — manifest.json의 images.<이름>과 "
+                             "config cameras / camera_map 확인") from e
+        except Exception as e:   # 차원·해상도 불일치 등
+            raise SystemExit(f"정책 {name} 첫 추론이 실패했어요: {type(e).__name__}: {str(e)[:200]} — "
+                             "state 차원, 카메라 해상도, export_dir 확인") from e
+        model.reset()
+        log.info("%s warmup 완료: chunk %s", name, getattr(chunk, "shape", "?"))
 
     def new_task(self, n):
         pass

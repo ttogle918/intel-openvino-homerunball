@@ -65,6 +65,7 @@ class Controller:
         self.skill = None
         self.total = 0                # 이번 작업의 전체 개수 (시작 개수, 첫 개수 세기 성공 때 한 번 교체)
         self.refused = False          # 이번 작업에서 이미 거부했는가 (작업당 한 번, 재개로는 초기화하지 않는다)
+        self.refuse_total = 0         # 거부 시점을 정하는 전체 개수: 맨 처음 센 값 (되살림으로 total이 늘어도 바꾸지 않는다)
         self._total_counted = False   # total을 카메라로 정했는가
         self._revived = False         # "0인데 카메라가 아직 본다"로 남은 개수를 되살렸는가 (작업당 한 번)
         self.vision_method = "estimate"
@@ -102,7 +103,7 @@ class Controller:
         """half 모드에서 몇 개를 옮긴 뒤 거부하는지 (fixed 모드이거나 전체가 2개 이하면 None)."""
         if self.decision.get("refuse") != "half":
             return None
-        return refuse_at(self.total)
+        return refuse_at(self.refuse_total)
 
     # ---- 개수 세기 방법 ----
     def vision_options(self):
@@ -217,7 +218,7 @@ class Controller:
                 return False
             if not busy:
                 self._gen += 1
-                self.remaining = self.total = n or self.initial_count
+                self.remaining = self.total = self.refuse_total = n or self.initial_count
                 self.refused = self._total_counted = self._revived = False
                 self.count = self.retries = 0
                 self.skill, self.vision_method, self.last_boxes = None, "estimate", None
@@ -491,6 +492,7 @@ class Controller:
                         # 0까지 줄었는데 카메라는 아직 본다 (첫 세기 과소·잘못 쥠): 작업당 한 번만 되살려 이어서 한다
                         self._revived = revived = True
                         # 이미 옮긴 수(= total, remaining이 0이었다) 뒤에 이어 센다: LLM의 this_item이 "세 번째"로 이어진다
+                        # (거부 시점 refuse_total은 처음 센 값 그대로: 되살린 몫으로 새 거부를 만들지 않는다)
                         self.total += seen
                         self.remaining = seen
                     n_before = self.remaining   # 깜빡임·손으로 늘어 보여도 남은 개수는 늘리지 않는다 (_count가 이미 min)
@@ -505,8 +507,9 @@ class Controller:
         t0 = time.monotonic()
         with self._lock:
             hist = list(self.history)
-            total, refused = self.total, self.refused
-        d = self.brain.decide(n_before, self.count, WORKING, None, history=hist, total=total, refused=refused)
+            total, refused, refuse_total = self.total, self.refused, self.refuse_total
+        d = self.brain.decide(n_before, self.count, WORKING, None, history=hist, total=total, refused=refused,
+                              refuse_total=refuse_total)
         ms["llm"] = _ms(t0)
         if not self._working() or self._gen != gen:
             return None
@@ -622,7 +625,7 @@ class Controller:
             if update_remaining:
                 if set_total and not self._total_counted and self.count == 0 and not self.refused:
                     self._total_counted = True    # 작업의 첫 개수 세기 성공(옮기기 전): 이 값이 전체 개수 (한 번만)
-                    self.total = self.remaining = c.n
+                    self.total = self.refuse_total = self.remaining = c.n
                 else:
                     if c.n > self.remaining:      # 깜빡임이나 손이 보인 것: 남은 개수는 늘리지 않는다
                         log.info("카메라가 남은 개수(%d)보다 많이 봤어요: %d (남은 개수 유지)", self.remaining, c.n)

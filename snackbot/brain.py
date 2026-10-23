@@ -79,12 +79,13 @@ def refuse_at(total):
     return -(-total // 2)
 
 
-def allowed_skills(remaining, count, decision, total=None, refused=False):
-    """decision.refuse == "half": 전체의 절반을 옮기면 (작업당 한 번) 거부. 그 밖("fixed"): 옛 고정 임계값."""
+def allowed_skills(remaining, count, decision, total=None, refused=False, refuse_total=None):
+    """decision.refuse == "half": 전체의 절반을 옮기면 (작업당 한 번) 거부. 그 밖("fixed"): 옛 고정 임계값.
+    refuse_total: 거부 시점을 정하는 전체 개수 (맨 처음 센 값, 되살림으로 늘어난 total과 따로). 없으면 total."""
     if remaining <= 0:
         return ["done"]
     if decision.get("refuse") == "half":
-        at = refuse_at(total)
+        at = refuse_at(total if refuse_total is None else refuse_total)
         moved = max(0, total - remaining) if at is not None else 0
         if at is not None and not refused and moved >= at:
             return ["dori_dori"]
@@ -164,12 +165,13 @@ class Brain:
     def line(self, key):
         return self.rng.choice(LINES[key]).replace("{target}", self.target)
 
-    def decide(self, remaining, count, state, speech_text=None, history=None, total=None, refused=False):
-        allowed = allowed_skills(remaining, count, self.decision, total, refused)
+    def decide(self, remaining, count, state, speech_text=None, history=None, total=None, refused=False,
+               refuse_total=None):
+        allowed = allowed_skills(remaining, count, self.decision, total, refused, refuse_total)
         rule_skill = self.rng.choice(allowed)
         skill, say, source = rule_skill, None, "rules"
         half = self.decision.get("refuse") == "half"
-        at = refuse_at(total) if half else None
+        at = refuse_at(total if refuse_total is None else refuse_total) if half else None
         # half 모드: 거부 직전 한 번(옮긴 수 == 거부 시점 - 1)은 지친 대사
         tired = at is not None and not refused and max(0, total - remaining) == at - 1
         if self.chain:

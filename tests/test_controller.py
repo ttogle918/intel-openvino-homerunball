@@ -238,6 +238,28 @@ def test_field_sequence_revive_then_camera_keeps_seeing_two_is_not_done(cfg):
     assert c.refused is False                              # 되살림은 거부 상태를 건드리지 않는다
 
 
+def test_field_sequence_revive_in_half_mode_never_refuses_when_first_total_was_two(cfg):
+    # 현장 config(refuse: half): 맨 처음 센 개수가 전체 개수. 처음 2개였으면 되살림(total 4) 뒤에도 거부하지 않는다
+    cfg["decision"]["max_retry"] = 5
+    cfg["decision"]["refuse"] = "half"
+    seq = [2, 1, 1, 0, 2, 2, 2, 2, 1]
+    c, _ = make(cfg, FakeSkills(grasps=[True] * 5), vision=FakeVision(*[Count(n, "opencv") for n in seq]))
+    c.chat("과자 옮겨줘")
+    assert c.step() == "success" and c.step() == "success"
+    assert c.step() == "fail" and c.total == 4 and c.refuse_total == 2     # 되살림: 번호만 이어지고 거부 기준은 그대로
+    assert c.snapshot()["refuse_at"] is None and c.total - c.remaining == 2   # 다음 번호는 세 번째
+    assert c.step() == "success"                                           # 거부(도리도리) 대신 계속 옮긴다
+    assert c.refused is False and c.skills.runs.count("dori_dori") == 0 and c.state == "WORKING"
+
+
+def test_revive_keeps_refuse_point_of_first_total_six(cfg):
+    cfg["decision"]["refuse"] = "half"
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision(Count(6, "opencv"), Count(5, "opencv")))
+    c.chat("과자 옮겨줘")
+    c.step()
+    assert c.refuse_total == 6 and c.snapshot()["refuse_at"] == 3          # 6개로 시작: 3개 뒤 거부 그대로
+
+
 def test_revive_does_not_trigger_second_refusal(cfg):
     cfg["decision"]["refuse"] = "half"
     seq = [2, 1, 1, 0, 3, 2, 2, 1]

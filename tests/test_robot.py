@@ -547,6 +547,24 @@ def test_dori_source_script_keeps_loaded_policy_for_model_button(rcfg):
     assert r.stop_reason == "timeout" and rt.runs == ["FakePolicy", "MoveSource"]   # 정책 → 홈 복귀
 
 
+def test_dori_source_script_warmup_failure_drops_model_and_continues(rcfg, caplog):
+    class BadShape(FakeModel):
+        def predict_action_chunk(self, inputs):
+            raise ValueError("state shape (1, 6) != (1, 7)")
+
+    rcfg["skills"]["dori_dori"]["source"] = "script"
+    with caplog.at_level("WARNING"):
+        s, rt, _ = make(rcfg, models={"oranda_pickup": FakeModel(), "dori_dori": BadShape()})
+    assert "dori_dori" not in s.policies and "dori_dori" not in s.models and "oranda_pickup" in s.policies
+    assert "warmup 실패" in caplog.text
+    assert s.run("dori_dori").stop_reason == "script"                    # 코드 도리도리는 그대로
+    with pytest.raises(RuntimeError, match="도리도리 모델"):             # 모델 버튼은 꺼진다
+        s.run("dori_policy")
+    rcfg["skills"]["dori_dori"]["source"] = "auto"                       # auto·policy는 기존대로 엄격
+    with pytest.raises(SystemExit, match="dori_dori.*ValueError.*shape"):
+        make(rcfg, models={"oranda_pickup": FakeModel(), "dori_dori": BadShape()})
+
+
 def test_dori_policy_without_model_raises_korean_error(rcfg):
     rcfg["skills"]["dori_dori"]["source"] = "script"
     s, rt, _ = make(rcfg)

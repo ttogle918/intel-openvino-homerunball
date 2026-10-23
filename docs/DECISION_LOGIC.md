@@ -77,7 +77,7 @@ B → A 순서로 구현한다 (설계 문서 6.0절).
 - 성공 = `n_after < n_before` (로그 `judge: vision`). 줄지 않았어도 그리퍼가 쥐었다 놓았으면(`grasped`이고 `stop_reason == gripper_open`) `vision.confirm_s`(기본 0.7초) 뒤 한 번 더 세어 그때 줄었을 때만 성공 (`vision_confirm`), 그래도 같으면 실패 (그리퍼만 믿고 남은 과자가 있는데 끝내지 않는다).
 - counter가 아예 세지 못한 사이클만 그리퍼(`grasped`)로 판정한다 (`judge: gripper`).
 - 남은 개수는 깜빡임으로 늘지 않는다: 앞 세기 `min(센 값, 남은)`, 성공 뒤 `min(센 값, n_before - 1)`. 작업의 첫 세기만 전체(total)를 정한다.
-- 되살림(남은 0인데 카메라가 `seen`개를 봄, 작업당 한 번): `total += seen`, `remaining = seen`. 이미 옮긴 수(moved)가 그대로라 "세 번째"처럼 번호가 이어진다. `refused`는 그대로라 두 번째 거부는 없다.
+- 되살림(남은 0인데 카메라가 `seen`개를 봄, 작업당 한 번): `total += seen`, `remaining = seen`. 이미 옮긴 수(moved)가 그대로라 "세 번째"처럼 번호가 이어진다. 거부 시점은 맨 처음 센 개수(`refuse_total`)로만 정하고 되살려도 바꾸지 않는다: 처음 2개였으면 되살림 뒤에도 거부하지 않고, `refused`가 그대로라 두 번째 거부도 없다.
 - LLM에는 `count`(재개하면 0) 외에 코드가 센 `moved`(total - remaining)와 `this_item`(moved+1)을 준다. "몇 번째" 대사는 이 값으로만.
 
 ## 4. LLM 출력 스키마

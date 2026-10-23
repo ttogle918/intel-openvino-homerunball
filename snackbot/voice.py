@@ -57,6 +57,7 @@ def pcm_to_wav(pcm, rate=24000):
 
 # Windows 내장 음성(SAPI)으로 WAV 파일 만들기. 문장·목소리·경로는 환경 변수로 넘긴다 (따옴표 이스케이프 문제 없음)
 _SAPI_SCRIPT = (
+    "$ErrorActionPreference='Stop'; "   # 목소리·속도 설정 실패를 조용히 넘기지 않고 오류로 만든다
     "Add-Type -AssemblyName System.Speech; "
     "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
     "if ($env:SNACKBOT_TTS_VOICE) { $s.SelectVoice($env:SNACKBOT_TTS_VOICE) }; "
@@ -152,9 +153,15 @@ class Voice:
             env = {**os.environ, "SNACKBOT_TTS_TEXT": text, "SNACKBOT_TTS_OUT": path,
                    "SNACKBOT_TTS_VOICE": str(o.get("fallback_voice", "Microsoft Heami Desktop")),
                    "SNACKBOT_TTS_RATE": str(int(o.get("fallback_rate", 0)))}
-            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _SAPI_SCRIPT],
-                           env=env, check=True, timeout=float(o.get("fallback_timeout_s", 15)),
-                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            try:
+                subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _SAPI_SCRIPT],
+                               env=env, check=True, timeout=float(o.get("fallback_timeout_s", 15)),
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            except subprocess.CalledProcessError as e:
+                err = (e.stderr or b"")
+                err = err.decode("utf-8", "replace") if isinstance(err, bytes) else str(err)
+                log.warning("Windows 예비 음성 실패 (종료 코드 %s): %s", e.returncode, err.strip()[:300])
+                raise
             with open(path, "rb") as f:
                 return f.read()
         finally:
@@ -178,7 +185,10 @@ class Voice:
                     self._primary_off_until = now + cooldown
                     log.warning("TTS %s 한도·권한 오류(%s): %d초 동안 Windows 예비 음성", self.engine, status, cooldown)
                 else:
-                    log.warning("TTS %s 실패, 이번 문장은 Windows 예비 음성: %s", self.engine, e)
+                    # 시간 초과·연결 오류: 문장마다 timeout_s를 기다리지 않게 짧게 API를 건너뛴다
+                    cooldown = float(self.options.get("fallback_error_cooldown_s", 60))
+                    self._primary_off_until = now + cooldown
+                    log.warning("TTS %s 실패, %d초 동안 Windows 예비 음성: %s", self.engine, cooldown, e)
         return self._synthesize_windows(text)
 
     def speak(self, text):
