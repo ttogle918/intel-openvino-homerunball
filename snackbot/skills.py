@@ -78,6 +78,8 @@ class DrySkills:
     def run(self, name, on_phase=None):
         t0 = time.monotonic()
         script = name == "dori_script"   # 코드 도리도리: 녹화 재생은 dori_dori의 것을 쓴다
+        if name == "dori_policy":        # 모델 도리도리: dry-run에서는 dori_dori와 같다
+            name = "dori_dori"
         if not self._wait(self.replay_s.get("dori_dori" if script else name, self.act_s)):
             return RunResult("estop", False, _ms(t0))
         if script:

@@ -22,7 +22,7 @@ from .vision import build_vision
 from .voice import make_voice
 
 KEYS = {"s": "start", "r": "resume", "h": "restart", " ": "estop", "q": "quit"}
-TEST_BUTTONS = (("oranda_pickup", "{target} 1회"), ("dori_dori", "도리도리 1회"), ("dori_script", "코드 도리도리 1회"), ("home", "홈으로"))
+TEST_BUTTONS = (("oranda_pickup", "{target} 1회"), ("dori_policy", "모델 도리도리 1회"), ("dori_script", "코드 도리도리 1회"), ("home", "홈으로"))
 QUIT_CHARS = (chr(3), chr(4))  # Ctrl+C, Ctrl+D
 _restore_terminal = None
 log = logging.getLogger(__name__)
@@ -51,11 +51,11 @@ VISION_LABELS = {"opencv": "OpenCV (ROI·색상)", "yolo": "YOLO-World"}
 def skill_tests_info(cfg, skills):
     """info.tests: 화면 '스킬 테스트' 버튼. 로드되지 않은 정책 버튼은 끈다 (dry-run·홈·코드 도리도리는 켠다)."""
     policies = getattr(skills, "policies", None)   # DrySkills에는 없다 → 모두 가능 (녹화 재생)
-    script = getattr(skills, "dori_source", None) == "script"
     out = []
     for skill, label in TEST_BUTTONS:
-        enabled = (skill in ("home", "dori_script") or policies is None or skill in policies
-                   or (skill == "dori_dori" and script))
+        # 모델 도리도리는 dori_dori 모델이 로드됐을 때만 (source가 script여도 모델이 있으면 로드한다)
+        enabled = (skill in ("home", "dori_script") or policies is None
+                   or ("dori_dori" if skill == "dori_policy" else skill) in policies)
         out.append({"skill": skill, "label": label.replace("{target}", cfg["target"]["name"]),
                     "enabled": enabled, "reason": "" if enabled else "모델 없음"})
     return out

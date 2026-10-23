@@ -1,7 +1,8 @@
-from types import SimpleNamespace
-
 import sys
 import threading
+import types
+from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -536,11 +537,23 @@ def test_dori_source_auto_without_model_runs_script_from_home(rcfg):
     assert at(robot, POSES["home_pose"])
 
 
-def test_dori_source_script_ignores_loaded_policy(rcfg):
+def test_dori_source_script_keeps_loaded_policy_for_model_button(rcfg):
     rcfg["skills"]["dori_dori"]["source"] = "script"
     s, rt, _ = make(rcfg)
-    assert s.dori_source == "script" and "dori_dori" not in s.policies
-    assert s.run("dori_dori").stop_reason == "script" and rt.runs == ["MoveSource"]
+    assert s.dori_source == "script" and "dori_dori" in s.policies       # 모델은 로드·warmup한다
+    assert s.run("dori_dori").stop_reason == "script" and rt.runs == ["MoveSource"]   # source가 정한 동작은 코드
+    rt.runs.clear()
+    r = s.run("dori_policy")                                             # 모델 도리도리 버튼은 항상 정책
+    assert r.stop_reason == "timeout" and rt.runs == ["FakePolicy", "MoveSource"]   # 정책 → 홈 복귀
+
+
+def test_dori_policy_without_model_raises_korean_error(rcfg):
+    rcfg["skills"]["dori_dori"]["source"] = "script"
+    s, rt, _ = make(rcfg)
+    s.policies.pop("dori_dori")
+    with pytest.raises(RuntimeError, match="도리도리 모델"):
+        s.run("dori_policy")
+    assert rt.runs == []
 
 
 def test_dori_script_runs_script_even_when_source_policy_and_model_loaded(rcfg):
@@ -589,13 +602,27 @@ def test_build_policies_policy_without_dori_model_exits_before_any_load(rcfg, tm
     assert "physicalai" not in sys.modules                           # 어떤 모델도 로드하기 전에 끝났다
 
 
-def test_build_policies_skips_dori_model_when_source_is_script(rcfg, tmp_path):
+def _fake_physicalai(monkeypatch):
+    """physicalai가 없는 PC에서도 build_policies의 로드 대상만 확인한다."""
+    loaded = []
+    inference = types.ModuleType("physicalai.inference")
+    inference.InferenceModel = lambda d, device=None: loaded.append(Path(d).name) or object()
+    runtime = types.ModuleType("physicalai.runtime")
+    runtime.PolicySource = lambda m: ("source", m)
+    for name, mod in (("physicalai", types.ModuleType("physicalai")), ("physicalai.inference", inference),
+                      ("physicalai.runtime", runtime)):
+        monkeypatch.setitem(sys.modules, name, mod)
+    return loaded
+
+
+def test_build_policies_loads_dori_model_even_when_source_is_script(rcfg, tmp_path, monkeypatch):
     export = tmp_path / "dori"
     export.mkdir()
     rcfg["skills"]["dori_dori"].update(export_dir=str(export), source="script")
     rcfg["skills"]["oranda_pickup"]["export_dir"] = str(tmp_path / "none")
-    assert build_policies(rcfg) == ({}, {})              # 폴더가 있어도 로드하지 않는다
-    assert "physicalai" not in sys.modules
+    loaded = _fake_physicalai(monkeypatch)
+    policies, models = build_policies(rcfg)
+    assert list(policies) == ["dori_dori"] and loaded == ["dori"]        # 모델 도리도리 버튼용으로 로드한다
 
 
 def test_script_dori_needs_no_gripper_values(cfg):
@@ -664,14 +691,15 @@ def test_dori_settings_clamps_speed_and_length(caplog):
     assert dori_settings({"shake_s": 0.15, "shakes": 10})["shakes"] == 10
 
 
-def test_bad_dori_script_config_exits_before_loading_models(rcfg, tmp_path):
+def test_bad_dori_script_config_exits_before_loading_models(rcfg, tmp_path, monkeypatch):
     export = tmp_path / "dori"
     export.mkdir()
     rcfg["skills"]["dori_dori"].update(export_dir=str(export), source="script", script={"shake_s": float("nan")})
     rcfg["skills"]["oranda_pickup"]["export_dir"] = str(tmp_path / "none")
+    loaded = _fake_physicalai(monkeypatch)
     with pytest.raises(SystemExit, match="shake_s"):
         build_policies(rcfg)
-    assert "physicalai" not in sys.modules
+    assert loaded == []
     rcfg["skills"]["dori_dori"].update(source="magic", script={})
     with pytest.raises(SystemExit, match="auto"):
         build_policies(rcfg)
