@@ -447,3 +447,82 @@ def test_failed_synthesis_does_not_block_next(monkeypatch):
     assert e1.wait(2) and e2.wait(2)
     v.close()
     assert played == [b"ok"]
+
+
+# --- Windows 예비 음성 (fallback: windows) ---
+
+FB = {**GOPTS, "fallback": "windows", "fallback_cooldown_s": 600}
+
+
+def _fb_voice(monkeypatch, handler, env=None, opts=FB):
+    monkeypatch.setattr(voice_mod.sys, "platform", "win32")
+    v = Voice("gemini", opts, GPROVIDERS, {"GK": "gsecret"} if env is None else env,
+              transport=httpx.MockTransport(handler))
+    made = []
+    monkeypatch.setattr(v, "_synthesize_windows", lambda text: made.append(text) or b"WIN:" + text.encode())
+    return v, made
+
+
+def test_quota_error_uses_windows_voice_then_skips_api_for_cooldown(monkeypatch):
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        return httpx.Response(429, json={})
+
+    v, made = _fb_voice(monkeypatch, handler)
+    assert v._synthesize_any("하나") == "WIN:하나".encode()
+    assert v._synthesize_any("둘") == "WIN:둘".encode()
+    v.close()
+    assert len(calls) == 1 and made == ["하나", "둘"]   # 한도 오류 뒤에는 API를 다시 부르지 않는다
+
+
+def test_other_error_uses_windows_voice_once_and_keeps_trying_api(monkeypatch):
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        return httpx.Response(500, json={})
+
+    v, made = _fb_voice(monkeypatch, handler)
+    v._synthesize_any("하나")
+    v._synthesize_any("둘")
+    v.close()
+    assert len(calls) == 2 and made == ["하나", "둘"]
+
+
+def test_api_ok_does_not_use_windows_voice(monkeypatch):
+    v, made = _fb_voice(monkeypatch, lambda req: httpx.Response(200, json=_gemini_reply()))
+    wav = v._synthesize_any("안녕")
+    v.close()
+    assert wav.startswith(b"RIFF") and made == []
+
+
+def test_without_fallback_error_propagates(monkeypatch):
+    v, made = _fb_voice(monkeypatch, lambda req: httpx.Response(429, json={}), opts=GOPTS)
+    try:
+        v._synthesize_any("x")
+        raise AssertionError("예외가 나야 한다")
+    except httpx.HTTPStatusError:
+        pass
+    v.close()
+    assert made == []
+
+
+def test_missing_key_with_fallback_speaks_with_windows_voice(monkeypatch):
+    monkeypatch.setattr(voice_mod.sys, "platform", "win32")
+    played = []
+    monkeypatch.setattr(voice_mod, "play_wav", played.append)
+    v = Voice("gemini", FB, GPROVIDERS, {})
+    assert v.engine == "windows"
+    monkeypatch.setattr(v, "_synthesize_windows", lambda text: b"WIN")
+    v.speak("안녕").wait(2)
+    v.close()
+    assert played == [b"WIN"]
+
+
+def test_fallback_ignored_off_windows(monkeypatch):
+    monkeypatch.setattr(voice_mod.sys, "platform", "linux")
+    v = Voice("gemini", FB, GPROVIDERS, {})
+    assert v.fallback is None and v.engine == "none"
+    v.close()
