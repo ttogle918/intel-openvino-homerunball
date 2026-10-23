@@ -77,8 +77,11 @@ class DrySkills:
 
     def run(self, name, on_phase=None):
         t0 = time.monotonic()
-        if not self._wait(self.replay_s.get(name, self.act_s)):
+        script = name == "dori_script"   # 코드 도리도리: 녹화 재생은 dori_dori의 것을 쓴다
+        if not self._wait(self.replay_s.get("dori_dori" if script else name, self.act_s)):
             return RunResult("estop", False, _ms(t0))
+        if script:
+            return RunResult("script", False, _ms(t0))
         if name != "oranda_pickup":
             return RunResult("timeout", False, _ms(t0))
         grasped = self.tray > 0 and self.rng.random() >= self.fail_rate

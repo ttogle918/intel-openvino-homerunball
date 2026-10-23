@@ -5,6 +5,7 @@ const MOCK_FORCED = new URLSearchParams(location.search).has('mock');
 const TEST_DEFAULT = [   // info.tests가 없을 때 (예전 서버·목업)
   { skill: 'oranda_pickup', label: '오란다 1회', enabled: true, reason: '' },
   { skill: 'dori_dori', label: '도리도리 1회', enabled: true, reason: '' },
+  { skill: 'dori_script', label: '코드 도리도리 1회', enabled: true, reason: '' },
   { skill: 'home', label: '홈으로', enabled: true, reason: '' }];
 
 const S = { state: 'IDLE', phase: 'idle', count: 0, remaining: null, vision_method: null, skill: null,
@@ -560,11 +561,11 @@ function createMock(emit) {
     if (skill === 'home') {
       pushState({ state: 'TESTING', phase: 'returning', skill }); await sleep(1200); if (t !== tok) return;
     } else {
-      pushState({ state: 'TESTING', phase: 'acting', skill }); await sleep(skill === 'dori_dori' ? 1800 : 2600); if (t !== tok) return;
+      pushState({ state: 'TESTING', phase: 'acting', skill }); await sleep(skill === 'dori_dori' || skill === 'dori_script' ? 1800 : 2600); if (t !== tok) return;
       if (skill === 'oranda_pickup') { pushState({ phase: 'returning' }); await sleep(1100); if (t !== tok) return; }
     }
-    const how = { oranda_pickup: '놓기 감지로 끝남 · 쥠 성공', dori_dori: '코드 동작 완료', home: '완료' }[skill];
-    const label = { oranda_pickup: '오란다', dori_dori: '도리도리', home: '홈으로' }[skill];
+    const how = { oranda_pickup: '놓기 감지로 끝남 · 쥠 성공', dori_dori: '코드 동작 완료', dori_script: '코드 동작 완료', home: '완료' }[skill];
+    const label = { oranda_pickup: '오란다', dori_dori: '도리도리', dori_script: '코드 도리도리', home: '홈으로' }[skill];
     const sec = ((Date.now() - t0) / 1000).toFixed(1);
     say('system', fromChat ? `도리도리 · ${how} · ${sec}초` : `테스트 · ${label}: ${how} · ${sec}초`);
     pushState({ state: 'IDLE', phase: 'idle', skill: null });

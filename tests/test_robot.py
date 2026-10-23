@@ -543,6 +543,32 @@ def test_dori_source_script_ignores_loaded_policy(rcfg):
     assert s.run("dori_dori").stop_reason == "script" and rt.runs == ["MoveSource"]
 
 
+def test_dori_script_runs_script_even_when_source_policy_and_model_loaded(rcfg):
+    s, rt, robot = make(rcfg)
+    assert s.dori_source == "policy" and "dori_dori" in s.policies
+    r = s.run("dori_script")
+    assert (r.stop_reason, r.grasped) == ("script", False)
+    assert rt.runs == ["MoveSource"]                      # 정책(FakePolicy)은 돌지 않는다
+    pan = [float(a[0]) for a in robot.history]
+    assert max(pan) == pytest.approx(15) and min(pan) == pytest.approx(-15)
+    assert at(robot, POSES["home_pose"])
+    assert s.run("dori_dori").stop_reason == "timeout"    # 기존 도리도리는 그대로 정책
+
+
+def test_estop_during_dori_script_returns_estop_even_with_policy_loaded(rcfg):
+    s, rt, robot = make(rcfg)
+    tick = s.tap.on_tick
+
+    def on_tick(event):
+        tick(event)
+        if len(robot.history) == 7:
+            s.estop()
+
+    s.tap.on_tick = on_tick
+    assert s.run("dori_script").stop_reason == "estop"
+    assert rt.runs == ["MoveSource"] and len(robot.history) == 7
+
+
 def test_dori_source_policy_without_model_or_unknown_source_exits(rcfg):
     rcfg["skills"]["dori_dori"]["source"] = "policy"
     with pytest.raises(SystemExit, match="source"):

@@ -827,6 +827,21 @@ def test_test_message_includes_record_folder(cfg):
     assert text.endswith(" · 기록 logs/runs/20261022-120000_dori_dori")
 
 
+def test_test_dori_script_runs_once_with_label_and_log(cfg, tmp_path):
+    class Script(FakeSkills):
+        def run(self, name, on_phase=None):
+            self.runs.append(name)
+            return RunResult("script", False, 1)
+
+    c, _ = make(cfg, Script(), log_dir=tmp_path)
+    assert c.command("test", skill="dori_script") is True
+    assert c.step_test() == "script" and c.skills.runs == ["dori_script"]
+    assert c.history[-1]["text"].startswith("테스트 · 코드 도리도리: 코드 동작 완료 · ")
+    assert c.count == 0 and c.state == "IDLE"
+    lines = [json.loads(x) for x in next(tmp_path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()]
+    assert [(x["type"], x["skill"], x["stop_reason"]) for x in lines] == [("test", "dori_script", "script")]
+
+
 def test_test_refused_outside_idle_with_reason(cfg):
     c, _ = make(cfg)
     c.chat("2개 옮겨줘")                                           # WORKING

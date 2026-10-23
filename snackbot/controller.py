@@ -15,8 +15,8 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 IDLE, WORKING, REFUSING, DONE, ESTOP, TESTING = "IDLE", "WORKING", "REFUSING", "DONE", "ESTOP", "TESTING"
-TEST_SKILLS = ("oranda_pickup", "dori_dori", "home")
-TEST_LABELS = {"dori_dori": "도리도리", "home": "홈으로"}   # oranda_pickup은 target 이름
+TEST_SKILLS = ("oranda_pickup", "dori_dori", "dori_script", "home")
+TEST_LABELS = {"dori_dori": "도리도리", "dori_script": "코드 도리도리", "home": "홈으로"}   # oranda_pickup은 target 이름
 STOP_REASON_KO = {"gripper_open": "놓기 감지로 끝남", "timeout": "시간 초과로 끝남", "estop": "비상정지로 멈춤",
                   "script": "코드 동작 완료", "done": "완료"}
 

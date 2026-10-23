@@ -22,7 +22,7 @@ from .vision import build_vision
 from .voice import make_voice
 
 KEYS = {"s": "start", "r": "resume", "h": "restart", " ": "estop", "q": "quit"}
-TEST_BUTTONS = (("oranda_pickup", "{target} 1회"), ("dori_dori", "도리도리 1회"), ("home", "홈으로"))
+TEST_BUTTONS = (("oranda_pickup", "{target} 1회"), ("dori_dori", "도리도리 1회"), ("dori_script", "코드 도리도리 1회"), ("home", "홈으로"))
 QUIT_CHARS = (chr(3), chr(4))  # Ctrl+C, Ctrl+D
 _restore_terminal = None
 log = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ def skill_tests_info(cfg, skills):
     script = getattr(skills, "dori_source", None) == "script"
     out = []
     for skill, label in TEST_BUTTONS:
-        enabled = (skill == "home" or policies is None or skill in policies
+        enabled = (skill in ("home", "dori_script") or policies is None or skill in policies
                    or (skill == "dori_dori" and script))
         out.append({"skill": skill, "label": label.replace("{target}", cfg["target"]["name"]),
                     "enabled": enabled, "reason": "" if enabled else "모델 없음"})
