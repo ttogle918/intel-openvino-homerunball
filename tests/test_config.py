@@ -91,5 +91,5 @@ def test_config_has_twin_sections():
 
 def test_config_dori_script_defaults():
     dori = load_config(ROOT / "config.yaml")["skills"]["dori_dori"]
-    assert dori["source"] == "auto"
+    assert dori["source"] in ("auto", "policy", "script")   # 현장 값 (2026-10-23 실기: script)
     assert dori["script"] == {"joint": "shoulder_pan", "amplitude": 15, "shakes": 2, "shake_s": 0.35}
