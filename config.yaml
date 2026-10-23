@@ -59,8 +59,9 @@ stt:
 robot:
   # 시연 노트북은 Windows. 팔로워 = COM5 (CH343 시리얼 5B90101274), 리더 = COM6 (5B79080541) — 2026-10-23 서보 레지스터·토크 상태로 판별.
   # Windows는 같은 USB 어댑터에 같은 COM 번호를 준다. Ubuntu라면 ls -l /dev/serial/by-id/ 경로를 쓴다 (Studio PC는 팔로워 ACM1, 리더 ACM0)
-  port: COM5
-  calibration: calibration/follower.yaml   # python -m tools.fetch_calibration 으로 Studio에서 받는다
+  port: COM5                               # Windows 노트북 (지금 쓰는 값)
+  # port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5B90101274-if00-port0   # Ubuntu: ls -l /dev/serial/by-id/ 에서 팔로워 경로로 바꾼다 (이름은 예시)
+  calibration: calibration/follower.yaml   # Studio에서 받는다 — Windows: .venv\Scripts\python -m tools.fetch_calibration ... / Ubuntu: .venv/bin/python -m tools.fetch_calibration ... (파일 머리말 참고)
 
 cameras:                                   # 키 = 학습 때 카메라 이름 (정책 입력 images.<이름>). 정책이 쓰는 카메라를 모두 둔다
   # device: 번호(0 → /dev/video0) 또는 {serial: "..."} (USB를 다시 꽂아도 같은 장치). python -m tools.cameras 로 확인
@@ -69,6 +70,12 @@ cameras:                                   # 키 = 학습 때 카메라 이름 (
   tower cam:  {device: 2, width: 1280, height: 720, fps: 30}   # oranda 학습 이름 a
   side cam:   {device: 3, width: 1280, height: 720, fps: 30}   # 트레이 맞은편. oranda 학습 이름 b (tower와 시리얼이 같아 Windows가 포트 기준 ID를 준다)
   follow cam: {device: 1, width: 1280, height: 720, fps: 30}   # 손목. oranda 학습 이름 follow
+  # Ubuntu (Studio PC 기준 runtime-config, 2026-10-23) — 위 세 줄 대신 쓴다. 번호는 Ubuntu에서 tools.cameras로 다시 확인:
+  #   .venv/bin/python -m tools.cameras
+  # tower cam:  {device: 0, width: 1280, height: 720, fps: 30}                           # a (tower·side는 시리얼이 같아 번호로)
+  # side cam:   {device: 4, width: 1280, height: 720, fps: 30}                           # b
+  # follow cam: {device: {serial: "20240307110322"}, width: 1280, height: 720, fps: 30}  # 손목, 시리얼 고유
+  # (Windows: .venv\Scripts\python -m tools.cameras)
 
 skills:
   fps: 30

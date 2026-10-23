@@ -56,6 +56,15 @@ def test_poses_roundtrip(tmp_path):
     assert load_poses(p) == {"home_pose": [1.23, 2.0, 3.0, 4.0, 5.0, 6.79], "lift_pose": [0.0] * 6}
 
 
+def test_save_pose_keeps_header_comments(tmp_path):
+    p = tmp_path / "poses.yaml"
+    p.write_text("# 환경: Windows 노트북\n\n# 다시 저장: robot_probe save home\nhome_pose: [0, 0, 0, 0, 0, 0]\n", encoding="utf-8")
+    save_pose(p, "lift_pose", [1] * 6)
+    text = p.read_text(encoding="utf-8")
+    assert text.startswith("# 환경: Windows 노트북\n\n# 다시 저장: robot_probe save home\n")
+    assert load_poses(p) == {"home_pose": [0] * 6, "lift_pose": [1.0] * 6}
+
+
 def test_ui_tiles_default_and_custom():
     cfg = {"cameras": {"tower cam": {}, "follow cam": {}}}
     assert ui_tiles(cfg) == [

@@ -33,10 +33,25 @@ def load_poses(path="poses.yaml"):
         return yaml.safe_load(f) or {}
 
 
+def leading_comments(path):
+    """파일 맨 위의 주석·빈 줄 묶음 (다시 쓸 때 머리말을 지키려고). 파일이 없으면 ""."""
+    p = Path(path)
+    if not p.exists():
+        return ""
+    head = []
+    for line in p.read_text(encoding="utf-8").splitlines(keepends=True):
+        if line.strip() and not line.lstrip().startswith("#"):
+            break
+        head.append(line)
+    return "".join(head)
+
+
 def save_pose(path, name, values):
     poses = load_poses(path)
     poses[name] = [round(float(v), 2) for v in values]
+    head = leading_comments(path)
     with open(path, "w", encoding="utf-8") as f:
+        f.write(head)
         yaml.safe_dump(poses, f, default_flow_style=None, sort_keys=True)
     return poses
 
