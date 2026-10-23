@@ -13,8 +13,8 @@ flowchart TD
     end
 
     subgraph P["인식 계층"]
-        CAM["카메라<br/>외부 + 손목"]
-        CNT_A["A: counter 체인<br/>YOLO-World → VLM → OpenCV"]
+        CAM["카메라 3대<br/>tower · side · follow"]
+        CNT_A["A: counter 체인<br/>OpenCV (YOLO-World · VLM 자리)"]
         GRIP["B: 시작 개수 +<br/>그리퍼 쥠 판정"]
     end
 
@@ -49,7 +49,7 @@ flowchart TD
     WAIT -->|"count = 0"| CTRL
 ```
 
-- 점선: A단계(M3)에서 추가. B단계만으로도 전체 흐름이 돈다.
+- 점선: A단계(개수 세기, 지금은 OpenCV). UI 토글로 끄면 B단계만으로도 전체 흐름이 돈다.
 - 과자를 찾아 집는 일은 ACT가 영상만 보고 한다. 인식 계층은 **언제 끝낼지**와 **성공했는지**만 판정한다.
 - LLM은 로봇을 직접 움직이지 않고, **허용된 값 하나와 대사**만 출력한다.
 - `oranda_pickup` ACT는 **놓기까지만** 한다. 홈 복귀는 학습하지 않고 코드가 저장된 자세로 강제한다.
@@ -60,7 +60,7 @@ flowchart TD
 flowchart LR
     A["홈 자세 확인<br/>home_pose와 비교"] --> B["ACT 추론 루프 30fps<br/>집기 → 놓기"]
     B --> C{"정지 조건"}
-    C -->|"그리퍼 닫힘 → 열림 + 0.5초"| D["ACT 정지"]
+    C -->|"그리퍼 닫힘 → 열림 유지"| D["ACT 정지"]
     C -->|"최대 시간 초과"| D
     C -->|"비상정지"| X["목표 고정 · 중단"]
     D --> E["lift_pose로 천천히 이동<br/>위로 들기"]
@@ -70,8 +70,8 @@ flowchart LR
 | 단계 | 담당 | 비고 |
 |---|---|---|
 | 홈 자세 확인 | 코드 | 관절별 오차가 기준(5)보다 크면 먼저 home_pose로 이동 |
-| 집기 → 놓기 | ACT | 학습한 구간. `physicalai.InferenceModel.select_action` |
-| 정지 판단 | 코드 | 닫힘 기준을 한 번 지난 뒤 열림 기준을 0.5초 넘으면, 또는 최대 시간(예: 20초) |
+| 집기 → 놓기 | ACT | 학습한 구간. `RobotRuntime` + `PolicySource(InferenceModel)` (정지 신호·비상정지 세대는 `robot.py`) |
+| 정지 판단 | 코드 | 닫힘 기준(56.0)을 한 번 지난 뒤 열림 기준(56.5)을 `open_hold_s`(0.15초) 넘으면, 또는 최대 시간(20초) |
 | 쥠 판정 | 코드 | 닫힘 구간의 그리퍼 최솟값 ≥ `grasp_min` → 과자를 쥐었음 |
 | 위로 들기 → 홈 | 코드 | 관절 공간 보간, 느린 속도. 트레이·과자 충돌 방지 |
 
@@ -92,7 +92,7 @@ sequenceDiagram
     B-->>C: {"intent": "start_task", "n": 3, "say": "..."}
     C->>C: IDLE → WORKING, remaining = 3
     C->>B: decide(remaining=3, count=2, state=WORKING)
-    B->>B: 코드 가드 (count <= 3 → oranda_pickup 강제)
+    B->>B: 코드 가드 (옮긴 수 < ceil(전체/2) → oranda_pickup 강제)
     B->>B: LLM 호출 → 대사 생성
     B-->>C: {"skill": "oranda_pickup", "say": "..."}
     par 대사와 동작 동시 진행
@@ -115,6 +115,9 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> IDLE
     IDLE --> IDLE: 잡담 → 캐릭터 대답
+    IDLE --> TESTING: 스킬 테스트 버튼 · 도리도리 해 봐
+    TESTING --> IDLE: 1회 끝
+    TESTING --> ESTOP: space · UI 비상정지
     IDLE --> WORKING: start_task (채팅 · 음성 · s 키)
     WORKING --> WORKING: 옮기기 성공 (count + 1) / 실패 재시도 (최대 2회)
     WORKING --> REFUSING: 거부 결정 (dori_dori 실행)
@@ -126,6 +129,7 @@ stateDiagram-v2
     ESTOP --> IDLE: restart (home_pose 복귀 후)
 ```
 
+- 거부(REFUSING)는 `decision.refuse: half`에서 전체의 절반(올림)을 옮긴 뒤 작업당 한 번이다 (`fixed`는 옛 고정 임계값 3·6). 상세는 `DECISION_LOGIC.md`.
 - 재시도를 넘겨도 실패하면 WORKING 상태에서 `phase = waiting_operator`로 재개 명령을 기다린다.
 
 ## 4. 모듈 구조
@@ -142,7 +146,10 @@ flowchart LR
     VIS["vision.py<br/>counter 체인"]
     STT["stt.py"]
     VOC["voice.py<br/>TTS"]
-    SKL["skills.py<br/>physicalai"]
+    SKL["skills.py<br/>DrySkills"]
+    ROB["robot.py<br/>RobotSkills · RobotRuntime"]
+    MOT["motion.py · recorder.py"]
+    TWN["twin.py"]
     LOG[("logs/*.jsonl")]
 
     CFG --> MAIN
@@ -155,21 +162,24 @@ flowchart LR
     CTRL --> VIS
     CTRL --> VOC
     CTRL --> SKL
+    CTRL --> ROB
+    ROB --> MOT
+    SRV --> TWN
     CTRL --> LOG
     BRN --> PRV
     VIS --> PRV
     STT --> PRV
-    SKL --> POSE["자세 이동<br/>home_pose · lift_pose"]
-    SKL --> OVACT["InferenceModel<br/>ACT · OpenVINO"]
-    SKL --> HW["SO101 · UVCCamera"]
+    ROB --> POSE["자세 이동<br/>home_pose · lift_pose"]
+    ROB --> OVACT["InferenceModel<br/>ACT · OpenVINO"]
+    ROB --> HW["SO101 · UVCCamera"]
 ```
 
 ## 5. 모델 실행 위치
 
 | 구성요소 | 모델 | 실행 위치 | 단계 |
 |---|---|---|---|
-| ACT 2개 | physical-ai-studio 학습 → OpenVINO 결과물 | **로컬** CPU / GPU / NPU | 필수 |
+| ACT 2개 | physical-ai-studio 학습 → OpenVINO 결과물 | **로컬** CPU / GPU / NPU (시연 노트북은 CPU: GPU 컴파일이 정책마다 55~65초) | 필수 |
 | 판단·대사·채팅 의도 | instruct LLM | **API** (OpenRouter / NVIDIA / 유료) → 선택적으로 로컬 OpenVINO → 규칙 | 필수 |
-| 개수 세기 (A) | YOLO-World(OpenVINO) / VLM / OpenCV | 로컬 또는 API | M3 |
+| 개수 세기 (A) | OpenCV(현재) / YOLO-World(OpenVINO) / VLM | 로컬 | M3 |
 | STT | Whisper | 로컬 OpenVINO 또는 API | M6 |
 | TTS | 한국어 TTS | 로컬 | 선택 |

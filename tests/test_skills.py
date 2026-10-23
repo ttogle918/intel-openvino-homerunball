@@ -47,6 +47,10 @@ def test_dori_dori(cfg):
     assert DrySkills(cfg).run("dori_dori") == RunResult("timeout", False, 0)
 
 
+def test_dori_script_waits_like_dori_dori_and_reports_script(cfg):
+    assert DrySkills(cfg).run("dori_script") == RunResult("script", False, 0)
+
+
 def test_estop_interrupts_and_release(cfg):
     cfg["dry_run"]["act_s"] = 0.5
     s = DrySkills(cfg)
@@ -62,7 +66,7 @@ def test_frame_is_synthetic_and_countable(cfg):
     s.new_task(3)
     f = s.latest_frame("front")
     assert f.shape == (480, 640, 3) and f.dtype == np.uint8
-    assert OpenCVCounter(**OPENCV).count(f).n == 3
+    assert OpenCVCounter(**OPENCV, ring_dark=0).count(f).n == 3
     assert OpenCVCounter(**OPENCV).count(synth_tray(0)).n == 0
 
 

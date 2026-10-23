@@ -5,9 +5,11 @@ const MOCK_FORCED = new URLSearchParams(location.search).has('mock');
 const TEST_DEFAULT = [   // info.tests가 없을 때 (예전 서버·목업)
   { skill: 'oranda_pickup', label: '오란다 1회', enabled: true, reason: '' },
   { skill: 'dori_dori', label: '도리도리 1회', enabled: true, reason: '' },
+  { skill: 'dori_script', label: '코드 도리도리 1회', enabled: true, reason: '' },
   { skill: 'home', label: '홈으로', enabled: true, reason: '' }];
 
 const S = { state: 'IDLE', phase: 'idle', count: 0, remaining: null, vision_method: null, skill: null,
+  vision_choice: 'off', vision_options: [], last_count: null,
   th: { safe_max: 3, force_refuse: 6 }, name: '과자', got: false, cycles: [], mock: false,
   twin: { mode: 'replay', urdf: 'twin/so101/so101_new_calib.urdf' }, replays: [], tests: TEST_DEFAULT };
 
@@ -31,16 +33,35 @@ function renderState() {
   });
 
   const { safe_max, force_refuse } = S.th;
-  const tier = S.count >= force_refuse ? 'max' : S.count > safe_max ? 'mid' : '';
+  let tier, fill, mark, countTxt, maxTxt;
+  if (S.refuse_mode === 'half') {   // 전체의 절반을 옮기면 거부: 옮긴 수(전체 − 남은)와 거부 시점으로 계산
+    const moved = S.total != null && S.remaining != null ? Math.max(0, S.total - S.remaining) : 0;
+    const at = S.refuse_at;
+    if (at) {
+      tier = S.state === 'REFUSING' || moved >= at ? 'max' : moved >= at - 1 ? 'mid' : '';
+      fill = (moved / at) * 100; mark = ((at - 1) / at) * 100;
+      maxTxt = `전체 ${S.total} · ${at}개째 뒤 거부`;
+    } else {
+      tier = ''; mark = 100;
+      fill = S.total ? (moved / S.total) * 100 : 0;
+      maxTxt = S.total ? `전체 ${S.total} · 거부 없음` : '대기 중';
+    }
+    countTxt = `${moved}개 옮김`;
+  } else {
+    tier = S.count >= force_refuse ? 'max' : S.count > safe_max ? 'mid' : '';
+    fill = (S.count / Math.max(1, force_refuse)) * 100;
+    mark = (safe_max / Math.max(1, force_refuse)) * 100;
+    countTxt = `${S.count}회 옮김`; maxTxt = `한계 ${force_refuse}회`;
+  }
   const t = $('#fatigueTier');
   t.textContent = tier === 'max' ? '한계' : tier === 'mid' ? '지침' : '쌩쌩';
   t.className = 'tier ' + tier;
   const f = $('#gaugeFill');
   f.className = 'gauge-fill ' + tier;
-  f.style.width = Math.min(100, (S.count / Math.max(1, force_refuse)) * 100) + '%';
-  $('#gaugeMark').style.left = (safe_max / Math.max(1, force_refuse)) * 100 + '%';
-  $('#gaugeCount').textContent = `${S.count}회 옮김`;
-  $('#gaugeMax').textContent = `한계 ${force_refuse}회`;
+  f.style.width = Math.min(100, fill) + '%';
+  $('#gaugeMark').style.left = mark + '%';
+  $('#gaugeCount').textContent = countTxt;
+  $('#gaugeMax').textContent = maxTxt;
 
   let mood = tier === 'max' ? 'limit' : tier === 'mid' ? 'tired' : 'fresh';
   if (S.state === 'REFUSING') mood = 'refuse';
@@ -57,6 +78,7 @@ function renderState() {
     ? '개수 · <em>추정</em> 시작 개수 − 성공 수'
     : `개수를 센 방법 · ${METHOD_KO[m] || m}`;
 
+  renderVision();
   const st = S.state;
   $('#btnResume').disabled = !(st === 'REFUSING' || S.phase === 'waiting_operator');
   $('#btnRestart').disabled = st !== 'ESTOP';
@@ -66,6 +88,32 @@ function renderState() {
     b.disabled = !S.got || st !== 'IDLE' || t.enabled === false;
     b.title = t.enabled === false ? (t.reason || '모델 없음') : '';
   });
+}
+
+const CHOICE_KO = { off: '끔', auto: '자동', opencv: 'OpenCV', yolo: 'YOLO', vlm: 'VLM', fake: '테스트 값' };
+let visionKey = '';
+function renderVision() {   // 서버가 알려 준 선택지만 보여 준다 (없으면 칸 전체 숨김)
+  const opts = S.vision_options || [];
+  $('#visionBox').hidden = !opts.length;
+  const key = opts.join('|');
+  if (key !== visionKey) {
+    visionKey = key;
+    const seg = $('#visionSeg');
+    seg.innerHTML = '';
+    opts.forEach((o) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.dataset.opt = o; b.textContent = CHOICE_KO[o] || o;
+      b.onclick = () => sendWS({ type: 'command', name: 'vision_method', method: o });
+      seg.appendChild(b);
+    });
+  }
+  seg_pressed();
+  $('#btnCount').disabled = !S.got || S.state !== 'IDLE' || S.vision_choice === 'off' || !opts.length;
+  const c = S.last_count;
+  $('#visionLast').textContent = c ? `${S.name} ${c.n}개 · ${METHOD_KO[c.method] || c.method} · ${c.ms}ms` : '';
+}
+function seg_pressed() {
+  document.querySelectorAll('#visionSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.opt === S.vision_choice)));
 }
 
 function renderInfo(m) {
@@ -132,6 +180,9 @@ function handle(m) {
       S.state = m.state; S.phase = m.phase || 'idle';
       S.count = m.count ?? 0; S.remaining = m.remaining ?? null;
       S.vision_method = m.vision_method || null; S.skill = m.skill || null;
+      S.vision_choice = m.vision_choice || 'off'; S.vision_options = Array.isArray(m.vision_options) ? m.vision_options : [];
+      S.last_count = m.last_count || null;
+      S.total = m.total ?? null; S.refuse_at = m.refuse_at ?? null; S.refuse_mode = m.refuse_mode || 'fixed';
       if (m.thresholds) S.th = { safe_max: m.thresholds.safe_max, force_refuse: m.thresholds.force_refuse };
       renderState();
       onReplayState(prev);
@@ -198,6 +249,7 @@ $('#chatForm').addEventListener('submit', (e) => {
 });
 $('#btnResume').onclick = () => sendWS({ type: 'command', name: 'resume' });
 $('#btnRestart').onclick = () => sendWS({ type: 'command', name: 'restart' });
+$('#btnCount').onclick = () => sendWS({ type: 'command', name: 'count' });
 $('#btnEstop').onclick = () => sendWS({ type: 'command', name: 'estop' });
 function buildTestButtons() {   // info.tests → "스킬 테스트" 버튼. 활성/비활성은 renderState가 정한다
   const box = $('#testBtns');
@@ -510,9 +562,10 @@ function createMock(emit) {
   const TOTAL = 8, TH = { safe_max: 3, force_refuse: 6 };
   const st = { state: 'IDLE', phase: 'idle', count: 0, remaining: TOTAL, skill: null };
   let tok = 0, n = 0, resumeFn = null, timers = new Set(), dead = false;
+  let vchoice = 'fake', lastCount = null;
   const now = () => Date.now() / 1000;
   const sleep = (ms) => new Promise((r) => { const t = setTimeout(() => { timers.delete(t); r(); }, ms); timers.add(t); });
-  const pushState = (o = {}) => { Object.assign(st, o); emit({ type: 'state', ...st, vision_method: 'fake', thresholds: TH }); };
+  const pushState = (o = {}) => { Object.assign(st, o); emit({ type: 'state', ...st, vision_method: 'fake', vision_choice: vchoice, vision_options: ['fake', 'off'], last_count: lastCount, thresholds: TH }); };
   const say = (role, text, source) => emit({ type: 'message', role, text, ...(role === 'user' ? { source: source || 'text' } : {}), ts: now() });
   const rnd = (a, b) => Math.round(a + Math.random() * (b - a));
   const tired = (c) => c <= TH.safe_max ? ['', '', ''] : null;
@@ -560,11 +613,11 @@ function createMock(emit) {
     if (skill === 'home') {
       pushState({ state: 'TESTING', phase: 'returning', skill }); await sleep(1200); if (t !== tok) return;
     } else {
-      pushState({ state: 'TESTING', phase: 'acting', skill }); await sleep(skill === 'dori_dori' ? 1800 : 2600); if (t !== tok) return;
+      pushState({ state: 'TESTING', phase: 'acting', skill }); await sleep(skill === 'dori_dori' || skill === 'dori_script' ? 1800 : 2600); if (t !== tok) return;
       if (skill === 'oranda_pickup') { pushState({ phase: 'returning' }); await sleep(1100); if (t !== tok) return; }
     }
-    const how = { oranda_pickup: '놓기 감지로 끝남 · 쥠 성공', dori_dori: '코드 동작 완료', home: '완료' }[skill];
-    const label = { oranda_pickup: '오란다', dori_dori: '도리도리', home: '홈으로' }[skill];
+    const how = { oranda_pickup: '놓기 감지로 끝남 · 쥠 성공', dori_dori: '코드 동작 완료', dori_script: '코드 동작 완료', home: '완료' }[skill];
+    const label = { oranda_pickup: '오란다', dori_dori: '도리도리', dori_script: '코드 도리도리', home: '홈으로' }[skill];
     const sec = ((Date.now() - t0) / 1000).toFixed(1);
     say('system', fromChat ? `도리도리 · ${how} · ${sec}초` : `테스트 · ${label}: ${how} · ${sec}초`);
     pushState({ state: 'IDLE', phase: 'idle', skill: null });
@@ -602,6 +655,12 @@ function createMock(emit) {
           tok++; n = 0; say('system', '재시작했어요'); pushState({ state: 'IDLE', phase: 'idle', count: 0, remaining: TOTAL, skill: null });
           say('robot', '다시 출근했어요. 뭐 시키실 거예요?');
         } else if (m.name === 'resume' && resumeFn) { say('system', '진행자가 재개했어요'); resumeFn(); }
+        else if (m.name === 'vision_method' && ['fake', 'off'].includes(m.method)) { vchoice = m.method; pushState({}); }
+        else if (m.name === 'count') {
+          if (st.state !== 'IDLE') say('system', '대기 상태에서만 지금 세기를 할 수 있어요');
+          else if (vchoice === 'off') say('system', '개수 세기가 꺼져 있어요');
+          else { lastCount = { n: st.remaining ?? TOTAL, method: 'fake', ms: rnd(80, 160) }; pushState({ remaining: lastCount.n }); }
+        }
         else if (m.name === 'test') {
           if (st.state === 'IDLE' && TEST_DEFAULT.some((x) => x.skill === m.skill)) runTest(m.skill, false);
           else say('system', st.state === 'TESTING' ? '이미 테스트 중이에요' : '대기 상태에서만 테스트할 수 있어요');

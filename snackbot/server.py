@@ -176,6 +176,14 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend",
                                                                    expect_gen=g), ()))
                         else:
                             log.info("알 수 없는 테스트 스킬 무시: %r", skill)
+                    elif kind == "command" and msg.get("name") == "vision_method":
+                        method = msg.get("method")
+                        if isinstance(method, str) and (method == "auto" or method in controller.vision_options()):
+                            commands.put_nowait((functools.partial(controller.command, "vision_method", method=method), ()))
+                        else:
+                            log.info("알 수 없는 개수 세기 방법 무시: %r", method)
+                    elif kind == "command" and msg.get("name") == "count":
+                        commands.put_nowait((controller.command, ("count",)))   # 연결 큐에서 차례대로 (세는 동안 이 연결의 다른 명령은 뒤에서 기다린다. estop은 큐를 거치지 않는다)
                     elif kind == "command" and msg.get("name") in UI_COMMANDS:
                         commands.put_nowait((controller.command, (msg["name"],)))
                 except Exception as e:

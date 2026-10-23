@@ -124,3 +124,10 @@ skills:
 - JSONL 테스트 줄: `{"ts","type":"test","skill","origin":"button|llm","stop_reason"(예외면 "error"),"grasped","ms","record","error"}`. 사이클 번호·`cycle` 이벤트 없음. 사이클 줄은 그대로 (`type` 없음).
 - 버튼 이름표: `<target 이름> 1회` · `도리도리 1회` · `홈으로` (`info.tests`). dry-run은 모두 활성.
 - 화면: 제어 칸을 넓혀 재개·재시작을 한 줄로, 그 아래 스킬 테스트 줄. 테스트 중 단계 표시줄은 옮기기·복귀만, acting 단계 이름은 "실행 중".
+
+## 10. 추가: 코드 도리도리 1회 버튼 (2026-10-23)
+
+- 현장 테스트에서 dori_dori ACT 모델이 180스텝을 돌았지만 shoulder_pan이 ±1 안에 머물렀다 (고개를 젓지 않고 lift·elbow만 까딱임). 그래서 모델과 별도로 코드 도리도리만 1회 실행하는 테스트 스킬 `dori_script`(버튼 `코드 도리도리 1회`)를 추가했다.
+- `source`(auto|policy|script)·모델 유무와 무관하게 항상 `_script_dori`를 실행한다 (RobotSkills.run("dori_script"), POLICIES에는 넣지 않음). 모델이 필요 없어 버튼은 항상 켜진다. 기존 `도리도리 1회`·LLM intent·거부 사이클은 그대로다.
+- 이 때문에 `skills.dori_dori.script` 설정은 `source: policy`에서도 시작할 때 검사한다 (잘못된 값이면 SystemExit).
+- 결과 이름 `코드 도리도리`, 횟수·피로도에는 들어가지 않고 JSONL `"type": "test"`, `"skill": "dori_script"`. dry-run은 dori_dori 녹화 길이(없으면 act_s)만큼 기다린다.

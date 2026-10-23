@@ -2,6 +2,7 @@
 비어 있으면 controller가 B단계(시작 개수 + 그리퍼 판정)로 동작한다."""
 import logging
 import re
+import time
 from dataclasses import dataclass
 
 import cv2
@@ -48,24 +49,62 @@ class FakeCounter:
 
 
 class OpenCVCounter:
-    """색상(HSV) 범위 + 면적으로 센다. 오란다는 모양이 불규칙해 원형도는 쓰지 않는다."""
+    """오란다(황갈색 뭉치)를 색 + 위치 + 크기로 센다. 프레임은 RGB. 현장 튜닝 v2 (2026-10-23).
+    1) HSV 범위 마스크를 ROI(검은 매트 영역) 안에서만 만든다 → 열기 3x3, 닫기 7x7, 바깥 윤곽, 150px 미만은 무시.
+    2) 매트 위 판정(어두운 고리): 덩어리를 ring px 넓힌 고리에서 V < dark_v 인 픽셀이 ring_dark 이상이어야 한다.
+       흰 트레이 안의 과자, 흰 로봇·책상 위 덩어리를 거른다 (ring_dark=0이면 끈다).
+    3) 오란다 규칙: 매트 위 + 면적 >= min_area + 평균 색상(0..180) <= max_hue. 노란 동그란 과자(색상 23~25)와
+       작은 버섯 과자(300~600px)가 빠진다. 붙어 있는 오란다는 한 덩어리가 되므로 round(면적 / unit_area)개로 센다.
+    roi: [x1, y1, x2, y2] 가로·세로 비율 (0..1). 없으면 프레임 전체. max_area는 예전 설정 호환용으로만 받는다."""
     name = "opencv"
+    MIN_BLOB = 150
 
-    def __init__(self, min_area=800, max_area=8000, hsv_low=(10, 60, 80), hsv_high=(30, 255, 255)):
+    def __init__(self, min_area=800, max_area=None, hsv_low=(5, 60, 90), hsv_high=(40, 255, 255),
+                 roi=None, unit_area=1700, max_hue=22.0, ring=12, ring_dark=0.6, dark_v=80):
         self.min_area, self.max_area = min_area, max_area
         self.low, self.high = np.array(hsv_low, np.uint8), np.array(hsv_high, np.uint8)
+        if roi is not None and (len(roi) != 4 or not (0 <= roi[0] < roi[2] <= 1 and 0 <= roi[1] < roi[3] <= 1)):
+            raise ValueError(f"roi는 [x1, y1, x2, y2] 비율(0..1, x1<x2, y1<y2)이어야 해요: {roi}")
+        self.roi = None if roi is None else tuple(float(v) for v in roi)
+        self.unit_area, self.max_hue = float(unit_area), float(max_hue)
+        self.ring, self.ring_dark, self.dark_v = int(ring), float(ring_dark), int(dark_v)
 
-    def count(self, frame):
+    def blobs(self, frame):
+        """덩어리마다 {box, area, hue, ring_dark, on_mat, oranda, n}. 튜닝 확인용으로도 쓴다."""
+        h, w = frame.shape[:2]
         hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
         mask = cv2.inRange(hsv, self.low, self.high)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        if self.roi is not None:
+            x1, y1, x2, y2 = round(self.roi[0] * w), round(self.roi[1] * h), round(self.roi[2] * w), round(self.roi[3] * h)
+            keep = np.zeros_like(mask)
+            keep[y1:y2, x1:x2] = 255
+            mask = cv2.bitwise_and(mask, keep)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+        dark = hsv[..., 2] < self.dark_v
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        boxes = []
+        k = np.ones((2 * self.ring + 1,) * 2, np.uint8)
+        out = []
         for c in contours:
-            if self.min_area <= cv2.contourArea(c) <= self.max_area:
-                x, y, w, h = cv2.boundingRect(c)
-                boxes.append([x, y, x + w, y + h])
-        return Count(len(boxes), "opencv", boxes)
+            area = cv2.contourArea(c)
+            if area < self.MIN_BLOB:
+                continue
+            blob = np.zeros(mask.shape, np.uint8)
+            cv2.drawContours(blob, [c], -1, 255, -1)
+            ring = (cv2.dilate(blob, k) > 0) & (blob == 0)
+            frac = float(dark[ring].mean()) if ring.any() else 0.0
+            hue = float(hsv[..., 0][blob > 0].mean())
+            on_mat = frac >= self.ring_dark
+            oranda = on_mat and area >= self.min_area and hue <= self.max_hue
+            x, y, bw, bh = cv2.boundingRect(c)
+            out.append({"box": [x, y, x + bw, y + bh], "area": area, "hue": hue, "ring_dark": frac,
+                        "on_mat": on_mat, "oranda": oranda,
+                        "n": max(1, round(area / self.unit_area)) if oranda else 0})
+        return out
+
+    def count(self, frame):
+        counted = [b for b in self.blobs(frame) if b["oranda"]]
+        return Count(sum(b["n"] for b in counted), "opencv", [b["box"] for b in counted])
 
 
 class VlmCounter:
@@ -114,8 +153,15 @@ class Vision:
     def enabled(self):
         return bool(self.counters)
 
-    def count(self, frame):
+    @property
+    def names(self):
+        return [c.name for c in self.counters]
+
+    def count(self, frame, only=None):
+        """체인 순서대로 시도해 첫 결과를 돌려준다. only=이름이면 그 counter 하나만 (없는 이름이면 None)."""
         for c in self.counters:
+            if only is not None and c.name != only:
+                continue
             try:
                 r = c.count(frame)
             except Exception as e:
@@ -135,7 +181,8 @@ def build_vision(vision_cfg, providers_cfg, env, remaining_fn=None):
                 counters.append(FakeCounter(remaining_fn))
             elif kind == "opencv":
                 counters.append(OpenCVCounter(**{k: e[k] for k in
-                                                 ("min_area", "max_area", "hsv_low", "hsv_high") if k in e}))
+                                                 ("min_area", "max_area", "hsv_low", "hsv_high", "roi", "unit_area",
+                                                  "max_hue", "ring", "ring_dark", "dark_v") if k in e}))
             elif kind == "vlm":
                 chain = build_chain([e], providers_cfg, env)
                 if chain:
@@ -157,6 +204,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m snackbot.vision")
     p.add_argument("image")
     p.add_argument("--config", default="config.yaml")
+    p.add_argument("--blobs", action="store_true", help="OpenCV 덩어리별 면적·색상·매트 판정을 보여준다 (ROI·min_area 조정용)")
     a = p.parse_args(argv)
     cfg = load_config(a.config)
     v = build_vision(cfg["vision"], cfg.get("providers", {}), load_env())
@@ -167,7 +215,16 @@ def main(argv=None):
     if bgr is None:
         print(f"이미지를 못 읽었어요: {a.image}")
         return 1
-    print(v.count(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)))
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    for c in v.counters:   # 체인의 counter마다 따로 세어 방법별 결과를 비교한다
+        t0 = time.monotonic()
+        r = v.count(rgb, only=c.name)
+        ms = int((time.monotonic() - t0) * 1000)
+        print(f"{c.name}: {'실패' if r is None else f'{r.n}개'} ({ms}ms)", f"boxes={r.boxes}" if r and r.boxes else "")
+        if isinstance(c, OpenCVCounter) and a.blobs:
+            for b in c.blobs(rgb):
+                print("  ", {k: (round(x, 2) if isinstance(x, float) else x) for k, x in b.items()})
+    print("체인 결과:", v.count(rgb))
     return 0
 
 

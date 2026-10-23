@@ -9,11 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_repo_config_has_core_sections():
     cfg = load_config(ROOT / "config.yaml")
     assert cfg["target"] == {"name": "오란다", "robot_name": "보리", "initial_count": 3}
-    assert cfg["decision"] == {"safe_max": 3, "force_refuse": 6, "max_retry": 2}
+    assert cfg["decision"] == {"refuse": "half", "safe_max": 3, "force_refuse": 6, "max_retry": 2}
     for entry in cfg["brain"]["chain"]:
         assert entry["provider"] in cfg["providers"]
         assert entry.get("model")
-    assert cfg["vision"]["chain"] == []
+    assert [e["type"] for e in cfg["vision"]["chain"]] == ["opencv"]   # 노트북 tower cam 현장 튜닝 (roi)
     assert [e["provider"] for e in cfg["stt"]["chain"]] == ["local_ov", "gemini"]
 
 

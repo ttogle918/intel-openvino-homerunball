@@ -10,7 +10,7 @@ RobotRuntime 하나를 시작할 때 연결해 두고, run()마다 동작 출처
 - 카메라·시리얼은 스레드 안전하지 않다 → _io 락으로 한 번에 한 스레드만 쓴다.
 - close()는 SO101.disconnect()가 측정값을 목표로 다시 쓴다 (프로세스를 끝내는 시점이라 토크는 유지된다).
 
-python -m snackbot.robot oranda_pickup | dori_dori | home   # 스킬 하나만 실행 (현장 점검용)
+python -m snackbot.robot oranda_pickup | dori_dori | dori_script | home   # 스킬 하나만 실행 (현장 점검용)
 """
 import logging
 import math
@@ -28,6 +28,7 @@ from .twin import JOINTS
 
 log = logging.getLogger(__name__)
 POLICIES = ("oranda_pickup", "dori_dori")
+SCRIPT_DORI = "dori_script"   # 코드 도리도리 (테스트 버튼·점검용): 정책이 아니라 source·모델과 무관하게 항상 코드로 실행
 DORI_SOURCES = ("auto", "policy", "script")
 DORI_MAX_AMPLITUDE = 30.0                 # 코드 도리도리 진폭 안전 상한 (normalized)
 DORI_SHAKE_S = (0.15, 3.0)                # 한쪽 시간 안전 범위(초): 아래는 속도 상한, 위는 경로 길이 상한
@@ -177,9 +178,10 @@ class RobotSkills:
             raise SystemExit("skills.dori_dori.source가 policy인데 dori_dori 모델이 없어요: export_dir 폴더를 확인하거나 "
                              "source를 auto(모델이 없으면 코드 도리도리) 또는 script로 바꾸세요.")
         self.dori_source = "policy" if source != "script" and "dori_dori" in policies else "script"
+        self.dori_script = dori_settings(dori_cfg.get("script"))   # dori_script 테스트 때문에 source와 무관하게 항상 검사
         self.dori = None
         if self.dori_source == "script":   # 모델이 있어도 쓰지 않는다 (warmup도 하지 않는다)
-            self.dori = dori_settings(dori_cfg.get("script"))
+            self.dori = self.dori_script
             policies.pop("dori_dori", None)
             models.pop("dori_dori", None)
             log.info("dori_dori: 코드 도리도리 (%s ±%.0f, %d번, 한쪽 %.2f초)", BODY_JOINTS[self.dori["joint"]],
@@ -244,9 +246,10 @@ class RobotSkills:
         pass
 
     def run(self, name, on_phase=None):
-        if name not in POLICIES:
+        if name not in POLICIES and name != SCRIPT_DORI:
             raise ValueError(f"알 수 없는 스킬: {name}")
-        if name not in self.policies and not (name == "dori_dori" and self.dori_source == "script"):
+        if (name in POLICIES and name not in self.policies
+                and not (name == "dori_dori" and self.dori_source == "script")):
             raise RuntimeError(f"{name} 정책이 로드되지 않았어요 (config.yaml skills.{name}.export_dir 폴더 확인)")
         result = None
         try:
@@ -266,7 +269,7 @@ class RobotSkills:
         gen = self._current_gen()
         if self.ensure_home(gen) == "estop":
             return RunResult("estop", False, _ms(t0))
-        if name == "dori_dori" and self.dori_source == "script":
+        if name == SCRIPT_DORI or (name == "dori_dori" and self.dori_source == "script"):
             if self._script_dori(gen) == "estop":
                 return RunResult("estop", False, _ms(t0))
             return RunResult("script", False, _ms(t0))
@@ -308,7 +311,7 @@ class RobotSkills:
     def _script_dori(self, gen):
         """코드 도리도리: 홈에서 한 관절만 ±amplitude를 shakes번 오간 뒤 홈 (끝 키프레임이 홈이라 도착만 확인한다).
         정책 phase처럼 실행 기록에 남긴다. 결과: done | estop."""
-        d = self.dori
+        d = self.dori_script
         keyframes = dori_keyframes(self.home, d["joint"], d["amplitude"], d["shakes"])
         self.recorder.start("dori_dori")
         self.tap.recorder = self.recorder
@@ -425,7 +428,7 @@ def main(argv=None):
     from .config import load_config, load_poses
 
     p = argparse.ArgumentParser(prog="python -m snackbot.robot", description="스킬 하나만 실행 (현장 점검용)")
-    p.add_argument("skill", choices=[*POLICIES, "home"])
+    p.add_argument("skill", choices=[*POLICIES, SCRIPT_DORI, "home"])
     p.add_argument("--config", default="config.yaml")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

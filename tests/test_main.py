@@ -851,6 +851,7 @@ def test_build_dry_run_info_tests_all_enabled(cfg):
         assert parts["info"]["tests"] == [
             {"skill": "oranda_pickup", "label": "오란다 1회", "enabled": True, "reason": ""},
             {"skill": "dori_dori", "label": "도리도리 1회", "enabled": True, "reason": ""},
+            {"skill": "dori_script", "label": "코드 도리도리 1회", "enabled": True, "reason": ""},
             {"skill": "home", "label": "홈으로", "enabled": True, "reason": ""}]
     finally:
         parts["voice"].close()
@@ -863,7 +864,8 @@ def test_build_real_robot_without_models_uses_scripted_dori(real_cfg, capsys):
         info = parts["info"]
         assert info["models"]["act"] == "ACT · OpenVINO · GPU (정책 없음, oranda_pickup 모델 없음) · 도리도리: 코드 동작"
         assert [(t["skill"], t["enabled"], t["reason"]) for t in info["tests"]] == [
-            ("oranda_pickup", False, "모델 없음"), ("dori_dori", True, ""), ("home", True, "")]
+            ("oranda_pickup", False, "모델 없음"), ("dori_dori", True, ""),
+            ("dori_script", True, ""), ("home", True, "")]
         assert "코드 도리도리·home만" in capsys.readouterr().err
     finally:
         parts["voice"].close()

@@ -7,8 +7,10 @@ target:
   initial_count: 3          # B단계: 채팅에 개수가 없을 때
 
 decision:
-  safe_max: 3               # 이하면 무조건 일함
-  force_refuse: 6           # 이상이면 무조건 거부
+  refuse: half              # half: 전체의 절반(올림)을 옮기면 작업당 한 번 거부 (전체 2개 이하는 거부 없음, 달래면 끝까지)
+                            # fixed: 아래 고정 임계값 (safe_max 이하 일함, force_refuse 이상 거부, 사이는 LLM)
+  safe_max: 3               # fixed 모드: 이하면 무조건 일함
+  force_refuse: 6           # fixed 모드: 이상이면 무조건 거부
   max_retry: 2              # 옮기기 실패 시 재시도 횟수
 
 providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 역할의 chain에서 고른다.
@@ -37,12 +39,13 @@ brain:
 
 vision:
   camera: tower cam
-  # 비우면 B단계 (시작 개수 + 그리퍼 판정). 위에서부터 시도.
-  chain: []
-  # chain:
-  #   - {type: yolo, model_dir: "models/oranda_world_openvino_model", conf: 0.35, device: "intel:gpu"}
+  # 위에서부터 시도. 비우면 B단계 (시작 개수 + 그리퍼 판정). 화면 토글(끔·OpenCV)로 하나만 고를 수도 있다.
+  # OpenCV roi = 검은 매트 영역 [x1, y1, x2, y2] (가로·세로 비율). 2026-10-23 노트북 tower cam 기준이다.
+  # 카메라나 트레이 위치가 바뀌면 python -m snackbot.vision <사진> --blobs 로 다시 맞춘다 (docs/DEMO_RUNBOOK.md).
+  chain:
+    - {type: opencv, roi: [0.289, 0.208, 0.617, 0.847], min_area: 800, unit_area: 1700, max_hue: 22}
   #   - {type: vlm, provider: local_ov, model_dir: "models/vlm", device: GPU, kind: vlm, prompt: "How many [오란다 생김새] are in the tray? Answer with a number only."}
-  #   - {type: opencv, min_area: 800, max_area: 8000, hsv_low: [10, 60, 80], hsv_high: [30, 255, 255]}
+  #   - {type: yolo, model_dir: "models/oranda_world_openvino_model", conf: 0.35, device: "intel:gpu"}
   #   - {type: fake}        # dry-run에서 A단계 흐름 확인용
 
 stt:
@@ -64,12 +67,12 @@ cameras:                                   # 키 = 학습 때 카메라 이름 (
   # 시연 노트북(Windows, 2026-10-23): 0 = 노트북 내장 카메라(쓰지 않음), 1 = icspring(손목), 2 = USB_Camera(위에서 보는 화면).
   # Windows 장치 정보에는 시리얼이 없어 번호로 지정한다. 카메라를 더 꽂거나 USB를 바꿔 꽂으면 python -m tools.cameras 로 다시 확인
   tower cam:  {device: 2, width: 1280, height: 720, fps: 30}   # oranda 학습 이름 a
-  side cam:   {device: 3, width: 1280, height: 720, fps: 30}   # [ ] 아직 안 꽂음. 꽂은 뒤 번호 확인. oranda 학습 이름 b
+  side cam:   {device: 3, width: 1280, height: 720, fps: 30}   # 트레이 맞은편. oranda 학습 이름 b (tower와 시리얼이 같아 Windows가 포트 기준 ID를 준다)
   follow cam: {device: 1, width: 1280, height: 720, fps: 30}   # 손목. oranda 학습 이름 follow
 
 skills:
   fps: 30
-  device: GPU                              # CPU | GPU | NPU (정책별로 device를 따로 써도 된다)
+  device: CPU                              # CPU | GPU | NPU. 이 노트북 GPU는 모델마다 컴파일 55~65초(시작 2분), CPU는 로드 6초·추론 0.14~0.23초/청크
   # camera_map: 학습 때 Studio 카메라 이름이 위 cameras 키와 다르면 {학습 이름: config 이름}.
   #   학습 이름은 결과물 manifest.json의 "images.<이름>"에서 확인한다. 예: {A: tower cam, B: side cam}
   # replay: dry-run 재생에 쓸 Studio 녹화 {dataset: <데이터셋 id>, episode: <번호>} (python -m tools.fetch_replays 가 읽는다)
@@ -85,8 +88,8 @@ skills:
     replay: {dataset: 83f518ed-2d84-4807-ae01-5d7cf1904ea6, episode: 0}   # dori_dori_4
     source: auto                           # auto | policy | script  (auto: 모델 폴더가 있으면 정책, 없으면 코드 도리도리)
     script: {joint: shoulder_pan, amplitude: 15, shakes: 2, shake_s: 0.35}   # 코드 도리도리: 홈 기준 joint만 ±amplitude(최대 30)를 shakes번, 한쪽 shake_s초
-  # [ ] 실기 확인: 아래 값은 oranda 데이터셋(31 에피소드)에서 정했다. 홈·빈손 닫힘 50, 과자 쥠 54~56,
-  #     벌림 56~64로 폭이 좁다. python -m tools.robot_probe watch 로 실제 값을 보고 조정한다
+  # 아래 값은 oranda 데이터셋(31 에피소드)에서 정했다. 홈·빈손 닫힘 50, 과자 쥠 54~56, 벌림 56~64로 폭이 좁다.
+  # 실기 robot_probe watch (2026-10-23, COM5): 빈손 닫힘 49.4~50.1, 손으로 오란다 쥠 54.2~55.4, 끝까지 벌림 79.0 → 값 유지
   gripper:                                 # 0..100, 작을수록 닫힘 (데이터로 확인)
     closed_below: 56.0                     # 이보다 작으면 "닫힘"
     open_above: 56.5                       # 닫힘 뒤 이보다 큰 값이 open_hold_s 동안 이어지면 "놓음" → ACT 정지

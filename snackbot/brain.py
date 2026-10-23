@@ -40,11 +40,11 @@ DECIDE_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {tar
 - count: 지금까지 옮긴 횟수
 - allowed: 이번에 고를 수 있는 행동 목록
 - speech_text: 사람이 한 말 (없으면 null)
+- total, refuse_at: (있으면) 전체 개수와 "몇 개를 옮긴 뒤 거부하는지". 거부는 코드가 정하니 그 전 한 번쯤 힘들다는 예고만 해.
 
 규칙:
 - 반드시 allowed 안에서만 skill을 골라.
-- count가 3쯤이면 슬슬 힘들다는 예고를 해.
-- count가 4~5면 계속할지 거부할지 네가 정해. 거부하면 dori_dori.
+{rules}
 - remaining이 0이면 done을 고르고 뿌듯해해.
 
 출력은 JSON 한 줄만:
@@ -65,9 +65,29 @@ CHAT_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {targe
 {"intent": "...", "say": "...", "n": null}"""
 
 
-def allowed_skills(remaining, count, decision):
+DECIDE_RULES_FIXED = """- count가 3쯤이면 슬슬 힘들다는 예고를 해.
+- count가 4~5면 계속할지 거부할지 네가 정해. 거부하면 dori_dori."""
+DECIDE_RULES_HALF = """- allowed에 행동이 하나뿐이면 그 skill을 그대로 고르고, 그 행동에 어울리는 대사만 써.
+  (oranda_pickup이면 옮기는 말, dori_dori면 힘들어서 거부하는 말)"""
+
+
+def refuse_at(total):
+    """전체 total개 중 몇 개를 옮긴 뒤 거부하는가. 2개 이하는 거부하지 않는다 (None). 3→2, 4→2, 5→3, 6→3, 7→4."""
+    if total is None or total < 3:
+        return None
+    return -(-total // 2)
+
+
+def allowed_skills(remaining, count, decision, total=None, refused=False):
+    """decision.refuse == "half": 전체의 절반을 옮기면 (작업당 한 번) 거부. 그 밖("fixed"): 옛 고정 임계값."""
     if remaining <= 0:
         return ["done"]
+    if decision.get("refuse") == "half":
+        at = refuse_at(total)
+        moved = max(0, total - remaining) if at is not None else 0
+        if at is not None and not refused and moved >= at:
+            return ["dori_dori"]
+        return ["oranda_pickup"]
     if count <= decision["safe_max"]:
         return ["oranda_pickup"]
     if count >= decision["force_refuse"]:
@@ -143,21 +163,29 @@ class Brain:
     def line(self, key):
         return self.rng.choice(LINES[key]).replace("{target}", self.target)
 
-    def decide(self, remaining, count, state, speech_text=None, history=None):
-        allowed = allowed_skills(remaining, count, self.decision)
+    def decide(self, remaining, count, state, speech_text=None, history=None, total=None, refused=False):
+        allowed = allowed_skills(remaining, count, self.decision, total, refused)
         rule_skill = self.rng.choice(allowed)
         skill, say, source = rule_skill, None, "rules"
+        half = self.decision.get("refuse") == "half"
+        at = refuse_at(total) if half else None
+        # half 모드: 거부 직전 한 번(옮긴 수 == 거부 시점 - 1)은 지친 대사
+        tired = at is not None and not refused and max(0, total - remaining) == at - 1
         if self.chain:
-            user = json.dumps({"remaining": remaining, "count": count, "allowed": allowed,
-                               "speech_text": speech_text}, ensure_ascii=False)
-            data, source = self._ask(DECIDE_SYSTEM, user, history)
+            info = {"remaining": remaining, "count": count, "allowed": allowed, "speech_text": speech_text}
+            if half:
+                info.update(total=total, refuse_at=None if refused else at)
+            user = json.dumps(info, ensure_ascii=False)
+            rules = DECIDE_RULES_HALF if half else DECIDE_RULES_FIXED
+            data, source = self._ask(DECIDE_SYSTEM.replace("{rules}", rules), user, history)
             if data is not None and data.get("skill") in SKILLS:
-                skill = data["skill"] if data["skill"] in allowed else rule_skill
-                say = data.get("say")
+                if data["skill"] in allowed:
+                    skill, say = data["skill"], data.get("say")
+                # allowed 밖이면 skill과 함께 대사도 버린다 (말과 동작이 어긋나지 않게 규칙 대사 사용)
             else:
                 source = "rules"
-        return {"skill": skill, "say": self._valid_say(say, self._skill_line(skill, count)),
-                "source": source}
+        line_key = self._skill_line(skill, count, tired if half else None)
+        return {"skill": skill, "say": self._valid_say(say, line_key), "source": source}
 
     def chat(self, text, state, count, history=None):
         allowed = allowed_intents(state)
@@ -211,8 +239,11 @@ class Brain:
             return say.strip()
         return self.line(fallback_key)
 
-    def _skill_line(self, skill, count):
-        if skill == "oranda_pickup" and count == self.decision["safe_max"]:
+    def _skill_line(self, skill, count, tired=None):
+        """tired: half 모드에서 거부 직전인지 (None이면 fixed 모드: count == safe_max)."""
+        if tired is None:
+            tired = count == self.decision["safe_max"]
+        if skill == "oranda_pickup" and tired:
             return "oranda_pickup_tired"
         return skill
 
