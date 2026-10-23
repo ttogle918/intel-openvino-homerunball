@@ -54,16 +54,18 @@ stt:
   #  - {provider: openai, model: "gpt-4o-mini-transcribe", timeout_s: 15}   # 키가 정상일 때의 백업
 
 robot:
-  # [ ] 노트북에서 ls -l /dev/serial/by-id/ 로 팔로워 경로를 찾아 쓴다 (ACMn 번호는 꽂는 순서로 바뀌어 리더 팔을 잡을 수 있다)
-  port: /dev/ttyACM1                       # Studio PC 기준 팔로워 ACM1, 리더 ACM0 (2026-10-23 runtime-config)
+  # 시연 노트북은 Windows. 팔로워 = COM5 (CH343 시리얼 5B90101274), 리더 = COM6 (5B79080541) — 2026-10-23 서보 레지스터·토크 상태로 판별.
+  # Windows는 같은 USB 어댑터에 같은 COM 번호를 준다. Ubuntu라면 ls -l /dev/serial/by-id/ 경로를 쓴다 (Studio PC는 팔로워 ACM1, 리더 ACM0)
+  port: COM5
   calibration: calibration/follower.yaml   # python -m tools.fetch_calibration 으로 Studio에서 받는다
 
 cameras:                                   # 키 = 학습 때 카메라 이름 (정책 입력 images.<이름>). 정책이 쓰는 카메라를 모두 둔다
   # device: 번호(0 → /dev/video0) 또는 {serial: "..."} (USB를 다시 꽂아도 같은 장치). python -m tools.cameras 로 확인
-  # Studio PC 기준 (2026-10-23 runtime-config). tower·side는 시리얼이 같아(zvcai231100001) 번호로만 지정한다
-  tower cam:  {device: 0, width: 1280, height: 720, fps: 30}   # [ ] 노트북 번호 확인. oranda 학습 이름 a (USB 14.0-3)
-  side cam:   {device: 4, width: 1280, height: 720, fps: 30}   # [ ] 노트북 번호 확인. oranda 학습 이름 b (USB 14.0-4)
-  follow cam: {device: {serial: "20240307110322"}, width: 1280, height: 720, fps: 30}   # 손목 (Studio 2번). oranda 학습 이름 follow, 시리얼 고유
+  # 시연 노트북(Windows, 2026-10-23): 0 = 노트북 내장 카메라(쓰지 않음), 1 = icspring(손목), 2 = USB_Camera(위에서 보는 화면).
+  # Windows 장치 정보에는 시리얼이 없어 번호로 지정한다. 카메라를 더 꽂거나 USB를 바꿔 꽂으면 python -m tools.cameras 로 다시 확인
+  tower cam:  {device: 2, width: 1280, height: 720, fps: 30}   # oranda 학습 이름 a
+  side cam:   {device: 3, width: 1280, height: 720, fps: 30}   # [ ] 아직 안 꽂음. 꽂은 뒤 번호 확인. oranda 학습 이름 b
+  follow cam: {device: 1, width: 1280, height: 720, fps: 30}   # 손목. oranda 학습 이름 follow
 
 skills:
   fps: 30
