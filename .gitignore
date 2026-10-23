@@ -11,8 +11,9 @@ models/*
 !models/.gitkeep
 outputs/
 
-# physical-ai-studio 학습 결과물 (용량 큼, git 제외)
+# physical-ai-studio 학습 결과물·내려받은 데이터셋 (용량 큼, git 제외)
 traind-model/
+/data/
 .env
 .pytest_cache/
 
