@@ -39,11 +39,14 @@ brain:
 
 vision:
   camera: tower cam
+  frames: 5          # 한 번 셀 때 읽는 프레임 수 (개수의 중앙값을 쓴다, 깜빡임 제거). 흔들리면 7로
+  frame_gap_s: 0.1   # 프레임 사이 간격(초)
   # 위에서부터 시도. 비우면 B단계 (시작 개수 + 그리퍼 판정). 화면 토글(끔·OpenCV)로 하나만 고를 수도 있다.
   # OpenCV roi = 검은 매트 영역 [x1, y1, x2, y2] (가로·세로 비율). 2026-10-23 노트북 tower cam 기준이다.
   # 카메라나 트레이 위치가 바뀌면 python -m snackbot.vision <사진> --blobs 로 다시 맞춘다 (docs/DEMO_RUNBOOK.md).
   chain:
-    - {type: opencv, roi: [0.289, 0.208, 0.617, 0.847], min_area: 800, unit_area: 1700, max_hue: 22}
+    # 오란다 색 화소만 (H 5~21, S≥80): 붙어 있는 초코송이(초록 갓·밝은 기둥)·노란 볼과 한 덩어리로 묶이지 않게 (2026-10-23 실기에서 3개→2개 오판)
+    - {type: opencv, roi: [0.289, 0.208, 0.617, 0.847], hsv_low: [5, 80, 90], hsv_high: [21, 255, 255], max_hue: 21, min_area: 600, unit_area: 1700}
   #   - {type: vlm, provider: local_ov, model_dir: "models/vlm", device: GPU, kind: vlm, prompt: "How many [오란다 생김새] are in the tray? Answer with a number only."}
   #   - {type: yolo, model_dir: "models/oranda_world_openvino_model", conf: 0.35, device: "intel:gpu"}
   #   - {type: fake}        # dry-run에서 A단계 흐름 확인용
@@ -93,7 +96,7 @@ skills:
     max_time_s: 6
     camera_map: {}
     replay: {dataset: 83f518ed-2d84-4807-ae01-5d7cf1904ea6, episode: 0}   # dori_dori_4
-    source: auto                           # auto | policy | script  (auto: 모델 폴더가 있으면 정책, 없으면 코드 도리도리)
+    source: script                         # auto | policy | script. 2026-10-23 실기: 모델은 몸통을 ±1밖에 안 흔들어 거부·버튼·채팅 도리도리 모두 코드 동작으로
     script: {joint: shoulder_pan, amplitude: 15, shakes: 2, shake_s: 0.35}   # 코드 도리도리: 홈 기준 joint만 ±amplitude(최대 30)를 shakes번, 한쪽 shake_s초
   # 아래 값은 oranda 데이터셋(31 에피소드)에서 정했다. 홈·빈손 닫힘 50, 과자 쥠 54~56, 벌림 56~64로 폭이 좁다.
   # 실기 robot_probe watch (2026-10-23, COM5): 빈손 닫힘 49.4~50.1, 손으로 오란다 쥠 54.2~55.4, 끝까지 벌림 79.0 → 값 유지

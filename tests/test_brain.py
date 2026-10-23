@@ -299,3 +299,19 @@ def test_half_tired_line_only_before_refusal(cfg):
     assert b.decide(4, 2, "WORKING", total=6, refused=True)["say"] not in tired
     assert b.decide(3, 3, "WORKING", total=6)["skill"] == "dori_dori"
     assert b.decide(3, 3, "WORKING", total=2)["say"] not in tired
+
+
+def test_decide_prompt_gets_moved_and_remaining_even_after_resume(cfg):
+    b = make(cfg, '{"skill": "oranda_pickup", "say": "두 번째 옮겨요"}')
+    b.decide(2, 0, "WORKING", total=3)          # count는 재개로 0이어도 코드가 센 moved는 1
+    info = json.loads(_sent(b)[-1]["content"])
+    assert (info["remaining"], info["moved"], info["this_item"], info["count"]) == (2, 1, 2, 0)
+    assert "this_item" in _sent(b)[0]["content"]
+
+
+def test_decide_fixed_mode_guard_unchanged_with_moved(cfg):
+    cfg["decision"]["refuse"] = "fixed"
+    b = make(cfg, '{"skill": "dori_dori", "say": "싫어"}')
+    d = b.decide(5, 0, "WORKING", total=5)      # count 0 -> 허용은 oranda_pickup뿐: LLM의 dori_dori는 버려진다
+    assert d["skill"] == "oranda_pickup"
+    assert json.loads(_sent(b)[-1]["content"])["moved"] == 0

@@ -35,6 +35,8 @@ class FirstRng:
 def cfg(tmp_path):
     c = copy.deepcopy(load_config(ROOT / "config.yaml"))
     c["dry_run"]["act_s"] = 0
+    c["vision"]["frames"] = 1          # 테스트의 가짜 counter는 호출마다 값을 하나씩 쓴다 (다중 프레임은 전용 테스트)
+    c["skills"]["dori_dori"]["source"] = "auto"   # 현장 config(script)와 무관하게 기본 동작으로 시험한다
     c["dry_run"]["samples_dir"] = str(tmp_path / "samples")
     c["logging"]["dir"] = str(tmp_path / "logs")
     c["replays_dir"] = str(tmp_path / "replays")

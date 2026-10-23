@@ -73,6 +73,10 @@ B → A 순서로 구현한다 (설계 문서 6.0절).
 - 실패 → 실패 멘트 후 재시도 (최대 `max_retry`회) → 그래도 실패하면 `phase = waiting_operator`로 진행자 재개 대기
 - 실패는 count에 넣지 않는다.
 - A에서 counter가 전부 실패한 사이클은 그 사이클만 B로 판정한다.
+- 개수는 한 번에 `vision.frames`(기본 5)개 프레임을 `vision.frame_gap_s`(0.1초) 간격으로 읽어 **중앙값**으로 낸다 (2↔3 깜빡임, 손이 보이는 한 프레임 제거).
+- 성공 = `n_after < n_before`, 또는 그리퍼가 쥐었다 놓았으면(`grasped`이고 `stop_reason == gripper_open`) 개수가 깜빡여도 성공 (로그 `judge`: `vision` | `gripper`).
+- 남은 개수는 깜빡임으로 늘지 않는다: 앞 세기 `min(센 값, 남은)`, 성공 뒤 `min(센 값, n_before - 1)`. 작업의 첫 세기만 전체(total)를 정한다.
+- LLM에는 `count`(재개하면 0) 외에 코드가 센 `moved`(total - remaining)와 `this_item`(moved+1)을 준다. "몇 번째" 대사는 이 값으로만.
 
 ## 4. LLM 출력 스키마
 
