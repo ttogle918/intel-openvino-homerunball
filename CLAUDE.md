@@ -3,18 +3,18 @@
 이 파일은 Claude Code가 이 저장소에서 작업할 때 항상 참고하는 프로젝트 요약입니다.
 
 ## 프로젝트
-- 하드웨어: SO-ARM101 (팔로워 1대, 학습용 리더 1대), 카메라 3대(외부 + 손목)
+- 하드웨어: SO-ARM101 (팔로워 1대, 학습용 리더 1대), 카메라 3대(tower · side 외부 2대 + follow 손목). 시연 노트북 = Windows 11 PC (팔로워 COM5, 리더 COM6)
 - 소프트웨어: physical-ai-studio로 학습한 ACT(OpenVINO 결과물, `physicalai` 런타임), LLM(API 또는 로컬), TTS, STT(OpenVINO Whisper 로컬), FastAPI + 웹 UI
 - 기간: 2일 해커톤
 - 시연: 섞인 트레이에서 목표 과자(지금은 **오란다**)만 빈 트레이로 옮긴다. 채팅·음성으로 작업을 시키고,
-  몇 번 하면 지쳐서 도리도리로 거부하며, 달래면(채팅·음성·r 키) 다시 일한다.
+  전체의 절반(올림)을 옮기면 작업당 한 번 지쳐서 도리도리로 거부하며(`decision.refuse: half`, 옛 고정 임계값은 `fixed`), 달래면(채팅·음성·r 키) 다시 일한다.
 
 ## 3계층 구조
 | 계층 | 담당 | 구현 |
 |---|---|---|
-| 인식 | 끝·성공 판정 | B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (YOLO-World/VLM/OpenCV) |
+| 인식 | 끝·성공 판정 | B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (지금 OpenCV, YOLO-World/VLM은 같은 자리에 추가) |
 | 판단 | 다음 행동과 대사, 채팅 의도 | 코드 가드 + LLM (provider 체인), TTS 출력 |
-| 행동 | 동작 실행 | ACT 정책 2개 (OpenVINO): `oranda_pickup`, `dori_dori` (모델이 없으면 코드 도리도리) |
+| 행동 | 동작 실행 | ACT 정책 2개 (OpenVINO, 시연 노트북은 CPU): `oranda_pickup`, `dori_dori` (모델이 없거나 `source: script`면 코드 도리도리) |
 
 ## 절대 규칙
 1. **횟수는 코드가 센다.** LLM은 프롬프트로 받은 숫자를 해석만 한다.
@@ -54,7 +54,7 @@
 │   ├── server.py       # FastAPI: /ws, /stt, /stream/{cam}, /api/replay/{skill}, /replays, frontend/ 서빙
 │   ├── providers.py    # openai_compat / anthropic / openvino 어댑터 + fallback 체인
 │   ├── brain.py        # decide() 작업 판단, chat() 의도·대사
-│   ├── vision.py       # counter 체인 (A단계)
+│   ├── vision.py       # counter 체인 (OpenCV v2 사용 중, YOLO-World/VLM 자리)
 │   ├── stt.py          # STT 체인 (OpenVINO Whisper 로컬 → Gemini), 워밍업, 단독 확인 CLI
 │   ├── voice.py        # TTS (Gemini), 합성·재생 두 스레드, 대사 소리 시작 알림
 │   ├── skills.py       # DrySkills (dry-run), RunResult
@@ -62,6 +62,7 @@
 │   ├── twin.py         # 3D 트윈: 관절 normalized→라디안, 재생 에피소드(episode.json) 읽기
 │   ├── recorder.py     # 실행 기록: 정책 phase 관절값·프레임 → logs/runs/ (백그라운드 저장)
 │   ├── wincam.py       # Windows 카메라 목록 보정 (pynokhwa JSON 역슬래시 버그), 카메라 열기 전 호출
+│   ├── wincam.py       # Windows 카메라 목록 보정 (pynokhwa JSON 버그)
 │   └── robot.py        # 실제 로봇: RobotRuntime 하나 + 동작 출처 교체, 비상정지 세대, warmup
 ├── frontend/           # Claude Design 결과물 (index.html, app.js, style.css) + twin.js(3D)
 │   ├── vendor/         # three@0.186.1, urdf-loader@0.13.1 고정 파일 (import map)
@@ -98,19 +99,21 @@ cp .env.example .env                                      # 쓸 API 키만 채�
 .venv/Scripts/python -m snackbot.stt a.wav b.wav      # Whisper 확인 (워밍업 후 파일마다 텍스트·source·ms)
 .venv/Scripts/python -m pytest
 ```
-로봇 노트북 (처음 연결 순서 전체는 `docs/DEMO_RUNBOOK.md` 2-2절):
+로봇 노트북 = 이 Windows PC, 파이썬은 `.venv/Scripts/python` (처음 연결 순서 전체는 `docs/DEMO_RUNBOOK.md` 2-2절):
 ```bash
-.venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt   # physicalai 0.3.0
-.venv/bin/python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project <id> --env <id>
-.venv/bin/python -m tools.robot_probe watch           # 관절값 보기 (토크 끔, 그리퍼 기준값 정하기)
-.venv/bin/python -m tools.robot_probe save home       # 현재 팔 자세를 home_pose로 (lift도 같은 방법)
-.venv/bin/python -m snackbot.robot home               # 홈으로 이동 (스킬 하나만: dori_dori | oranda_pickup)
-.venv/bin/python -m tools.cameras                     # 카메라 번호·시리얼·사진 (cameras/)
-.venv/bin/python -m tools.fetch_replays --studio http://192.168.0.6:7860 --skill oranda_pickup   # 녹화 받기
+.venv/Scripts/python -m pip install -r requirements.txt -r requirements-robot.txt   # physicalai 0.3.0 (Linux: .venv/bin/python)
+.venv/Scripts/python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project <id> --env <id>
+.venv/Scripts/python -m tools.robot_probe watch           # 관절값 보기 (토크 끔, 그리퍼 기준값 정하기)
+.venv/Scripts/python -m tools.robot_probe save home       # 현재 팔 자세를 home_pose로 (lift도 같은 방법)
+.venv/Scripts/python -m snackbot.robot home               # 홈으로 이동 (스킬 하나만: dori_dori | dori_script | oranda_pickup)
+.venv/Scripts/python -m tools.cameras                     # 카메라 번호·시리얼·사진 (cameras/)
+.venv/Scripts/python -m tools.fetch_replays --studio http://192.168.0.6:7860 --skill oranda_pickup   # 녹화 받기
 ```
 - 모델 폴더(`skills.<이름>.export_dir`)가 없는 정책은 건너뛴다 (과자 모델 없이 `home`·`dori_dori` 확인 가능).
 - 의존 방향: `server → controller → (brain, vision, skills, voice)`. controller는 FastAPI를 모른다.
 - 로봇 포트는 한 프로그램만 잡을 수 있다. 실행 전 physical-ai-studio 세션을 닫는다.
+- 시연 노트북(Windows) 장치: 팔로워 `COM5`, 리더 `COM6`, 카메라 1 = follow(손목) · 2 = tower · 3 = side (0 = 내장, 쓰지 않음). 카메라는 USB 포트를 나눠 꽂는다 (NV12 비압축이라 한 경로에 두 대면 시간 초과). 정책은 CPU (`skills.device`).
+- 개수 세기 ROI는 `python -m snackbot.vision <사진> --blobs`로 맞춘다. 열린 문제: 제어 루프 11~13 Hz(목표 30), 모델 도리도리 동작 안 함 → 상세는 `docs/PROGRESS_REPORT.html`.
 
 ## 진행자 키 (UI 버튼과 같은 동작)
 | 키 | 동작 |
@@ -121,4 +124,4 @@ cp .env.example .env                                      # 쓸 API 키만 채�
 | `h` | 재시작 (비상정지 해제 → 홈 복귀 → 대기) |
 | `q` | 종료 |
 
-UI에는 **스킬 테스트** 버튼(`오란다 1회` · `도리도리 1회` · `홈으로`)도 있다. 대기 상태에서만 눌리고, 실제 로봇이면 진짜 팔이 움직인다 (콘솔 키는 없다). 채팅·🎤 "도리도리 해 봐"도 같은 1회 실행이다.
+UI에는 **스킬 테스트** 버튼(`오란다 1회` · `도리도리 1회` · `코드 도리도리 1회` · `홈으로`)도 있다. 대기 상태에서만 눌리고, 실제 로봇이면 진짜 팔이 움직인다 (콘솔 키는 없다). 채팅·🎤 "도리도리 해 봐"도 같은 1회 실행이다.

@@ -89,9 +89,11 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <div class="wrap">
 
 <h1>snackbot 진행 보고서</h1>
-<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-23 갱신 · 기준: 커밋 <code>7d80ccd</code> (브랜치 <code>feat/robot-m4</code> = 로컬 main, homerunball main <code>e066990</code>) · 2026-10-23 오후: oranda 모델·데이터 기반 설정 반영(미커밋 변경 포함)</p>
+<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-23 실기 갱신 · 기준: 커밋 <code>0ea623b</code> (브랜치 <code>feat/robot-m4</code>, homerunball main <code>e066990</code> 이후 로컬 커밋은 아직 push 전) · 시연 노트북 = 이 Windows 11 PC(192.168.0.17)</p>
 
-<div class="note"><b>이번 갱신(2026-10-23 오후, oranda 모델·데이터셋 반영):</b> <b>노트북 실기는 아직 하지 않았다</b>(로봇·카메라는 이 PC에 연결하지 않음). 모델 파일·Studio 조회 API(GET만)·데이터셋 복사본으로 확인한 것만 반영했다. (1) <b>모델:</b> <code>traind-model/pickup/exports/openvino</code>(git 제외). 입력 <code>state</code>(6), <code>images.follow/a/b</code>(3×720×1280), 출력 <code>action</code>(100,6), resnet18 ACT. 개발 PC CPU 140~230 ms/청크. 녹화 대비 30스텝 MAE 1.3~2.6(가만히 있기 1.9~4.7). a/b 카메라를 바꿔도 출력이 bit 단위로 같다. (2) <b>데이터:</b> Studio 프로젝트 <code>oranda</code> 데이터셋 <code>last</code>(31 에피소드, 5~18초, AV1), 복사본 <code>data/last</code>(311MB, <code>/data/</code> git 제외). (3) <b>Studio runtime-config:</b> 캘리브레이션은 dori-dori 환경과 같다. 카메라 a=번호 0(tower), b=번호 4(side), follow=시리얼 20240307110322. <b>a·b는 시리얼이 같아(zvcai231100001) 번호로만 지정</b>. Studio PC 포트는 팔로워 ACM1, 리더 ACM0. (4) <b>config 변경(미커밋):</b> 포트 ACM1(노트북에서는 by-id 권장: 번호는 꽂는 순서로 바뀌어 리더 팔을 잡을 수 있다), follow cam 시리얼 지정, oranda export_dir·camera_map·replay, dori replay(<code>dori_dori_4</code>), 그리퍼 56.0 / 56.5 / 52 / 0.15. (5) <b>그리퍼 값은 데이터에서 정했다:</b> 홈·빈손 50, 과자 쥠 54~56, 놓음 56~64. 31개 궤적에 <code>GripperWatch</code>를 돌리면 23개는 놓는 순간 정지·조기 정지 0, 8개는 정지 없이 <code>max_time_s 20</code>으로 끝난다. 쥠 값과 <code>closed_below</code> 여유가 0~0.1뿐이라 <b>실제 오란다로 <code>robot_probe watch</code> 확인이 필요</b>하다. (6) <b>열린 문제(리뷰 I-2):</b> 정지하지 않은 8개 중 7개가 <code>grasped=False</code> → B단계 성공 판정(<code>success = r.grasped</code>)에서 성공한 시도의 약 23%가 실패로 세어질 수 있다(재시도로 과자를 한 개 더 옮길 수 있고 count는 늘지 않음). 후속안: 첫 닫힘 구간만 쥠 판정에 사용(<code>min_closed</code> 고정). 미적용, 사용자 결정 대기. 그 밖에 <code>lift_pose</code>는 그리퍼를 닫은 채 저장, <code>max_time_s 20</code>은 최장 에피소드(17.7초)보다 2.3초 길 뿐이니 첫 실행에서 관찰. (7) <b><code>replays/</code>의 가짜 데이터를 실제 Studio 녹화로 교체</b>(<code>tools.fetch_replays</code>: oranda 에피소드 0 6.1초 카메라 3대, dori_dori_4 에피소드 0 10.5초 카메라 2대. 가짜는 삭제하지 않고 옮겨 둠). (8) 테스트 408개 통과. homerunball 원격은 <code>e066990</code>(이전 문서의 <code>c85e1ed</code>는 오기), 이 갱신의 커밋은 사용자가 push한다.</div>
+<div class="note"><b>이번 갱신(2026-10-23 실기):</b> 시연 노트북(이 Windows 11 PC)에 실제 팔로워·카메라를 연결해 처음으로 실기를 했다. <b>(1) 연결:</b> physicalai 0.3.0을 <code>.venv</code>에 설치(사용자 승인). 팔로워 <code>COM5</code>(서보 homing offset·토크 켜짐으로 판별), 리더 <code>COM6</code>. physicalai는 캘리브레이션의 <code>range_min/max</code>(0..4095)만 쓰고 homing offset은 서보 EEPROM에 있다. 카메라 0 = 노트북 내장(쓰지 않음), 1 = follow(손목, icspring), 2 = tower(학습 이름 a), 3 = side(b). tower·side는 시리얼이 같아(ZVCAI231100001) Windows가 둘째에 포트 기반 ID를 준다. physicalai는 NV12(비압축) 720p30을 고르므로 카메라 두 대가 같은 USB 경로에 있으면 시간 초과가 난다 → USB 포트를 나눠 꽂는다(허브 없이). pynokhwa의 Windows JSON 역슬래시 버그는 <code>snackbot/wincam.py</code>로 보정(<code>663fc7b</code>). <b>(2) 정책 장치:</b> GPU 컴파일이 정책마다 55~65초라 <code>skills.device: CPU</code>로 정했다(로드 약 6초, 100스텝 청크당 0.14~0.23초). 모션 없는 확인(연결 + warmup 2회)은 9초. <b>(3) 포즈:</b> <code>poses.yaml</code> home <code>[4.9, -59.7, 51.9, 35.1, 3.4, 49.4]</code>(사용자), lift <code>[10.5, 13.0, -10.0, 22.0, 3.4, 50.0]</code>(데이터셋 에피소드 1·5의 놓은 직후 값에서 유도, 그리퍼 닫힘). 그리퍼 watch 측정: 빈손 49.4~50.1, 오란다 쥠 54.2~55.4, 열림 79.0 → config 값(56.0 / 56.5 / 52 / hold 0.15) 유지. <b>(4) 결과:</b> <code>오란다 1회</code> <b>성공</b>(놓기 감지 <code>gripper_open</code>, 쥠 성공, 22.7초, <code>logs/runs/20261023-103209_oranda_pickup</code>), <code>홈으로</code> 2.2초. <code>도리도리 1회</code>(모델)는 <code>shoulder_pan</code>이 ±1에 머물고 lift·elbow만 까딱거리다 시간 초과 → 모델이 도리도리를 못 한다고 판단해 <b>코드 도리도리 1회</b> 버튼을 추가했다(<code>dori_script</code>, <code>78a23ae</code>, 줄바꿈 CSS <code>db24091</code>, opus 승인(참고 사항 있음)). <b>(5) 개수 세기:</b> OpenCV counter v2(<code>fb6a85d</code>): 검은 매트 ROI, 어두운 링 검사(도착 트레이 제외), 색상 hue ≤ 22 · 면적 ≥ 800(노란 공·버섯 과자 제외), 붙은 덩어리는 <code>unit_area</code> 1700으로 분리. 실제 프레임에서 오란다 3개, 17 ms. UI에 개수 세기 토글(끔 · OpenCV)과 "지금 세기" 버튼. VLM은 일단 빼고(사용자의 1 epoch VLM은 나중에 추가), dry-run은 가짜 counter. <b>(6) 거부 규칙:</b> <code>decision.refuse: half</code>(기본, <code>27bdae2</code>): 전체의 절반(올림)을 옮기면 작업당 한 번 거부(3→2, 4→2, 5→3, 6→3), 달랜 뒤엔 다시 거부하지 않는다. 전체 = 첫 개수 세기 성공 값(없으면 채팅 개수 → <code>initial_count</code>). UI 게이지 "전체 N · M개째 뒤 거부". 옛 고정 임계값은 <code>fixed</code>. <b>(7) 열린 문제:</b> 제어 루프가 11~13 Hz로 돌았다(녹화 에피소드 fps 11.0 / 13.1, 학습은 30 Hz, 런타임 스텝당 약 77 ms). 의심: 카메라 3대 NV12→RGB 변환, MJPEG 스트림 인코딩, 실행 기록, 3D 트윈, CPU 경쟁. 아직 조사하지 않았다. 서버를 다시 띄울 때 카메라 "Timed out waiting for first frame"이 가끔 난다(USB 대역폭, 포트를 나눠 다시 꽂기). <b>(8) 리뷰:</b> <code>fb6a85d</code> + <code>27bdae2</code>의 opus 리뷰는 <b>진행 중</b>(결과 아직 없음). 그 밖에 <code>course_guide.html</code>에 06 Physical AI 장, 07 해커톤 프로젝트 장을 추가했다(<code>a3d8024</code>). 자동 테스트 445개.</div>
+
+<div class="note"><b>이전 갱신(2026-10-23 오후, oranda 모델·데이터셋 반영):</b> <b>노트북 실기는 아직 하지 않았다</b>(로봇·카메라는 이 PC에 연결하지 않음). 모델 파일·Studio 조회 API(GET만)·데이터셋 복사본으로 확인한 것만 반영했다. (1) <b>모델:</b> <code>traind-model/pickup/exports/openvino</code>(git 제외). 입력 <code>state</code>(6), <code>images.follow/a/b</code>(3×720×1280), 출력 <code>action</code>(100,6), resnet18 ACT. 개발 PC CPU 140~230 ms/청크. 녹화 대비 30스텝 MAE 1.3~2.6(가만히 있기 1.9~4.7). a/b 카메라를 바꿔도 출력이 bit 단위로 같다. (2) <b>데이터:</b> Studio 프로젝트 <code>oranda</code> 데이터셋 <code>last</code>(31 에피소드, 5~18초, AV1), 복사본 <code>data/last</code>(311MB, <code>/data/</code> git 제외). (3) <b>Studio runtime-config:</b> 캘리브레이션은 dori-dori 환경과 같다. 카메라 a=번호 0(tower), b=번호 4(side), follow=시리얼 20240307110322. <b>a·b는 시리얼이 같아(zvcai231100001) 번호로만 지정</b>. Studio PC 포트는 팔로워 ACM1, 리더 ACM0. (4) <b>config 변경(미커밋):</b> 포트 ACM1(노트북에서는 by-id 권장: 번호는 꽂는 순서로 바뀌어 리더 팔을 잡을 수 있다), follow cam 시리얼 지정, oranda export_dir·camera_map·replay, dori replay(<code>dori_dori_4</code>), 그리퍼 56.0 / 56.5 / 52 / 0.15. (5) <b>그리퍼 값은 데이터에서 정했다:</b> 홈·빈손 50, 과자 쥠 54~56, 놓음 56~64. 31개 궤적에 <code>GripperWatch</code>를 돌리면 23개는 놓는 순간 정지·조기 정지 0, 8개는 정지 없이 <code>max_time_s 20</code>으로 끝난다. 쥠 값과 <code>closed_below</code> 여유가 0~0.1뿐이라 <b>실제 오란다로 <code>robot_probe watch</code> 확인이 필요</b>하다. (6) <b>열린 문제(리뷰 I-2):</b> 정지하지 않은 8개 중 7개가 <code>grasped=False</code> → B단계 성공 판정(<code>success = r.grasped</code>)에서 성공한 시도의 약 23%가 실패로 세어질 수 있다(재시도로 과자를 한 개 더 옮길 수 있고 count는 늘지 않음). 후속안: 첫 닫힘 구간만 쥠 판정에 사용(<code>min_closed</code> 고정). 미적용, 사용자 결정 대기. 그 밖에 <code>lift_pose</code>는 그리퍼를 닫은 채 저장, <code>max_time_s 20</code>은 최장 에피소드(17.7초)보다 2.3초 길 뿐이니 첫 실행에서 관찰. (7) <b><code>replays/</code>의 가짜 데이터를 실제 Studio 녹화로 교체</b>(<code>tools.fetch_replays</code>: oranda 에피소드 0 6.1초 카메라 3대, dori_dori_4 에피소드 0 10.5초 카메라 2대. 가짜는 삭제하지 않고 옮겨 둠). (8) 테스트 408개 통과. homerunball 원격은 <code>e066990</code>(이전 문서의 <code>c85e1ed</code>는 오기), 이 갱신의 커밋은 사용자가 push한다.</div>
 
 <div class="note"><b>이전 갱신(c38ee0b 이후):</b> (1) <b>스킬 1회 실행 버튼 · 코드 도리도리 · LLM 도리도리를 마쳤다.</b> 설계 <code>docs/superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md</code>, 계획 <code>docs/superpowers/plans/2026-10-22-skill-test.md</code>, Task 1~6(<code>0c15ece..90a1096</code>) + 리뷰 수정(<code>b4d2019</code>, <code>07e402d</code>, <code>fe9f77e</code>). Task별 리뷰는 모두 승인(로봇·controller는 opus), 전체 최종 리뷰(opus)도 반영했다. <b>스킬 테스트:</b> 화면 아래 "스킬 테스트" 줄(<code>오란다 1회</code> · <code>도리도리 1회</code> · <code>홈으로</code>). 실제 로봇 모드에서는 진짜 팔이 움직이는 추론 1회 테스트이고, dry-run에서는 녹화 재생이다. 대기 상태에서만 되며 "테스트(TESTING)" 상태로 들어가고, 횟수·피로도에는 반영하지 않는다. 결과는 채팅창에 표시하고(예: "테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초") 비상정지는 즉시 먹는다. <b>코드 도리도리:</b> <code>skills.dori_dori.source: auto|policy|script</code>(모델이 없으면 auto가 자동으로 코드 동작). 홈에서 몸통만 좌우로 흔든다(기본 ±15, 2회, 한쪽 0.35초). 안전: 진폭 상한 30, 한쪽 0.15~3초, 횟수 1~10, 잘못된 값은 모델 로드 전에 안내하고 종료, 비상정지는 기존 경로 그대로. <b>LLM 도리도리:</b> 대기 중 "도리도리 해 봐" / "고개 저어 봐"라고 하면 대화 LLM이 의도 <code>dori_dori</code>를 골라 버튼과 같은 경로로 1회 실행하며, 대사 소리가 나기 시작한 뒤 움직인다(사이클과 같은 A안). 키워드 규칙에서는 작업 시작이 우선이다(사용자 결정: "도리도리 하지 말고 옮겨줘"는 작업 시작). 잡담에 팔이 움직이지 않도록 프롬프트 범위를 좁혔다. Chrome(dry-run)에서 버튼, 도리도리 1회, LLM 채팅 "보리야 도리도리 해 봐"(Claude가 dori_dori 선택), 오란다 1회 중 비상정지(비상정지·결과 문구 확인), 재시작을 확인했다. (2) 스킬 테스트까지 전부 main에 병합하고 homerunball에 push 완료(<code>c85e1ed</code>, 사용자 실행). 다음 세션 메모(<code>docs/memo/next-session-prompt.md</code>)도 노트북 실기부터 이어지게 갱신했다(<code>7d80ccd</code>). (3) 테스트는 408개. 남은 일: <b>노트북 실기(내일 로봇 연결)</b> — 런북 2-2·2-3·2-4절: 포트 · 카메라 · 캘리브레이션 · 그리퍼 · 포즈 · home · 도리도리 1회 테스트로 코드 도리도리 폭·속도 조정 · 3D 영점. 그다음 과자 모델 반영·실기, 전체 흐름 실기. 현장 확인 항목: 3D 렌더와 ACT 추론이 같은 iGPU를 써서 느려지는지(느리면 <code>ui.tiles</code>에서 twin 제외), Studio 영상 코덱(AV1), 카메라 시리얼, 녹화 CPU. 주의: 개발 PC의 <code>replays/</code>에는 화면 확인용 가짜 데이터가 있으니 시연 전에 실제 녹화로 바꾼다.</div>
 
@@ -114,20 +116,20 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="summary">2. 전체 진척 요약</h2>
 <div class="grid">
-  <div class="stat"><b style="color:var(--done)">45</b><span>완료</span></div>
+  <div class="stat"><b style="color:var(--done)">53</b><span>완료</span></div>
   <div class="stat"><b style="color:var(--review)">0</b><span>리뷰 대기 (구현됨, 리뷰 안 함)</span></div>
   <div class="stat"><b style="color:var(--wip)">3</b><span>진행 중</span></div>
-  <div class="stat"><b style="color:var(--todo)">3</b><span>남음</span></div>
-  <div class="stat"><b style="color:var(--hold)">1</b><span>보류</span></div>
-  <div class="stat"><b>408</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>fe9f77e</code> 시점 전체)</span></div>
+  <div class="stat"><b style="color:var(--todo)">4</b><span>남음</span></div>
+  <div class="stat"><b style="color:var(--hold)">2</b><span>보류</span></div>
+  <div class="stat"><b>452</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>0ea623b</code> 시점 전체)</span></div>
 </div>
-<p class="sub" style="margin-top:8px">비교표(4장) 52개 행 기준. 소프트웨어 계획 Task 1~10, 로봇 연결(M4) 코드 Task 1~6, 4분할·3D 트윈 Task 1~7, 스킬 테스트·코드 도리도리·LLM 도리도리 Task 1~6은 모두 완료. 다만 실제 로봇 실기 확인은 아직 하지 않았다.</p>
+<p class="sub" style="margin-top:8px">비교표(4장) 62개 행 기준. 소프트웨어 계획 Task 1~10, 로봇 연결(M4) 코드 Task 1~6, 4분할·3D 트윈 Task 1~7, 스킬 테스트·코드 도리도리·LLM 도리도리 Task 1~6은 모두 완료. 2026-10-23에 시연 노트북에서 실기를 시작해 <code>오란다 1회</code> 성공까지 확인했다. 전체 흐름 실기와 제어 루프 주기 조사가 남았다.</p>
 
 <div class="card">
 <div class="prow"><span class="n">설계 마일스톤 M0~M7</span><div class="bar"><i class="d" style="width:75%"></i><i class="w" style="width:12.5%"></i></div><span class="v">완료 6 · 진행 1 · 남음 1</span></div>
 <div class="prow"><span class="n">소프트웨어 Task 1~10</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 10 / 10</span></div>
 <div class="prow"><span class="n">M4 로봇 Task 1~6</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 6 / 6</span></div>
-<div class="prow"><span class="n">그 밖의 연결·정리 (28개)</span><div class="bar"><i class="d" style="width:82.1%"></i><i class="w" style="width:7.1%"></i></div><span class="v">완료 23 · 진행 2 · 남음 2 · 보류 1</span></div>
+<div class="prow"><span class="n">그 밖의 연결·정리 (38개)</span><div class="bar"><i class="d" style="width:81.6%"></i><i class="w" style="width:5.3%"></i></div><span class="v">완료 31 · 진행 2 · 남음 3 · 보류 2</span></div>
 </div>
 <p class="sub">범례: <span class="badge b-done">완료</span> <span class="badge b-review">리뷰 대기</span> <span class="badge b-wip">진행 중</span> <span class="badge b-todo">남음</span> <span class="badge b-hold">보류</span></p>
 
@@ -172,7 +174,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>M1 controller, brain 규칙, B 판정, dry skills, 콘솔 키, JSONL</td><td><span class="badge b-done">완료</span></td><td><code>89b3c4a</code> <code>f6d6a08</code> <code>cd33df2</code></td></tr>
 <tr><td>M2 server.py + 계약, <code>frontend/</code></td><td><span class="badge b-done">완료</span></td><td><code>985351f</code> <code>6a7353b</code></td></tr>
 <tr><td>M3 providers + brain(decide·chat) + TTS, counter 체인(A)</td><td><span class="badge b-done">완료</span></td><td><code>437149a</code> <code>f648b13</code> <code>93915c8</code> <code>f6c1921</code>. 코드·테스트는 끝. 실제 YOLO/VLM 모델은 아직 안 붙였다(vision.chain 비어 있음, 아래 "남음" 참고)</td></tr>
-<tr><td>M4 로봇 연결 (자세 이동 → 정책 단독 → 전체 루프 → 카메라 스트림)</td><td><span class="badge b-wip">진행 중</span></td><td>코드 Task 1~6 모두 완료 (<code>2a95f3c</code>, <code>504084d</code> <code>dc7685c</code>, <code>64963fa</code>, <code>2cdd395</code>, <code>5366123</code> <code>780f368</code>, <code>cca8703</code>). 노트북 실기 확인이 남아 진행 중</td></tr>
+<tr><td>M4 로봇 연결 (자세 이동 → 정책 단독 → 전체 루프 → 카메라 스트림)</td><td><span class="badge b-wip">진행 중</span></td><td>코드 Task 1~6 모두 완료. 2026-10-23 노트북 실기: 연결·포즈·<code>오란다 1회</code> 성공·<code>홈으로</code> 확인. 전체 흐름 실기, 제어 루프 11~13 Hz 조사가 남아 진행 중</td></tr>
 <tr><td>M5 달래기 (REFUSING에서 resume intent)</td><td><span class="badge b-done">완료</span></td><td><code>f648b13</code> (intent) + <code>89b3c4a</code> (상태 전이). dry-run 기준, 대화 LLM은 별도 행</td></tr>
 <tr><td>M6 STT (<code>/stt</code> + stt.py, 말로 시작·달래기)</td><td><span class="badge b-done">완료</span></td><td>서버 경로 <code>985351f</code> + 로컬 Whisper <code>1284e6a</code> <code>e006840</code></td></tr>
 <tr><td>M7 (선택) ACT 디바이스별 지연 비교</td><td><span class="badge b-todo">남음</span></td><td>자를 때 가장 먼저 자르는 항목</td></tr>
@@ -208,7 +210,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>동기화 Minor 정리 (기본값 8초 ↔ config 10초 불일치, 다 옮김 경로 세션 번호 확인 등)</td><td><span class="badge b-done">완료</span></td><td><code>8cd3b82</code> <code>637a678</code>. 음성 동기화 기본값을 10초로 맞춤, 이전 세션의 '다 옮김'·개수 결과가 새 세션을 덮지 않음</td></tr>
 <tr><td>controller 정리 (재시작은 동작이 멈춘 뒤, 비상정지 때 남은 대사 버리기)</td><td><span class="badge b-done">완료</span></td><td><code>8cd3b82</code> <code>637a678</code>, opus 리뷰. 재시작은 진행 중인 동작이 멈춘 뒤에만(최대 5초, 안 멈추면 거부하고 비상정지 유지), 웹 UI 재시작에도 세션 번호 확인, 재시작 취소 시 UI 알림</td></tr>
 <tr><td>런북에 노트북 "로봇 첫 연결" 절차 (2-2절)</td><td><span class="badge b-done">완료</span></td><td><code>56c1b67</code>, <a href="DEMO_RUNBOOK.md"><code>DEMO_RUNBOOK.md</code></a>. 포트 → 캘리브레이션 → watch(그리퍼 방향) → 포즈 저장 → home 이동(Ctrl+C 토크 유지 확인) → dori_dori 순서, 무료 Gemini 키 안내 포함</td></tr>
-<tr><td>노트북에서 로봇 실기 확인 (런북 2-2절 순서)</td><td><span class="badge b-todo">남음</span></td><td>아직 실제 로봇으로 돌려 보지 않았다. 포트, 카메라, 캘리브레이션, 그리퍼 방향, 포즈 저장, home 이동, dori_dori 확인</td></tr>
+<tr><td>노트북에서 로봇 실기 확인 (런북 2-2절 순서)</td><td><span class="badge b-wip">진행 중</span></td><td>2026-10-23: 포트(COM5), 카메라 번호, 캘리브레이션, 그리퍼 watch, 포즈 저장(home·lift), home 이동 2.2초, 오란다 1회 성공(22.7초) 확인. 남은 것: 전체 흐름(채팅 시작 → 반복 → 거부 → 달래기), 3D 영점(<code>twin.sign</code>/<code>offset_deg</code>), 루프 주기</td></tr>
 <tr><td>UI 말하기 단계 (단계 표시줄 "말하기", 상태 "말하는 중", 목업 반영)</td><td><span class="badge b-done">완료</span></td><td><code>d8d67fb</code>. 연동 계약(UI_DESIGN_PROMPT, 설계 문서)의 phase 목록에 speaking 추가</td></tr>
 <tr><td>채팅 개수 우선순위 ("3개 옮겨줘"의 3이 LLM 값보다 우선)</td><td><span class="badge b-done">완료</span></td><td><code>c2c269e</code>. 절대 규칙 1 "횟수는 코드가 센다"에 맞춤. 리뷰에서 발견</td></tr>
 <tr><td>STT·TTS 선택 문서와 Gemini 예비 STT 실제 확인</td><td><span class="badge b-done">완료</span></td><td><a href="VOICE_PROVIDERS.md"><code>VOICE_PROVIDERS.md</code></a> (<code>1449202</code>, <code>5312105</code>): 후보 비교와 선택 이유. 무료 키로 <code>gemini-3.5-flash-lite</code> 오디오 입력, 3문장 모두 정확, 1.5~2.4초</td></tr>
@@ -216,15 +218,25 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>UI에서 🎤 마이크 입력과 음성 재생 확인</td><td><span class="badge b-wip">진행 중</span></td><td>사용자가 브라우저로 확인 중 (결과 아직 없음). dry-run <code>/stt</code> 업로드 → 인식 → 채팅 → 작업 시작 흐름은 확인함</td></tr>
 <tr><td>OpenAI STT/TTS 엔진 (예비)</td><td><span class="badge b-hold">보류</span></td><td><code>bd1c9ee</code>. 키가 401(무효)이라 예비로만 남김</td></tr>
 <tr><td>STT를 OpenVINO Whisper 로컬로 (결정 21번)</td><td><span class="badge b-done">완료</span></td><td>결정은 <code>4ac9524</code>, 구현 <code>1284e6a</code> <code>e006840</code> (small CPU 기본, Gemini 예비). 노트북에서 설치·속도 확인은 남음</td></tr>
-<tr><td>oranda_pickup ACT 학습 (Studio)</td><td><span class="badge b-wip">진행 중</span></td><td>Studio에서 학습 중. 끝나면 <code>exports/openvino</code>가 나온다 (외부 작업)</td></tr>
-<tr><td>counter 체인의 실제 모델(YOLO-World 내보내기, VLM, OpenCV 튜닝)</td><td><span class="badge b-todo">남음</span></td><td>도구 <code>93915c8</code>는 있음. 큰 패키지(ultralytics 등)는 이 PC에 설치하지 않음. 실제 트레이 사진으로 정해야 함</td></tr>
+<tr><td>oranda_pickup ACT 학습 (Studio)</td><td><span class="badge b-done">완료</span></td><td>결과물 <code>traind-model/pickup/exports/openvino</code> 반영(<code>6681a3d</code>). 노트북 CPU에서 로드 6초, 청크당 0.14~0.23초, 실기 1회 성공</td></tr>
+<tr><td>counter 체인의 실제 모델: OpenCV counter v2 (YOLO-World·VLM은 나중)</td><td><span class="badge b-done">완료</span></td><td>OpenCV는 <code>fb6a85d</code>(실제 프레임 3개, 17 ms). YOLO-World 도구(<code>93915c8</code>)는 있으나 큰 패키지를 설치하지 않았다. VLM은 아래 보류 행</td></tr>
 <tr><td>feat/robot-m4를 main에 병합하고 homerunball에 push</td><td><span class="badge b-done">완료</span></td><td>스킬 테스트까지 로컬 main에 fast-forward 병합(<code>405ebc4</code>) → homerunball main·<code>feat/robot-m4</code> = <code>c85e1ed</code>(사용자가 직접 실행). 이후 커밋은 같은 절차(subtree split → homerunball-export에 병합 → 사용자 push)로 올린다. origin(강의 저장소)에는 push하지 않기로 함</td></tr>
 <tr><td>로봇이 안 될 때 대비책: 4분할 화면 · 3D 디지털 트윈 · 녹화 재생 · 실행 기록 · 카메라 찾기</td><td><span class="badge b-done">완료</span></td><td>설계 <code>digital-twin-design.md</code>, 계획 <code>digital-twin.md</code>, Task 1~7 <code>3aa5cef..57b98fd</code>(<code>b51754a</code> 화면·3D, <code>b963dab</code> 스트림·재생 API, <code>0a75abc</code> <code>c643932</code> 실행 기록, <code>264d5ee</code> 카메라 찾기, <code>16bf641</code> 에피소드 받기). Task별 리뷰 모두 승인(Task 4·5 opus), 최종 리뷰(opus) "병합 가능", 반영 수정 <code>7f4292c</code>. Chrome(dry-run) 확인: 4분할, 3D 로드(요청 28개 200, 콘솔 오류 없음), 녹화 재생 동기, 비상정지, 재시작, 목업. 현장 확인은 남음(iGPU 경합, 3D 영점, Studio 영상 코덱 AV1, 카메라 시리얼, 녹화 CPU). 개발 PC <code>replays/</code>는 가짜 데이터</td></tr>
 <tr><td>팀 메모: 로봇 실행과 화면 대비책 (Studio 역할, iframe, 카메라 연결, 4분할 설계안)</td><td><span class="badge b-done">완료</span></td><td><code>52c64e9</code>, <a href="memo/2026-10-22-robot-runtime-and-twin.html"><code>2026-10-22-robot-runtime-and-twin.html</code></a></td></tr>
 <tr><td>스킬 테스트: UI 스킬 1회 실행(추론 테스트, TESTING 상태)과 모델 없이 코드로 도리도리</td><td><span class="badge b-done">완료</span></td><td>설계 <code>skill-test-and-scripted-dori-design.md</code>, 계획 <code>skill-test.md</code>, Task 1~6 <code>0c15ece..90a1096</code>(<code>0c15ece</code> 코드 도리도리, <code>2e5c53d</code> 버튼·TESTING 표시, <code>e7eab50</code> controller TESTING, <code>277e8b9</code> WS test 명령, <code>90a1096</code> 현장 문서) + 리뷰 수정 <code>b4d2019</code> <code>07e402d</code> <code>fe9f77e</code>. Task별 리뷰 승인(로봇·controller는 opus), 최종 리뷰(opus) 반영. 실제 로봇 모드는 진짜 추론 1회, dry-run은 녹화 재생. 횟수·피로도 미반영, 비상정지 즉시. 코드 도리도리는 <code>source: auto|policy|script</code>, 진폭 상한 30·shake_s 0.15~3·shakes 1~10 검증. 로봇 실기 확인은 남음</td></tr>
 <tr><td>LLM 도리도리: 대기 중 "도리도리 해 봐" 채팅 → 의도 <code>dori_dori</code>로 1회 실행</td><td><span class="badge b-done">완료</span></td><td><code>a38def7</code> + 수정 <code>07e402d</code> <code>fe9f77e</code>. 대사가 나기 시작한 뒤 움직임(A안), 키워드 규칙은 작업 시작 우선, 잡담엔 움직이지 않게 프롬프트 범위 축소. Chrome(dry-run)에서 "보리야 도리도리 해 봐" → Claude가 dori_dori 선택 확인</td></tr>
+<tr><td>Windows 시연 노트북 연결 (포트 COM5, 카메라 1·2·3, physicalai 0.3.0, wincam, 정책 CPU)</td><td><span class="badge b-done">완료</span></td><td><code>6681a3d</code> <code>663fc7b</code> <code>6aad448</code> <code>527ed1c</code>. USB 포트를 나눠 꽂아야 카메라 시간 초과가 없다. 서버를 다시 띄울 때 가끔 첫 프레임 시간 초과(다시 꽂기)</td></tr>
+<tr><td>오란다 1회 실기 (스킬 테스트)</td><td><span class="badge b-done">완료</span></td><td>성공: <code>gripper_open</code>, 쥠 성공, 22.7초(<code>logs/runs/20261023-103209_oranda_pickup</code>). <code>홈으로</code> 2.2초</td></tr>
+<tr><td>코드 도리도리 1회 버튼 (<code>dori_script</code>, 모델 도리도리와 별도)</td><td><span class="badge b-done">완료</span></td><td><code>78a23ae</code> + CSS <code>db24091</code>, opus 승인(참고 사항 있음). 모델 도리도리는 실기에서 pan이 ±1에 머물러 시간 초과</td></tr>
+<tr><td>OpenCV counter v2 + 개수 세기 방법 토글 · "지금 세기"</td><td><span class="badge b-done">완료</span></td><td><code>fb6a85d</code>. opus 리뷰 Approved with notes, 지적 반영 <code>0ea623b</code>. </td></tr>
+<tr><td>거부 규칙 half: 전체의 절반을 옮기면 작업당 한 번 거부 (<code>decision.refuse half|fixed</code>)</td><td><span class="badge b-done">완료</span></td><td><code>27bdae2</code>. opus 리뷰 Approved with notes, 지적 반영 <code>0ea623b</code>. 구현·테스트 완료, opus 리뷰 진행 중(결과 아직 없음)</td></tr>
+<tr><td>course_guide.html 06 Physical AI 장, 07 해커톤 프로젝트 장</td><td><span class="badge b-done">완료</span></td><td><code>a3d8024</code></td></tr>
+<tr><td>제어 루프 주기 조사 (11~13 Hz 대 학습 30 Hz)</td><td><span class="badge b-todo">남음</span></td><td>런타임 스텝당 약 77 ms. 의심: 카메라 3대 NV12→RGB, MJPEG 인코딩, 실행 기록, 3D 트윈, CPU 경쟁. 아직 조사 전</td></tr>
+<tr><td>도리도리: 모델 대신 코드 쓸지 결정 (<code>skills.dori_dori.source: script</code> 고려)</td><td><span class="badge b-todo">남음</span></td><td>모델은 실기에서 동작하지 않음. 루프 주기가 원인일 수도 있어 조사 뒤 재확인</td></tr>
+<tr><td>전체 흐름 실기 (OpenCV 개수 세기 + half 거부 + 달래기)</td><td><span class="badge b-todo">남음</span></td><td><code>python -m snackbot</code>으로 채팅 시작 → 반복 → 거부 → 달래기 → 완료</td></tr>
+<tr><td>VLM 개수 세기</td><td><span class="badge b-hold">보류</span></td><td>사용자가 1 epoch VLM을 갖고 있어 나중에 chain에 추가</td></tr>
 </tbody></table></div>
-<p class="sub">리뷰 대기 커밋은 없다. 이전 리뷰 대기 7개 중 5개(<code>4d6b040</code> <code>bd1c9ee</code> <code>982692d</code> <code>b2fc422</code> <code>6db1ac4</code>)는 승인, 콘솔 키 2개(<code>620cdfa</code> <code>b2f4c6e</code>)는 수정 후 opus 재리뷰로 완료했다.</p>
+<p class="sub">리뷰 대기 커밋은 <code>fb6a85d</code>, <code>27bdae2</code> 둘이었고 opus 리뷰(Approved with notes)와 수정 <code>0ea623b</code>로 완료했다. 이전 리뷰 대기 7개 중 5개(<code>4d6b040</code> <code>bd1c9ee</code> <code>982692d</code> <code>b2fc422</code> <code>6db1ac4</code>)는 승인, 콘솔 키 2개(<code>620cdfa</code> <code>b2f4c6e</code>)는 수정 후 opus 재리뷰로 완료했다.</p>
 
 <h2 id="detail">5. 단계별 상세</h2>
 <p class="sub">각 항목을 눌러 펼친다. 근거는 진행 기록(<code>.superpowers/sdd/progress.md</code>), 계획, 설계 문서, 의논 기록(결정 1~21).</p>
@@ -410,12 +422,12 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <h3>하드웨어·모델 사실 (확인된 것)</h3>
 <ul>
 <li><b>Studio:</b> <code>http://192.168.0.6:7860</code> (조회 API만 사용). 프로젝트 dori-dori, 환경 ID는 next-session-prompt 참고.</li>
-<li><b>카메라:</b> tower cam(UVC 0), follow cam(UVC 2), 1280x720@30. oranda용 사이드 캠 추가(Studio 이름 미정; <code>skills.oranda_pickup.camera_map</code>으로 매핑).</li>
-<li><b>포트:</b> 팔로워는 Studio 학습 PC 기준 <code>/dev/ttyACM1</code>, 리더 <code>/dev/ttyACM0</code>. 노트북에서 다시 확인. 단위: 몸통 -100..100, 그리퍼 0..100(작을수록 닫힘 가정, <code>robot_probe</code>로 확인).</li>
+<li><b>카메라(시연 노트북, Windows):</b> 0 = 노트북 내장(쓰지 않음), 1 = follow(손목, icspring, 시리얼 20240307110322), 2 = tower(학습 이름 a), 3 = side(b). tower·side는 시리얼이 같다. 1280x720@30. USB 포트를 나눠 꽂는다(NV12 비압축이라 한 경로에 두 대면 시간 초과).</li>
+<li><b>포트:</b> 시연 노트북 팔로워 <code>COM5</code>, 리더 <code>COM6</code>(Studio 학습 PC는 팔로워 <code>/dev/ttyACM1</code>, 리더 <code>/dev/ttyACM0</code>). 단위: 몸통 -100..100, 그리퍼 0..100(작을수록 닫힘, 확인됨). 그리퍼 실측: 빈손 49.4~50.1, 오란다 쥠 54.2~55.4, 열림 79.0.</li>
 <li><b>dori_dori 결과물:</b> <code>traind-model/dori-dori-model/exports/openvino</code> (act.xml/bin, manifest.json). task 문장 "Shake the arm side to side to say no". 입력 <code>images.tower cam</code>, <code>images.follow cam</code>, chunk 100.</li>
-<li><b>oranda_pickup:</b> 학습 중. 같은 형태로 나온다. task 문장 "PIck up the Snack and place it in the empty tray"(녹화 문장 그대로; ACT는 task 문장을 입력으로 쓰지 않음).</li>
+<li><b>oranda_pickup:</b> 결과물 <code>traind-model/pickup/exports/openvino</code>, 입력 <code>images.follow/a/b</code>. task 문장 "PIck up the Snack and place it in the empty tray"(녹화 문장 그대로; ACT는 task 문장을 입력으로 쓰지 않음).</li>
 <li><b>physicalai 0.3.0:</b> <code>RobotRuntime(robot, action_source, fps, cameras, callbacks).run(duration_s, stop_event)</code>, <code>PolicySource(InferenceModel(export_dir, device))</code>. InferenceModel은 모델이 기대하는 입력만 골라 쓴다(남는 카메라 무시).</li>
-<li><b>개발 PC:</b> Windows, <code>project/.venv</code>(작은 패키지만). 큰 패키지(torch, ultralytics, physicalai)는 설치하지 않는다. 시연 노트북은 Ubuntu 24.04.</li>
+<li><b>시연 노트북 = 이 Windows 11 PC</b>(192.168.0.17): <code>project/.venv</code>에 physicalai 0.3.0 설치(사용자 승인), 정책은 CPU(GPU 컴파일 정책마다 55~65초). torch, ultralytics는 설치하지 않는다. Ubuntu 노트북 계획은 접었다.</li>
 </ul>
 
 <h2 id="decisions">7. 의논에서 정한 핵심 결정 (요약)</h2>
@@ -451,10 +463,12 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <li>UI에서 🎤 마이크 입력과 음성 재생 확인 (사용자가 확인 중, 아직 결과 없음).</li>
 <li>(완료) 콘솔 키 수정 재리뷰, 동기화 Minor 정리, M4 Task 3(robot.py)·Task 4(현장 도구) 리뷰.</li>
 <li>(완료) M4 Task 5(진입점 <code>python -m snackbot</code>에 실제 로봇 연결)·Task 6(현장 문서). 코드 Task 6개 모두 끝.</li>
-<li>노트북 실기 확인(1순위, 아직 안 함): <a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a> 2-2·2-3·2-4절 순서. 포트는 <code>ls -l /dev/serial/by-id/</code>로 팔로워 경로를 찾아 <code>robot.port</code>에 쓴다(리더는 빼 두거나 by-id로 구분) → 카메라(<code>python -m tools.cameras</code>, tower·side는 시리얼이 같아 번호로 지정) → 캘리브레이션 → 그리퍼 → 포즈 저장(<code>lift</code>는 그리퍼를 닫은 채) → home 이동 → 도리도리 1회로 코드 도리도리 폭·속도 조정 → 3D 영점.</li>
-<li><b>실제 오란다를 쥐고 <code>python -m tools.robot_probe watch</code></b>로 쥔 값이 56.0 아래인지, 놓을 때 56.5 위인지 확인해 그리퍼 값 확정. 그다음 <code>오란다 1회</code>로 결과 문구(놓기 감지 / 시간 초과, 쥠 성공 / 없음)를 기록하고, 전체 흐름 실기(<code>python -m snackbot</code>).</li>
-<li><b>결정 필요(리뷰 I-2):</b> 쥠 판정 거짓 실패(녹화 기준 약 23%)를 후속 코드 수정(첫 닫힘 구간만 쥠 판정, <code>min_closed</code> 고정)으로 고칠지, 실기 오판 빈도를 본 뒤 정할지.</li>
-<li>homerunball push: 원격 최신 <code>e066990</code>. 이번 갱신(config·문서) 커밋은 같은 절차로 사용자가 직접 push한다(origin에는 push하지 않음).</li>
+<li><b>제어 루프 주기 조사(1순위):</b> 11~13 Hz가 나온 원인을 찾는다. 카메라 3대 NV12→RGB 변환, MJPEG 인코딩(<code>ui.tiles</code>에서 카메라를 줄여 비교), 실행 기록(<code>recording.enabled</code> 끄기), 3D 트윈, CPU 경쟁을 하나씩 껐다 켜며 스텝 시간을 잰다. 30 Hz에 가까워지면 모델 도리도리도 다시 시험한다.</li>
+<li><b>전체 흐름 실기</b>(<code>.venv\Scripts\python -m snackbot</code>): OpenCV 개수 세기 + half 거부 + 달래기 + 완료. 3D 영점(<code>twin.sign</code>/<code>offset_deg</code>) 확인. 카메라나 트레이 위치가 바뀌면 <code>python -m snackbot.vision &lt;사진&gt; --blobs</code>로 ROI를 다시 맞춘다.</li>
+<li><b>도리도리 결정:</b> 모델(<code>policy</code>) 대신 코드(<code>skills.dori_dori.source: script</code>)로 갈지. 지금 <code>auto</code>는 모델 폴더가 있으면 모델을 쓴다.</li>
+<li><b>결정 필요(리뷰 I-2):</b> 쥠 판정 거짓 실패(녹화 기준 약 23%)를 후속 코드 수정으로 고칠지. 실기 1회는 쥠 성공이었다. 전체 흐름에서 오판 빈도를 보고 정한다.</li>
+<li><b>opus 리뷰 결과 반영:</b> <code>fb6a85d</code> + <code>27bdae2</code> → <code>0ea623b</code> 완료 (남은 Minor: 첫 세기가 추정일 때 쥠 판정 경로, vision 동시 호출 락은 YOLO/VLM 때).</li>
+<li>VLM 개수 세기는 나중에(사용자 1 epoch VLM). homerunball push: 원격 최신 <code>e066990</code>, 그 뒤 로컬 커밋은 사용자가 같은 절차로 push한다(origin에는 push하지 않음).</li>
 <li>(완료) 로봇이 안 될 때 대비책: 4분할 화면 · 3D 디지털 트윈 · 녹화 재생 · 실행 기록 · 카메라 찾기.</li>
 <li>(완료) UI 스킬 1회 실행(추론 테스트), 코드 도리도리, LLM 도리도리. 실기 조정은 1번 노트북 실기 때 함께 한다.</li>
 <li>챗봇 추가 후보: 긴 대화 요약, 서버 쪽 입력 길이 제한 (스트리밍은 보류).</li>
@@ -463,17 +477,17 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <h3>남은 결정·확인</h3>
 <ul>
 <li>(완료) 과거 stash@{0}과 rescue 백업은 사용자 승인으로 삭제했다.</li>
-<li>시연 전 Ubuntu 노트북 실제 터미널에서 방향키·Home·F키·ESC가 아무 동작도 안 하고 space만 비상정지인지 직접 확인.</li>
+<li>시연 전 노트북(Windows) 실제 터미널에서 방향키·Home·F키·ESC가 아무 동작도 안 하고 space만 비상정지인지 직접 확인.</li>
 <li>WinError 10014(이 Windows PC 한정) 원인을 조사할지 여부.</li>
 <li>Windows 환경 변수의 낡은 <code>GEMINI_API_KEY</code>는 사용자가 지웠다. Claude Code나 터미널이 키 삭제 전에 열렸다면 예전 키를 물려받으므로 새 터미널에서 실행.</li>
 <li>Gemini 무료 등급 하루 호출 한도 확인 (리허설을 많이 하면 주의; AI Studio의 Rate limits 화면).</li>
 <li>무료 TTS 대안 조사 결과(채택 안 함, 기록용): edge-tts(키 없음, 한국어 SunHi/InJoon/Hyunsu, 1.1초, 비공식 엔드포인트, mp3), Supertonic 3(Supertone, 99M, 한국어 포함 31개 언어, ONNX라 OpenVINO로 온디바이스 가능, OpenRAIL-M) — 온디바이스 평가를 노릴 때의 후보.</li>
-<li>노트북의 OpenVINO 디바이스 문자열(GPU/NPU), 팔로워 포트, 카메라 번호, 그리퍼 열림/닫힘 기준값(<code>tools/gripper_stats.py</code>, <code>robot_probe</code>).</li>
+<li>(해결) 노트북 팔로워 포트 COM5, 카메라 번호 1·2·3, 그리퍼 기준값(실측으로 유지), 정책 장치 CPU. 열린 것: 제어 루프 주기, 카메라 시간 초과, 도리도리 모델.</li>
 </ul>
 
 <h2 id="verify">9. 확인 방법 모음</h2>
 <pre><code># project 루트에서
-.venv/Scripts/python -m pytest -q                       # 408개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
+.venv/Scripts/python -m pytest -q                       # 445개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
 .venv/Scripts/python -m snackbot --dry-run              # 로봇 없이 전체 흐름 + UI (http://localhost:8000)
 .venv/Scripts/python -m snackbot --dry-run --no-ui      # 콘솔만 (s 시작, r 재개, space 비상정지, h 재시작, q 종료)
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg</code></pre>
