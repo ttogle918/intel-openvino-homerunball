@@ -1,0 +1,47 @@
+# SO-101 팔로워 캘리브레이션 (physicalai 0.3.0은 range_min/range_max만 쓴다. homing_offset은 서보 EEPROM 값이 실제로 쓰인다)
+# 출처: physical-ai-studio http://192.168.0.6:7860 프로젝트 dori-dori 환경 24aadb64 runtime-config (oranda 환경과 같은 값), 2026-10-23.
+# 환경: 시연 노트북 Windows 11 + 팔로워 COM5. Studio PC(Ubuntu)에서 녹화·학습할 때 쓴 것과 같은 캘리브레이션이어야 정책이 맞게 움직인다.
+#
+# 다시 받기 (조회만 한다):
+#   Windows:
+#     .venv\Scripts\python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project 0d36a88a-0078-47f9-972e-d5dd3e94a262 --env 24aadb64-3457-411c-8411-48529eada534
+#   Ubuntu:
+#     # .venv/bin/python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project 0d36a88a-0078-47f9-972e-d5dd3e94a262 --env 24aadb64-3457-411c-8411-48529eada534
+# (fetch_calibration은 이 머리말 주석을 지키고 값만 바꾼다)
+
+shoulder_pan:
+  id: 1
+  drive_mode: 0
+  homing_offset: -1983
+  range_min: 0
+  range_max: 4095
+shoulder_lift:
+  id: 2
+  drive_mode: 0
+  homing_offset: -1660
+  range_min: 0
+  range_max: 4095
+elbow_flex:
+  id: 3
+  drive_mode: 0
+  homing_offset: 1026
+  range_min: 0
+  range_max: 4095
+wrist_flex:
+  id: 4
+  drive_mode: 0
+  homing_offset: 1221
+  range_min: 0
+  range_max: 4095
+wrist_roll:
+  id: 5
+  drive_mode: 0
+  homing_offset: -1927
+  range_min: 0
+  range_max: 4095
+gripper:
+  id: 6
+  drive_mode: 0
+  homing_offset: 1189
+  range_min: 0
+  range_max: 4095

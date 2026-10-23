@@ -1,0 +1,18 @@
+# 로봇 자세 (normalized 단위: 몸통 -100..100, 그리퍼 0..100). 관절 순서:
+#   shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
+# 환경: 시연 노트북 Windows 11 (192.168.0.17) + 팔로워 SO-101 (COM5), 2026-10-23.
+#   다른 팔·PC에서는 서보 영점이 달라 이 값을 그대로 쓰면 안 된다 → 그 환경에서 다시 저장한다.
+# home_pose: 사용자가 정한 시작 자세 (접힌 자세). 학습 데이터 시작 평균은 [2.9, -55.2, 46.3, 34.1, 0.3, 50.1]
+# lift_pose: 놓은 뒤 트레이 위로 든 자세. oranda 데이터셋 ep1·ep5 놓은 직후 자세 기준, 그리퍼 닫힘(50)
+#
+# 다시 저장 (팔을 손으로 그 자세에 두고 실행, 토크가 꺼지니 팔을 받친다):
+#   Windows:
+#     .venv\Scripts\python -m tools.robot_probe save home
+#     .venv\Scripts\python -m tools.robot_probe save lift
+#   Ubuntu:
+#     # .venv/bin/python -m tools.robot_probe save home
+#     # .venv/bin/python -m tools.robot_probe save lift
+# (save는 이 머리말 주석을 지키고 값만 바꾼다)
+
+home_pose: [4.9, -59.7, 51.9, 35.1, 3.4, 49.4]
+lift_pose: [10.5, 13.0, -10.0, 22.0, 3.4, 50.0]

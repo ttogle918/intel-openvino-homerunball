@@ -9,6 +9,8 @@ from pathlib import Path
 import httpx
 import yaml
 
+from snackbot.config import leading_comments
+
 
 def find_follower(node):
     """class_path가 SO101로 끝나고 role이 follower인 노드의 init_args (SharedRobot 안에 있어도)."""
@@ -56,7 +58,7 @@ def main(argv=None):
                          "calibration/follower.yaml(또는 JSON)로 두세요")
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(yaml.safe_dump(cal, sort_keys=False), encoding="utf-8")
+    out.write_text(leading_comments(out) + yaml.safe_dump(cal, sort_keys=False), encoding="utf-8")   # 머리말 주석은 지킨다
     print(f"캘리브레이션 저장: {out}")
     print(f"Studio 기준 팔로워 포트: {follower.get('port')} (노트북 포트는 config.yaml robot.port에 직접 쓴다)")
     for name, cam in ((doc.get("init_args") or {}).get("cameras") or {}).items():
