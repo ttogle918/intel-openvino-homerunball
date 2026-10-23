@@ -37,12 +37,13 @@ brain:
 
 vision:
   camera: tower cam
-  # 비우면 B단계 (시작 개수 + 그리퍼 판정). 위에서부터 시도.
-  chain: []
-  # chain:
-  #   - {type: yolo, model_dir: "models/oranda_world_openvino_model", conf: 0.35, device: "intel:gpu"}
+  # 위에서부터 시도. 비우면 B단계 (시작 개수 + 그리퍼 판정). 화면 토글(끔·OpenCV)로 하나만 고를 수도 있다.
+  # OpenCV roi = 검은 매트 영역 [x1, y1, x2, y2] (가로·세로 비율). 2026-10-23 노트북 tower cam 기준이다.
+  # 카메라나 트레이 위치가 바뀌면 python -m snackbot.vision <사진> --blobs 로 다시 맞춘다 (docs/DEMO_RUNBOOK.md).
+  chain:
+    - {type: opencv, roi: [0.289, 0.208, 0.617, 0.847], min_area: 800, unit_area: 1700, max_hue: 22}
   #   - {type: vlm, provider: local_ov, model_dir: "models/vlm", device: GPU, kind: vlm, prompt: "How many [오란다 생김새] are in the tray? Answer with a number only."}
-  #   - {type: opencv, min_area: 800, max_area: 8000, hsv_low: [10, 60, 80], hsv_high: [30, 255, 255]}
+  #   - {type: yolo, model_dir: "models/oranda_world_openvino_model", conf: 0.35, device: "intel:gpu"}
   #   - {type: fake}        # dry-run에서 A단계 흐름 확인용
 
 stt:

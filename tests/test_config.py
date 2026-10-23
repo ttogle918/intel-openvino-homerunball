@@ -13,7 +13,7 @@ def test_repo_config_has_core_sections():
     for entry in cfg["brain"]["chain"]:
         assert entry["provider"] in cfg["providers"]
         assert entry.get("model")
-    assert cfg["vision"]["chain"] == []
+    assert [e["type"] for e in cfg["vision"]["chain"]] == ["opencv"]   # 노트북 tower cam 현장 튜닝 (roi)
     assert [e["provider"] for e in cfg["stt"]["chain"]] == ["local_ov", "gemini"]
 
 

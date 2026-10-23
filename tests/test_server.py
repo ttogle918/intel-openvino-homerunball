@@ -486,3 +486,24 @@ def test_estop_not_queued_behind_pending_test_on_same_connection(cfg, tmp_path, 
         assert estopped.wait(5)                        # 큐가 풀리기(gate.set) 전에 비상정지가 처리됐다
         assert not gate.is_set() and c.state == "ESTOP" and c.skills.estopped
         gate.set()
+
+
+def test_ws_vision_method_and_count_commands(cfg, tmp_path):
+    from test_controller import FakeVision
+    from snackbot.vision import Count
+    c, app = make_app(cfg, tmp_path)
+    c.vision = FakeVision(Count(2, "opencv"), names=["opencv"])
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        for _ in range(2):
+            ws.receive_json()
+        ws.send_json({"type": "command", "name": "vision_method", "method": "nope"})   # 모르는 이름은 무시
+        ws.send_json({"type": "command", "name": "vision_method", "method": 5})
+        ws.send_json({"type": "command", "name": "vision_method", "method": "off"})
+        e = ws.receive_json()
+        assert e["type"] == "state" and e["vision_choice"] == "off"
+        ws.send_json({"type": "command", "name": "vision_method", "method": "opencv"})
+        assert ws.receive_json()["vision_choice"] == "opencv"
+        ws.send_json({"type": "command", "name": "count"})
+        e = ws.receive_json()
+        assert e["remaining"] == 2 and e["last_count"]["n"] == 2
+    assert c.vision_choice == "opencv"

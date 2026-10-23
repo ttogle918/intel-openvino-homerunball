@@ -45,6 +45,9 @@ def act_label(cfg, skills):
     return act
 
 
+VISION_LABELS = {"opencv": "OpenCV (ROI·색상)", "yolo": "YOLO-World"}
+
+
 def skill_tests_info(cfg, skills):
     """info.tests: 화면 '스킬 테스트' 버튼. 로드되지 않은 정책 버튼은 끈다 (dry-run·홈·코드 도리도리는 켠다)."""
     policies = getattr(skills, "policies", None)   # DrySkills에는 없다 → 모두 가능 (녹화 재생)
@@ -78,6 +81,8 @@ def build(cfg, env, dry_run=True):
         if any(e.get("type") == "fake" for e in chain):
             log.warning("실제 로봇에서는 fake counter를 쓰지 않는다 (vision.chain에서 뺐다)")
             cfg = {**cfg, "vision": {**cfg["vision"], "chain": [e for e in chain if e.get("type") != "fake"]}}
+    if dry_run:   # 가짜 카메라 화면에는 현장 튜닝된 counter가 맞지 않는다: 트레이 개수를 그대로 돌려주는 fake로 흐름만 확인
+        cfg = {**cfg, "vision": {**cfg["vision"], "chain": [{"type": "fake"}]}}
     providers = cfg.get("providers", {})
     llm = build_chain(cfg["brain"].get("chain"), providers, env)
     vision = build_vision(cfg["vision"], providers, env, remaining_fn=lambda: skills.tray)
@@ -87,7 +92,7 @@ def build(cfg, env, dry_run=True):
                             log_dir=cfg.get("logging", {}).get("dir", "logs"))
     info = {"type": "info", "target": {"name": cfg["target"]["name"]}, "models": {
         "llm": llm.describe(),
-        "vision": " → ".join(c.name for c in vision.counters) or "추정 (시작 개수 − 성공 수)",
+        "vision": " → ".join(VISION_LABELS.get(c.name, c.name) for c in vision.counters) or "추정 (시작 개수 − 성공 수)",
         "stt": stt.chain.describe() if stt else "없음",
         "act": act,
     }}

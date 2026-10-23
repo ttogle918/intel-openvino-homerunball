@@ -55,6 +55,9 @@ class Controller:
         self.count = self.remaining = self.retries = self.cycle_n = 0
         self.skill = None
         self.vision_method = "estimate"
+        self.vision_choice = "auto"   # 개수 세기 방법: auto(체인 순서) | off(B단계) | counter 이름
+        self.last_count = None        # 마지막 "지금 세기" 결과 {n, method, ms, ts} (화면 표시용)
+        self._counting_now = False
         self.last_boxes = None
         self.history = deque(maxlen=50)
         self._subs = []
@@ -75,8 +78,41 @@ class Controller:
         with self._lock:
             return {"type": "state", "state": self.state, "phase": self.phase, "count": self.count,
                     "remaining": self.remaining, "skill": self.skill, "vision_method": self.vision_method,
+                    "vision_choice": self._effective_choice(), "vision_options": self.vision_options(),
+                    "last_count": self.last_count,
                     "thresholds": {"safe_max": self.decision["safe_max"],
                                    "force_refuse": self.decision["force_refuse"]}}
+
+    # ---- 개수 세기 방법 ----
+    def vision_options(self):
+        """화면 토글에 보여줄 선택지. counter가 없으면 비어 있다 (항상 B단계). 둘 이상이면 "auto"(체인 전체)가 앞에 붙는다."""
+        if not self.vision:
+            return []
+        names = self.vision.names
+        return (["auto"] if len(names) > 1 else []) + names + ["off"]
+
+    def _effective_choice(self):
+        """counter가 하나뿐이면 auto는 그 counter와 같다 (토글에서 그 항목이 눌려 보이도록)."""
+        if not self.vision:
+            return "off"
+        if self.vision_choice == "auto" and len(self.vision.names) == 1:
+            return self.vision.names[0]
+        return self.vision_choice
+
+    def set_vision_method(self, name):
+        """개수 세기 방법 선택: auto | off | counter 이름. 다음 개수 세기부터 적용된다 (진행 중인 사이클은 그대로)."""
+        with self._lock:
+            if name != "auto" and name not in self.vision_options() or not self.vision:
+                raise ValueError(f"알 수 없는 개수 세기 방법: {name}")
+            self.vision_choice = name
+        self._publish()
+
+    def _count_args(self):
+        """(세기 가능 여부, only). off이거나 counter가 없으면 B단계."""
+        choice = self.vision_choice
+        if not self.vision or choice == "off":
+            return False, None
+        return True, None if choice == "auto" else choice
 
     def _emit(self, event):
         for fn in list(self._subs):
@@ -130,7 +166,7 @@ class Controller:
         with self._lock:
             return self._gen
 
-    def command(self, name, expect_gen=None, skill=None):
+    def command(self, name, expect_gen=None, skill=None, method=None):
         if name == "start":
             self._start_task(None, announce=True)
         elif name == "resume":
@@ -144,6 +180,10 @@ class Controller:
                 self._restart(expect_gen)
         elif name == "test":
             return self._request_test(skill, expect_gen=expect_gen)
+        elif name == "vision_method":
+            self.set_vision_method(method)
+        elif name == "count":
+            return self.count_now()
         elif name == "quit":
             self.stop()
         else:
@@ -417,7 +457,7 @@ class Controller:
         with self._lock:
             n_before = self.remaining
             gen = self._gen
-        if self.vision:
+        if self._count_args()[0]:
             self._set_phase("counting")
             seen = self._count(ms, gen)
             if seen is not None:
@@ -493,7 +533,8 @@ class Controller:
     def _count(self, ms, gen):
         """A단계 개수 세기. 실패하면 None (그 사이클은 B로 판정)."""
         t0 = time.monotonic()
-        c = self.vision.count(self.skills.latest_frame(self.camera))
+        _, only = self._count_args()
+        c = self.vision.count(self.skills.latest_frame(self.camera), only=only)
         ms["vision"] = ms.get("vision", 0) + _ms(t0)
         with self._lock:
             if self._gen != gen:  # 세는 동안 세션이 바뀌었다: 이전 세션의 결과로 새 세션을 덮지 않는다
@@ -505,6 +546,51 @@ class Controller:
         self._publish()
         return c.n
 
+    def count_now(self):
+        """"지금 세기": 대기(IDLE)에서만, 고른 방법으로 한 번 센다. 남은 개수·방법·상자만 화면에 올리고
+        횟수·피로도·사이클 기록은 건드리지 않는다 (로그에는 type "count"로 남긴다)."""
+        with self._lock:
+            refused = None
+            if self.state != IDLE:
+                refused = "대기 상태에서만 지금 세기를 할 수 있어요"
+            elif not self._count_args()[0]:
+                refused = "개수 세기가 꺼져 있어요" if self.vision else "개수 세기 모델이 설정되지 않았어요"
+            elif self._counting_now:
+                refused = "이미 세는 중이에요"
+            else:
+                self._counting_now = True
+                gen = self._gen
+                _, only = self._count_args()
+        if refused:
+            self.notify(refused)
+            return False
+        t0 = time.monotonic()
+        c, error = None, None
+        try:
+            c = self.vision.count(self.skills.latest_frame(self.camera), only=only)
+        except Exception as e:   # 프레임을 못 읽는 경우 등
+            log.warning("지금 세기 실패: %r", e)
+            error = e
+        ms = _ms(t0)
+        with self._lock:
+            self._counting_now = False
+            current = self.state == IDLE and self._gen == gen   # 세는 동안 작업이 시작됐다면 그 화면을 덮지 않는다
+            if current and c is not None:
+                self.remaining, self.vision_method, self.last_boxes = c.n, c.method, c.boxes
+                self.last_count = {"n": c.n, "method": c.method, "ms": ms, "ts": self.clock()}
+        if c is None:
+            self.notify("개수를 세지 못했어요" + (f": {error}" if error else ""))
+        elif current:
+            self._publish()
+        try:
+            self._append_log({"ts": self.clock(), "type": "count", "choice": only or "auto",
+                              "n": None if c is None else c.n, "method": None if c is None else c.method,
+                              "boxes": None if c is None else c.boxes, "ms": ms,
+                              "error": None if error is None else str(error)})
+        except Exception as e:
+            log.warning("개수 로그 기록 실패: %s", e)
+        return c is not None
+
     def _judge(self, n_before, ms, d, r, gen):
         with self._lock:
             aborted = self.state != WORKING or self._gen != gen
@@ -512,7 +598,7 @@ class Controller:
             self._log_cycle("estop", ms, d, r)
             return "estop"
         seen = None
-        if self.vision:
+        if self._count_args()[0]:
             self._set_phase("counting")
             seen = self._count(ms, gen)
         success = seen < n_before if seen is not None else r.grasped

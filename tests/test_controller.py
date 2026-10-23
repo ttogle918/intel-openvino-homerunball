@@ -49,10 +49,11 @@ class FakeSkills:
 class FakeVision:
     enabled = True
 
-    def __init__(self, *counts):
-        self.counts = list(counts)
+    def __init__(self, *counts, names=("opencv",)):
+        self.counts, self.names, self.only = list(counts), list(names), []
 
-    def count(self, frame):
+    def count(self, frame, only=None):
+        self.only.append(only)
         return self.counts.pop(0) if self.counts else None
 
 
@@ -67,6 +68,7 @@ def test_snapshot_shape(cfg):
     c, _ = make(cfg)
     assert c.snapshot() == {"type": "state", "state": "IDLE", "phase": "idle", "count": 0, "remaining": 0,
                             "skill": None, "vision_method": "estimate",
+                            "vision_choice": "off", "vision_options": [], "last_count": None,
                             "thresholds": {"safe_max": 3, "force_refuse": 6}}
 
 
@@ -644,7 +646,7 @@ def test_stale_count_does_not_overwrite_new_session_remaining(cfg):
     class Vis(FakeVision):
         ctrl = None
 
-        def count(self, frame):
+        def count(self, frame, only=None):
             self.ctrl._estop()
             self.ctrl._restart()
             self.ctrl._start_task(5)
@@ -1193,3 +1195,52 @@ def test_dori_timeout_text_is_policy_done_but_other_skills_unchanged(cfg):
     assert c._test_text("dori_dori", "button", "timeout", None, 1000, None) == "테스트 · 도리도리: 정책 동작 완료 · 1.0초"
     assert c._test_text("dori_dori", "button", "script", None, 1000, None) == "테스트 · 도리도리: 코드 동작 완료 · 1.0초"
     assert "시간 초과" in c._test_text("oranda_pickup", "button", "timeout", False, 1000, None)
+
+
+def test_vision_options_and_set_method(cfg):
+    c, ev = make(cfg, vision=FakeVision(names=["opencv"]))
+    assert c.vision_options() == ["opencv", "off"] and c.snapshot()["vision_choice"] == "opencv"
+    c.set_vision_method("off")
+    assert c.snapshot()["vision_choice"] == "off" and ev[-1]["vision_choice"] == "off"
+    with pytest.raises(ValueError):
+        c.set_vision_method("vlm")
+    c2, _ = make(cfg, vision=FakeVision(names=["yolo", "opencv"]))
+    assert c2.vision_options() == ["auto", "yolo", "opencv", "off"] and c2.snapshot()["vision_choice"] == "auto"
+    c3, _ = make(cfg)
+    with pytest.raises(ValueError):
+        c3.set_vision_method("off")
+
+
+def test_vision_off_uses_b_stage_and_named_choice_passes_only(cfg):
+    v = FakeVision(Count(3, "opencv"), names=["yolo", "opencv"])
+    c, _ = make(cfg, FakeSkills(grasps=[True]), vision=v)
+    c.set_vision_method("off")
+    c.chat("2개 옮겨줘")
+    assert c.step() == "success" and v.only == [] and (c.remaining, c.vision_method) == (1, "estimate")
+    c.set_vision_method("opencv")
+    c.step()
+    assert v.only and set(v.only) == {"opencv"}
+
+
+def test_count_now_idle_only_publishes_and_keeps_counters(cfg, tmp_path):
+    v = FakeVision(Count(4, "opencv", [[1, 2, 3, 4]]), names=["opencv"])
+    c, ev = make(cfg, vision=v, log_dir=tmp_path)
+    assert c.command("count") is True
+    snap = c.snapshot()
+    assert (snap["remaining"], snap["vision_method"], snap["count"]) == (4, "opencv", 0)
+    assert snap["last_count"]["n"] == 4 and snap["last_count"]["method"] == "opencv" and "ms" in snap["last_count"]
+    assert c.last_boxes == [[1, 2, 3, 4]] and ev[-1]["type"] == "state" and not c.history
+    lines = [json.loads(x) for x in c.log_path.read_text(encoding="utf-8").splitlines()]
+    assert lines[-1]["type"] == "count" and lines[-1]["n"] == 4 and c.cycle_n == 0
+    c.chat("2개 옮겨줘")
+    assert c.command("count") is False and c.remaining == 2        # 작업 중에는 거부, 값을 건드리지 않는다
+    assert v.only == [None]
+
+
+def test_count_now_refused_when_off_failed_or_no_vision(cfg):
+    c, _ = make(cfg, vision=FakeVision(names=["opencv"]))      # counts 없음 -> 실패
+    assert c.command("count") is False and c.history[-1]["text"].startswith("개수를 세지 못했어요")
+    c.set_vision_method("off")
+    assert c.command("count") is False and "꺼져" in c.history[-1]["text"]
+    c2, _ = make(cfg)
+    assert c2.command("count") is False and c2.remaining == 0
