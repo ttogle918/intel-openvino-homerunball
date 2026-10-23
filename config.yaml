@@ -41,6 +41,7 @@ vision:
   camera: tower cam
   frames: 5          # 한 번 셀 때 읽는 프레임 수 (개수의 중앙값을 쓴다, 깜빡임 제거). 흔들리면 7로
   frame_gap_s: 0.1   # 프레임 사이 간격(초)
+  confirm_s: 0.7     # 놓았는데 개수가 안 줄었을 때 다시 세기 전에 기다리는 시간(초): 카메라에 놓은 과자가 안정되게
   # 위에서부터 시도. 비우면 B단계 (시작 개수 + 그리퍼 판정). 화면 토글(끔·OpenCV)로 하나만 고를 수도 있다.
   # OpenCV roi = 검은 매트 영역 [x1, y1, x2, y2] (가로·세로 비율). 2026-10-23 노트북 tower cam 기준이다.
   # 카메라나 트레이 위치가 바뀌면 python -m snackbot.vision <사진> --blobs 로 다시 맞춘다 (docs/DEMO_RUNBOOK.md).
@@ -135,6 +136,13 @@ voice:
   instructions: "귀엽고 금방 지치는 투덜이 로봇 보리처럼 짧고 또박또박 말해:"
   timeout_s: 20
   sync_timeout_s: 10        # 대사 소리가 시작될 때까지 동작을 기다리는 최대 시간 (TTS 실패·지연 시 그냥 시작)
+  # 예비 음성 (Windows만): Gemini가 실패하면 Windows 내장 한국어 음성으로 대신 말한다. 한도 오류(429 등) 뒤에는
+  # fallback_cooldown_s 동안 Gemini를 건너뛴다. Ubuntu에서는 무시된다 (소리 없이 진행)
+  fallback: windows         # windows | (비우면 예비 없음)
+  fallback_voice: Microsoft Heami Desktop
+  fallback_rate: 1          # -10(느림) ~ 10(빠름)
+  fallback_cooldown_s: 600
+  fallback_error_cooldown_s: 60   # 시간 초과·연결 오류 뒤 API를 건너뛰는 시간(초): 문장마다 timeout을 기다리지 않게
 
 dry_run:
   act_s: 1.0                # 스킬 하나에 걸리는 가짜 시간 (초)

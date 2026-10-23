@@ -447,3 +447,120 @@ def test_failed_synthesis_does_not_block_next(monkeypatch):
     assert e1.wait(2) and e2.wait(2)
     v.close()
     assert played == [b"ok"]
+
+
+# --- Windows 예비 음성 (fallback: windows) ---
+
+FB = {**GOPTS, "fallback": "windows", "fallback_cooldown_s": 600}
+
+
+def _fb_voice(monkeypatch, handler, env=None, opts=FB):
+    monkeypatch.setattr(voice_mod.sys, "platform", "win32")
+    v = Voice("gemini", opts, GPROVIDERS, {"GK": "gsecret"} if env is None else env,
+              transport=httpx.MockTransport(handler))
+    made = []
+    monkeypatch.setattr(v, "_synthesize_windows", lambda text: made.append(text) or b"WIN:" + text.encode())
+    return v, made
+
+
+def test_quota_error_uses_windows_voice_then_skips_api_for_cooldown(monkeypatch):
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        return httpx.Response(429, json={})
+
+    v, made = _fb_voice(monkeypatch, handler)
+    assert v._synthesize_any("하나") == "WIN:하나".encode()
+    assert v._synthesize_any("둘") == "WIN:둘".encode()
+    v.close()
+    assert len(calls) == 1 and made == ["하나", "둘"]   # 한도 오류 뒤에는 API를 다시 부르지 않는다
+
+
+def test_other_error_uses_short_cooldown_then_retries_api(monkeypatch):
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        return httpx.Response(500, json={})
+
+    v, made = _fb_voice(monkeypatch, handler)
+    v._synthesize_any("하나")
+    v._synthesize_any("둘")
+    assert len(calls) == 1 and made == ["하나", "둘"]       # 기본 60초: 그 사이 문장은 API를 기다리지 않는다
+    v._primary_off_until = 0.0                              # 쿨다운이 지나면 다시 API를 부른다
+    v._synthesize_any("셋")
+    v.close()
+    assert len(calls) == 2 and made == ["하나", "둘", "셋"]
+
+
+def test_timeout_error_cooldown_is_configurable(monkeypatch):
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        raise httpx.ConnectTimeout("느림", request=req)
+
+    v, made = _fb_voice(monkeypatch, handler, opts={**FB, "fallback_error_cooldown_s": 0})
+    v._synthesize_any("하나")
+    v._synthesize_any("둘")
+    v.close()
+    assert len(calls) == 2 and made == ["하나", "둘"]       # 0이면 매 문장 API를 다시 시도
+
+
+def test_windows_voice_script_stops_on_error_and_logs_stderr(monkeypatch, caplog):
+    import subprocess
+    monkeypatch.setattr(voice_mod.sys, "platform", "win32")
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["script"] = cmd[-1]
+        raise subprocess.CalledProcessError(1, cmd, stderr="목소리 없음 Nonexistent".encode("utf-8"))
+
+    monkeypatch.setattr(voice_mod.subprocess, "run", fake_run)
+    v = Voice("windows", FB)
+    try:
+        v._synthesize_windows("안녕")
+        raise AssertionError("예외가 나야 한다")
+    except subprocess.CalledProcessError:
+        pass
+    v.close()
+    assert seen["script"].startswith("$ErrorActionPreference='Stop';")
+    assert "목소리 없음 Nonexistent" in caplog.text
+
+
+def test_api_ok_does_not_use_windows_voice(monkeypatch):
+    v, made = _fb_voice(monkeypatch, lambda req: httpx.Response(200, json=_gemini_reply()))
+    wav = v._synthesize_any("안녕")
+    v.close()
+    assert wav.startswith(b"RIFF") and made == []
+
+
+def test_without_fallback_error_propagates(monkeypatch):
+    v, made = _fb_voice(monkeypatch, lambda req: httpx.Response(429, json={}), opts=GOPTS)
+    try:
+        v._synthesize_any("x")
+        raise AssertionError("예외가 나야 한다")
+    except httpx.HTTPStatusError:
+        pass
+    v.close()
+    assert made == []
+
+
+def test_missing_key_with_fallback_speaks_with_windows_voice(monkeypatch):
+    monkeypatch.setattr(voice_mod.sys, "platform", "win32")
+    played = []
+    monkeypatch.setattr(voice_mod, "play_wav", played.append)
+    v = Voice("gemini", FB, GPROVIDERS, {})
+    assert v.engine == "windows"
+    monkeypatch.setattr(v, "_synthesize_windows", lambda text: b"WIN")
+    v.speak("안녕").wait(2)
+    v.close()
+    assert played == [b"WIN"]
+
+
+def test_fallback_ignored_off_windows(monkeypatch):
+    monkeypatch.setattr(voice_mod.sys, "platform", "linux")
+    v = Voice("gemini", FB, GPROVIDERS, {})
+    assert v.fallback is None and v.engine == "none"
+    v.close()

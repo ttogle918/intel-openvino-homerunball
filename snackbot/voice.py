@@ -55,19 +55,39 @@ def pcm_to_wav(pcm, rate=24000):
     return buf.getvalue()
 
 
+# Windows 내장 음성(SAPI)으로 WAV 파일 만들기. 문장·목소리·경로는 환경 변수로 넘긴다 (따옴표 이스케이프 문제 없음)
+_SAPI_SCRIPT = (
+    "$ErrorActionPreference='Stop'; "   # 목소리·속도 설정 실패를 조용히 넘기지 않고 오류로 만든다
+    "Add-Type -AssemblyName System.Speech; "
+    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+    "if ($env:SNACKBOT_TTS_VOICE) { $s.SelectVoice($env:SNACKBOT_TTS_VOICE) }; "
+    "$s.Rate = [int]$env:SNACKBOT_TTS_RATE; "
+    "$s.SetOutputToWaveFile($env:SNACKBOT_TTS_OUT); "
+    "$s.Speak($env:SNACKBOT_TTS_TEXT); $s.Dispose()"
+)
+QUOTA_STATUS = (402, 403, 429)   # 크레딧·권한·한도: 잠시 예비 음성만 쓴다
+
+
 class Voice:
-    """options = config의 voice 항목. engine: openai/gemini면 providers[options.provider]와 env의 키를 쓴다."""
+    """options = config의 voice 항목. engine: openai/gemini면 providers[options.provider]와 env의 키를 쓴다.
+    options.fallback: windows 이면 API 합성이 실패할 때 Windows 내장 음성(fallback_voice)으로 대신 말한다."""
 
     def __init__(self, engine="none", options=None, providers=None, env=None, transport=None):
         self.options = dict(options or {})
         self._http = None
         self.engine_name = engine
+        self.fallback = self.options.get("fallback") if sys.platform == "win32" else None
+        self._primary_off_until = 0.0   # 한도 오류 뒤 이 시각까지는 API를 건너뛰고 예비 음성
         if engine in ("openai", "gemini"):
             try:
                 self._http = self._open_http(providers, env, transport)
             except Exception as e:
-                log.warning("TTS %s 사용 불가, 소리 없이 진행: %s", engine, e)
-                engine = "none"
+                if self.fallback == "windows":
+                    log.warning("TTS %s 사용 불가, Windows 예비 음성으로: %s", engine, e)
+                    engine = "windows"
+                else:
+                    log.warning("TTS %s 사용 불가, 소리 없이 진행: %s", engine, e)
+                    engine = "none"
         self.engine = engine
         self._q = queue.Queue()
         self._closed = False
@@ -121,6 +141,55 @@ class Voice:
         inline = r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
         m = re.search(r"rate=(\d+)", inline.get("mimeType", ""))
         return pcm_to_wav(base64.b64decode(inline["data"]), int(m.group(1)) if m else 24000)
+
+    def _synthesize_windows(self, text):
+        """Windows 내장 음성(SAPI)으로 WAV bytes. Windows가 아니면 RuntimeError."""
+        if sys.platform != "win32":
+            raise RuntimeError("Windows 예비 음성은 Windows에서만 된다")
+        o = self.options
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            env = {**os.environ, "SNACKBOT_TTS_TEXT": text, "SNACKBOT_TTS_OUT": path,
+                   "SNACKBOT_TTS_VOICE": str(o.get("fallback_voice", "Microsoft Heami Desktop")),
+                   "SNACKBOT_TTS_RATE": str(int(o.get("fallback_rate", 0)))}
+            try:
+                subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _SAPI_SCRIPT],
+                               env=env, check=True, timeout=float(o.get("fallback_timeout_s", 15)),
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            except subprocess.CalledProcessError as e:
+                err = (e.stderr or b"")
+                err = err.decode("utf-8", "replace") if isinstance(err, bytes) else str(err)
+                log.warning("Windows 예비 음성 실패 (종료 코드 %s): %s", e.returncode, err.strip()[:300])
+                raise
+            with open(path, "rb") as f:
+                return f.read()
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(path)
+
+    def _synthesize_any(self, text):
+        """API 합성 → 실패하면 (fallback 설정 시) Windows 예비 음성. 한도 오류 뒤에는 잠시 API를 건너뛴다."""
+        if self.engine == "windows":
+            return self._synthesize_windows(text)
+        now = time.monotonic()
+        if now >= self._primary_off_until:
+            try:
+                return self.synthesize(text)
+            except Exception as e:
+                if self.fallback != "windows":
+                    raise
+                status = e.response.status_code if isinstance(e, httpx.HTTPStatusError) else None
+                if status in QUOTA_STATUS:
+                    cooldown = float(self.options.get("fallback_cooldown_s", 600))
+                    self._primary_off_until = now + cooldown
+                    log.warning("TTS %s 한도·권한 오류(%s): %d초 동안 Windows 예비 음성", self.engine, status, cooldown)
+                else:
+                    # 시간 초과·연결 오류: 문장마다 timeout_s를 기다리지 않게 짧게 API를 건너뛴다
+                    cooldown = float(self.options.get("fallback_error_cooldown_s", 60))
+                    self._primary_off_until = now + cooldown
+                    log.warning("TTS %s 실패, %d초 동안 Windows 예비 음성: %s", self.engine, cooldown, e)
+        return self._synthesize_windows(text)
 
     def speak(self, text):
         """대기열에 넣고 Event를 반환한다. 이벤트는 재생 직전(실패·종료 시에도 반드시) set 된다."""
@@ -186,9 +255,9 @@ class Voice:
             if epoch != self._epoch:  # 비상정지 등으로 비워진 뒤에 손에 든 문장
                 started.set()
                 continue
-            if self.engine in ("openai", "gemini"):
+            if self.engine in ("openai", "gemini", "windows"):
                 try:
-                    wav = self.synthesize(text)
+                    wav = self._synthesize_any(text)
                 except Exception:
                     log.exception("TTS 합성 실패")
                     started.set()
@@ -248,7 +317,7 @@ class Voice:
                 # 다음 대사에서 엔진을 다시 만든다 (로그는 호출한 쪽이 한 번만 남긴다)
                 self._tts = None
                 raise
-        elif self.engine in ("openai", "gemini"):
+        elif self.engine in ("openai", "gemini", "windows"):
             go()
             play_wav(wav)
         elif self.engine != "none":

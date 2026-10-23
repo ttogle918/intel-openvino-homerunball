@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>과자 옮기기 로봇 보리</title>
+<style>
+:root{
+  --bg:#eef0f3; --slide:#ffffff; --ink:#1d2330; --ink2:#4a5366; --muted:#7a8394; --line:#d7dce4;
+  --accent:#c8691a; --accent-soft:#fbe9d2; --blue:#2f5bd8; --blue-soft:#e3eafc;
+  --green:#1b7f4b; --green-soft:#dff3e7; --red:#b3261e; --red-soft:#fbe1dd; --violet:#7a3fb5; --violet-soft:#efe5f9;
+  --box:#f7f8fa; --font:system-ui,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1217; --slide:#181c23; --ink:#e8ebf0; --ink2:#b4bccb; --muted:#8a93a5; --line:#2e3542;
+    --accent:#f0a050; --accent-soft:#3a2a1a; --blue:#7ba2ff; --blue-soft:#1d2744;
+    --green:#6fd9a0; --green-soft:#163a2a; --red:#ff9a88; --red-soft:#47201a; --violet:#c79bf2; --violet-soft:#2f2140;
+    --box:#20252e;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--font)}
+.deck{height:100%;display:flex;align-items:center;justify-content:center}
+.slide{display:none;position:relative;width:min(96vw,calc(96vh*16/9));aspect-ratio:16/9;background:var(--slide);
+  border-radius:14px;box-shadow:0 6px 30px rgba(0,0,0,.12);padding:3.2% 4.2%;overflow:hidden;font-size:min(1.55vw,2.75vh)}
+.slide.on{display:flex;flex-direction:column}
+h1{font-size:2.6em;margin:0 0 .2em;line-height:1.15}
+h2{font-size:1.75em;margin:0 0 .15em}
+.sub{color:var(--ink2);margin:0 0 .8em;font-size:1.02em}
+.kicker{color:var(--accent);font-weight:700;letter-spacing:.06em;font-size:.8em;margin-bottom:.3em}
+.body{flex:1;min-height:0;display:flex;gap:3%}
+.col{flex:1;min-width:0;display:flex;flex-direction:column;gap:.7em}
+svg{width:100%;height:auto;display:block}
+svg text{font-family:var(--font);fill:var(--ink)}
+.box{fill:var(--box);stroke:var(--line);stroke-width:1.5}
+.a{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
+.b{fill:var(--blue-soft);stroke:var(--blue);stroke-width:2}
+.g{fill:var(--green-soft);stroke:var(--green);stroke-width:2}
+.r{fill:var(--red-soft);stroke:var(--red);stroke-width:2}
+.v{fill:var(--violet-soft);stroke:var(--violet);stroke-width:2}
+.arrow{stroke:var(--muted);stroke-width:2;fill:none}
+.t-s{font-size:13px} .t-m{font-size:15px} .t-l{font-size:18px;font-weight:700} .t-mut{fill:var(--muted)!important}
+ul{margin:.2em 0;padding-left:1.1em} li{margin:.25em 0}
+.card{background:var(--box);border:1px solid var(--line);border-radius:10px;padding:.7em .9em}
+.tag{display:inline-block;padding:.05em .55em;border-radius:99px;font-size:.78em;font-weight:700;background:var(--accent-soft);color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.7em}
+.stat{background:var(--box);border:1px solid var(--line);border-radius:10px;padding:.6em .8em}
+.stat b{display:block;font-size:1.9em;line-height:1.1}
+.stat span{color:var(--ink2);font-size:.85em}
+img.photo{max-width:100%;max-height:15.5em;width:auto;align-self:center;border-radius:10px;border:1px solid var(--line);display:block}
+.foot{position:absolute;right:2.2%;bottom:2.4%;color:var(--muted);font-size:.7em}
+.nav{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
+.nav button{background:var(--slide);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:4px 12px;cursor:pointer;font:inherit}
+.small{font-size:.85em;color:var(--ink2)}
+table{border-collapse:collapse;font-size:.9em}
+th,td{border:1px solid var(--line);padding:.25em .6em;text-align:center}
+th{background:var(--box)}
+@media print{
+  html,body{height:auto;background:#fff}
+  .nav{display:none}
+  .slide{display:flex!important;flex-direction:column;width:100%;box-shadow:none;border-radius:0;page-break-after:always;font-size:15px}
+  @page{size:landscape;margin:0}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8a93a5"/></marker></defs></svg>
+<div class="deck" id="deck">
+
+<!-- 1. 표지 -->
+<section class="slide">
+  <div style="flex:1;display:flex;gap:4%;align-items:center">
+    <div style="flex:1.1">
+      <div class="kicker">INTEL OPENVINO 과정 · 2일 해커톤</div>
+      <h1>과자 옮기기 로봇<br><span style="color:var(--accent)">“보리”</span></h1>
+      <p class="sub">섞인 트레이에서 오란다만 골라 옮기고,<br>지치면 도리도리로 거부하고, 달래면 다시 일하는 로봇팔</p>
+      <div style="display:flex;gap:.5em;flex-wrap:wrap">
+        <span class="tag">SO-ARM101</span><span class="tag">ACT · OpenVINO</span><span class="tag">OpenCV</span>
+        <span class="tag">LLM</span><span class="tag">Whisper · OpenVINO</span>
+      </div>
+    </div>
+    <div style="flex:1">
+      <svg viewBox="0 0 420 300" role="img" aria-label="로봇팔이 과자를 트레이로 옮기는 그림">
+        <rect x="10" y="230" width="400" height="14" rx="4" class="box"/>
+        <rect x="40" y="200" width="70" height="30" rx="6" class="b"/>
+        <path d="M75 200 L120 110 L230 70" stroke="var(--blue)" stroke-width="16" stroke-linecap="round" fill="none"/>
+        <circle cx="120" cy="110" r="12" class="b"/><circle cx="230" cy="70" r="10" class="b"/>
+        <path d="M230 70 L270 110 M230 70 L262 122" stroke="var(--blue)" stroke-width="7" stroke-linecap="round"/>
+        <rect x="252" y="118" width="26" height="22" rx="5" fill="#d79a4a"/>
+        <rect x="150" y="205" width="110" height="25" rx="5" class="box"/>
+        <rect x="165" y="190" width="18" height="15" rx="4" fill="#d79a4a"/><circle cx="210" cy="198" r="7" fill="#e8c35a"/>
+        <rect x="228" y="192" width="16" height="13" rx="4" fill="#d79a4a"/>
+        <rect x="300" y="200" width="90" height="30" rx="8" class="a"/>
+        <text x="300" y="275" class="t-s t-mut">빈 트레이</text><text x="160" y="275" class="t-s t-mut">섞인 트레이</text>
+        <g transform="translate(300,40)"><rect width="110" height="44" rx="14" class="a"/><text x="55" y="28" text-anchor="middle" class="t-m">싫어요! 🙅</text></g>
+      </svg>
+    </div>
+  </div>
+  <div class="foot">homerunball · 2026-10-23</div>
+</section>
+
+<!-- 2. 시연 시나리오 -->
+<section class="slide">
+  <div class="kicker">DEMO</div><h2>시연 시나리오</h2>
+  <p class="sub">채팅·🎤로 일을 시키면 카메라로 세고, 하나씩 옮기다 절반쯤에서 지쳐 거부한다</p>
+  <svg viewBox="0 0 1000 300" role="img" aria-label="시연 흐름">
+    <g class="t-m">
+      <rect x="10" y="40" width="150" height="80" rx="12" class="b"/><text x="85" y="72" text-anchor="middle" class="t-l">① 시키기</text><text x="85" y="98" text-anchor="middle" class="t-s">"오란다 옮겨줘"</text>
+      <rect x="205" y="40" width="150" height="80" rx="12" class="g"/><text x="280" y="72" text-anchor="middle" class="t-l">② 개수 세기</text><text x="280" y="98" text-anchor="middle" class="t-s">카메라 → 전체 N개</text>
+      <rect x="400" y="40" width="150" height="80" rx="12" class="a"/><text x="475" y="72" text-anchor="middle" class="t-l">③ 옮기기</text><text x="475" y="98" text-anchor="middle" class="t-s">ACT 정책 1회씩</text>
+      <rect x="595" y="40" width="170" height="80" rx="12" class="r"/><text x="680" y="72" text-anchor="middle" class="t-l">④ 지쳐서 거부</text><text x="680" y="98" text-anchor="middle" class="t-s">절반 옮긴 뒤 도리도리</text>
+      <rect x="810" y="40" width="170" height="80" rx="12" class="v"/><text x="895" y="72" text-anchor="middle" class="t-l">⑤ 달래기</text><text x="895" y="98" text-anchor="middle" class="t-s">"조금만 더 힘내 줘"</text>
+      <path d="M160 80H200" class="arrow" marker-end="url(#ah)"/><path d="M355 80H395" class="arrow" marker-end="url(#ah)"/>
+      <path d="M550 80H590" class="arrow" marker-end="url(#ah)"/><path d="M765 80H805" class="arrow" marker-end="url(#ah)"/>
+      <path d="M450 122 C430 175 310 175 288 126" class="arrow" marker-end="url(#ah)"/><text x="370" y="185" text-anchor="middle" class="t-s t-mut">한 개 성공 → 다시 세기</text>
+      <path d="M895 122 C890 215 520 215 492 126" class="arrow" marker-end="url(#ah)"/><text x="700" y="212" text-anchor="middle" class="t-s t-mut">나머지는 거부 없이 끝까지</text>
+      <path d="M475 122 V250" class="arrow" stroke-dasharray="4 4" marker-end="url(#ah)"/><text x="482" y="240" class="t-s t-mut">0개</text>
+      <rect x="400" y="255" width="150" height="40" rx="10" class="g"/><text x="475" y="281" text-anchor="middle" class="t-m">⑥ "다 옮겼어요!"</text>
+    </g>
+  </svg>
+  <div class="body" style="margin-top:.4em">
+    <div class="card col"><b>절대 규칙</b><span class="small">횟수는 <b>코드</b>가 센다 · LLM은 허용된 값(옮기기 / 도리도리 / 끝)과 대사만 · 비상정지는 토크 유지</span></div>
+    <div class="card col"><b>거부 시점</b><span class="small">전체 3·4개 → 2개 옮긴 뒤, 5·6개 → 3개 옮긴 뒤 (작업당 한 번, 1~2개면 거부 없음)</span></div>
+  </div>
+  <div class="foot">2 / 10</div>
+</section>
+
+<!-- 3. 시스템 구조 -->
+<section class="slide">
+  <div class="kicker">ARCHITECTURE</div><h2>3계층 구조: 인식 · 판단 · 행동</h2>
+  <p class="sub">과자를 찾아 집는 건 ACT가 영상만 보고 한다. 나머지(언제 끝낼지, 성공했는지, 무슨 말을 할지)는 코드와 LLM</p>
+  <svg viewBox="0 0 1000 330" role="img" aria-label="3계층 구조 다이어그램">
+    <g>
+      <rect x="10" y="20" width="300" height="290" rx="14" class="g"/><text x="160" y="52" text-anchor="middle" class="t-l">인식</text>
+      <rect x="30" y="70" width="260" height="60" rx="10" class="box"/><text x="160" y="96" text-anchor="middle" class="t-m">OpenCV 오란다 카운터</text><text x="160" y="118" text-anchor="middle" class="t-s t-mut">위쪽 카메라 · 5장 중앙값</text>
+      <rect x="30" y="145" width="260" height="60" rx="10" class="box"/><text x="160" y="171" text-anchor="middle" class="t-m">그리퍼 닫힘 → 열림 감지</text><text x="160" y="193" text-anchor="middle" class="t-s t-mut">놓는 순간 ACT 정지</text>
+      <rect x="30" y="220" width="260" height="60" rx="10" class="box"/><text x="160" y="246" text-anchor="middle" class="t-m">STT · Whisper (OpenVINO)</text><text x="160" y="268" text-anchor="middle" class="t-s t-mut">🎤 누르고 말하기</text>
+
+      <rect x="350" y="20" width="300" height="290" rx="14" class="b"/><text x="500" y="52" text-anchor="middle" class="t-l">판단</text>
+      <rect x="370" y="70" width="260" height="60" rx="10" class="box"/><text x="500" y="96" text-anchor="middle" class="t-m">controller (상태 머신)</text><text x="500" y="118" text-anchor="middle" class="t-s t-mut">개수 · 거부 시점 · 재시도</text>
+      <rect x="370" y="145" width="260" height="60" rx="10" class="box"/><text x="500" y="171" text-anchor="middle" class="t-m">코드 가드 → LLM 대사</text><text x="500" y="193" text-anchor="middle" class="t-s t-mut">Claude → NVIDIA → 규칙</text>
+      <rect x="370" y="220" width="260" height="60" rx="10" class="box"/><text x="500" y="246" text-anchor="middle" class="t-m">TTS · Gemini</text><text x="500" y="268" text-anchor="middle" class="t-s t-mut">말 시작과 동작 동기</text>
+
+      <rect x="690" y="20" width="300" height="290" rx="14" class="a"/><text x="840" y="52" text-anchor="middle" class="t-l">행동</text>
+      <rect x="710" y="70" width="260" height="60" rx="10" class="box"/><text x="840" y="96" text-anchor="middle" class="t-m">ACT oranda_pickup</text><text x="840" y="118" text-anchor="middle" class="t-s t-mut">OpenVINO · physicalai 런타임</text>
+      <rect x="710" y="145" width="260" height="60" rx="10" class="box"/><text x="840" y="171" text-anchor="middle" class="t-m">도리도리 (코드 동작)</text><text x="840" y="193" text-anchor="middle" class="t-s t-mut">몸통 좌우 흔들기</text>
+      <rect x="710" y="220" width="260" height="60" rx="10" class="box"/><text x="840" y="246" text-anchor="middle" class="t-m">lift → home 복귀</text><text x="840" y="268" text-anchor="middle" class="t-s t-mut">관절 보간 이동</text>
+      <path d="M312 165H346" class="arrow" marker-end="url(#ah)"/><path d="M652 165H686" class="arrow" marker-end="url(#ah)"/>
+    </g>
+  </svg>
+  <div class="foot">3 / 10</div>
+</section>
+
+<!-- 4. 하드웨어 · 화면 -->
+<section class="slide">
+  <div class="kicker">SETUP</div><h2>하드웨어와 관제 화면</h2>
+  <p class="sub">노트북 한 대(Windows)에서 팔·카메라 3대·모델·웹 UI가 모두 돈다</p>
+  <div class="body">
+    <div class="col">
+      <svg viewBox="0 0 480 320" role="img" aria-label="하드웨어 연결도">
+        <rect x="170" y="125" width="140" height="70" rx="12" class="b"/><text x="240" y="155" text-anchor="middle" class="t-l">노트북</text><text x="240" y="178" text-anchor="middle" class="t-s t-mut">Windows · CPU 추론</text>
+        <rect x="10" y="20" width="140" height="60" rx="10" class="a"/><text x="80" y="46" text-anchor="middle" class="t-m">팔로워 SO-101</text><text x="80" y="66" text-anchor="middle" class="t-s t-mut">COM5 · 서보 6개</text>
+        <rect x="10" y="240" width="140" height="60" rx="10" class="box"/><text x="80" y="266" text-anchor="middle" class="t-m">리더 SO-101</text><text x="80" y="286" text-anchor="middle" class="t-s t-mut">학습(녹화)용</text>
+        <rect x="330" y="10" width="140" height="56" rx="10" class="g"/><text x="400" y="34" text-anchor="middle" class="t-m">위쪽 카메라</text><text x="400" y="54" text-anchor="middle" class="t-s t-mut">tower · 개수 세기</text>
+        <rect x="330" y="132" width="140" height="56" rx="10" class="g"/><text x="400" y="156" text-anchor="middle" class="t-m">사이드 카메라</text><text x="400" y="176" text-anchor="middle" class="t-s t-mut">트레이 맞은편</text>
+        <rect x="330" y="254" width="140" height="56" rx="10" class="g"/><text x="400" y="278" text-anchor="middle" class="t-m">손목 카메라</text><text x="400" y="298" text-anchor="middle" class="t-s t-mut">follow</text>
+        <path d="M150 50 C170 80 190 100 205 122" class="arrow"/><path d="M150 270 C170 240 190 220 205 198" class="arrow" stroke-dasharray="5 5"/>
+        <path d="M330 40 C300 70 290 100 280 122" class="arrow"/><path d="M330 160H312" class="arrow"/><path d="M330 280 C300 250 290 220 280 198" class="arrow"/>
+      </svg>
+      <div class="small">카메라 3대 1280×720@30 · USB 대역폭 때문에 포트를 나눠 꽂는다</div>
+    </div>
+    <div class="col">
+      <svg viewBox="0 0 480 320" role="img" aria-label="관제 화면 배치">
+        <rect x="5" y="5" width="470" height="310" rx="12" class="box"/>
+        <rect x="20" y="20" width="140" height="80" rx="6" class="g"/><text x="90" y="65" text-anchor="middle" class="t-s">위쪽 카메라</text>
+        <rect x="170" y="20" width="140" height="80" rx="6" class="g"/><text x="240" y="65" text-anchor="middle" class="t-s">사이드 카메라</text>
+        <rect x="20" y="110" width="140" height="80" rx="6" class="g"/><text x="90" y="155" text-anchor="middle" class="t-s">손목 카메라</text>
+        <rect x="170" y="110" width="140" height="80" rx="6" class="v"/><text x="240" y="148" text-anchor="middle" class="t-s">3D 디지털 트윈</text><text x="240" y="166" text-anchor="middle" class="t-s t-mut">URDF · 실시간 관절</text>
+        <rect x="320" y="20" width="140" height="170" rx="6" class="b"/><text x="390" y="100" text-anchor="middle" class="t-s">채팅 · 🎤</text><text x="390" y="120" text-anchor="middle" class="t-s t-mut">로봇 대사</text>
+        <rect x="20" y="200" width="440" height="100" rx="6" class="a"/>
+        <text x="40" y="228" class="t-s">상태 · 피로 게이지 "전체 6 · 3개째 뒤 거부"</text>
+        <text x="40" y="254" class="t-s">스킬 테스트: 오란다 1회 · 코드 도리도리 1회 · 홈으로</text>
+        <text x="40" y="280" class="t-s">개수 세기: 끔 · OpenCV · 지금 세기 &#160;&#160;|&#160;&#160; 🛑 비상정지</text>
+      </svg>
+      <div class="small">FastAPI + WebSocket · 화면은 서버 메시지로만 그린다</div>
+    </div>
+  </div>
+  <div class="foot">4 / 10</div>
+</section>
+
+<!-- 5. 인식 -->
+<section class="slide">
+  <div class="kicker">PERCEPTION</div><h2>인식: OpenCV로 오란다만 세기</h2>
+  <p class="sub">학습 없이 색·크기·위치 규칙만으로. 한 번 세는 데 약 17ms</p>
+  <div class="body">
+    <div class="col" style="flex:1.05">
+      <img class="photo" src="img/opencv_count.jpg" alt="위쪽 카메라 화면에서 오란다 3개에 노란 상자가 그려져 있다. 노란 볼 과자 2개와 초코송이는 상자가 없다">
+      <div class="small">파란 틀 = 매트 영역(ROI), 노란 상자 = 오란다로 센 것 → <b>3개</b> (노란 볼·초코송이 제외)</div>
+    </div>
+    <div class="col">
+      <svg viewBox="0 0 440 330" role="img" aria-label="OpenCV 카운터 처리 단계">
+        <g class="t-m">
+          <rect x="10" y="5" width="420" height="48" rx="10" class="box"/><text x="26" y="35">① 매트 영역(ROI)만 본다</text>
+          <rect x="10" y="68" width="420" height="48" rx="10" class="box"/><text x="26" y="98">② 오란다 색 화소만 (HSV 색상 5~21)</text>
+          <rect x="10" y="131" width="420" height="48" rx="10" class="box"/><text x="26" y="161">③ 둘레가 검은 매트인가? → 트레이 안 제외</text>
+          <rect x="10" y="194" width="420" height="48" rx="10" class="box"/><text x="26" y="224">④ 크기 ≥ 600px → 초코송이 제외</text>
+          <rect x="10" y="257" width="420" height="48" rx="10" class="g"/><text x="26" y="287">⑤ 붙은 덩어리는 면적으로 나눠 센다</text>
+        </g>
+      </svg>
+      <div class="card small">사진 5장을 0.1초 간격으로 세어 <b>중앙값</b> → 손·흔들림에 강하다.<br>옮기기 전후 개수가 줄면 성공, 안 줄어도 그리퍼가 쥐었다 놓았으면 성공.</div>
+    </div>
+  </div>
+  <div class="foot">5 / 10</div>
+</section>
+
+<!-- 6. 판단 -->
+<section class="slide">
+  <div class="kicker">DECISION</div><h2>판단: 코드가 정하고, LLM은 말만 한다</h2>
+  <p class="sub">LLM이 허용 밖 행동을 고르면 행동도 대사도 버리고 규칙으로 바꾼다</p>
+  <div class="body">
+    <div class="col" style="flex:1.2">
+      <svg viewBox="0 0 560 300" role="img" aria-label="판단 흐름">
+        <rect x="10" y="20" width="150" height="56" rx="10" class="g"/><text x="85" y="44" text-anchor="middle" class="t-m">남은 개수</text><text x="85" y="64" text-anchor="middle" class="t-s t-mut">카메라 / 추정</text>
+        <rect x="200" y="20" width="170" height="56" rx="10" class="b"/><text x="285" y="44" text-anchor="middle" class="t-m">코드 가드</text><text x="285" y="64" text-anchor="middle" class="t-s t-mut">허용 행동 1개 결정</text>
+        <rect x="410" y="20" width="140" height="56" rx="10" class="v"/><text x="480" y="44" text-anchor="middle" class="t-m">LLM</text><text x="480" y="64" text-anchor="middle" class="t-s t-mut">대사 · JSON</text>
+        <path d="M160 48H196" class="arrow" marker-end="url(#ah)"/><path d="M370 48H406" class="arrow" marker-end="url(#ah)"/>
+        <g class="t-m">
+          <rect x="200" y="110" width="170" height="44" rx="10" class="box"/><text x="285" y="137" text-anchor="middle">0개 → 끝 (done)</text>
+          <rect x="200" y="166" width="170" height="44" rx="10" class="r"/><text x="285" y="193" text-anchor="middle">절반 도달 → 도리도리</text>
+          <rect x="200" y="222" width="170" height="44" rx="10" class="a"/><text x="285" y="249" text-anchor="middle">그 외 → 옮기기</text>
+        </g>
+        <path d="M285 78V106" class="arrow" marker-end="url(#ah)"/>
+        <text x="392" y="128" class="t-s t-mut">LLM: Claude → NVIDIA</text>
+        <text x="392" y="148" class="t-s t-mut">→ 규칙 대사 (8초 제한)</text>
+        <text x="392" y="168" class="t-s t-mut">다 실패해도 로봇은</text>
+        <text x="392" y="188" class="t-s t-mut">계속 돈다</text>
+        <text x="392" y="232" class="t-s t-mut">"두 번째 오란다…"</text>
+        <text x="392" y="252" class="t-s t-mut">번호도 코드가 계산</text>
+      </svg>
+    </div>
+    <div class="col">
+      <div class="card">
+        <b>거부 시점 = ⌈전체 ÷ 2⌉</b>
+        <svg viewBox="0 0 360 190" role="img" aria-label="전체 개수별 거부 시점 막대">
+          <g class="t-s">
+            <text x="0" y="28">전체 3</text><rect x="60" y="14" width="40" height="20" rx="4" class="a"/><rect x="104" y="14" width="40" height="20" rx="4" class="a"/><rect x="148" y="14" width="40" height="20" rx="4" class="box"/><text x="196" y="29" class="t-mut">2개 뒤 🙅</text>
+            <text x="0" y="68">전체 4</text><rect x="60" y="54" width="40" height="20" rx="4" class="a"/><rect x="104" y="54" width="40" height="20" rx="4" class="a"/><rect x="148" y="54" width="40" height="20" rx="4" class="box"/><rect x="192" y="54" width="40" height="20" rx="4" class="box"/><text x="240" y="69" class="t-mut">2개 뒤 🙅</text>
+            <text x="0" y="108">전체 5</text><rect x="60" y="94" width="40" height="20" rx="4" class="a"/><rect x="104" y="94" width="40" height="20" rx="4" class="a"/><rect x="148" y="94" width="40" height="20" rx="4" class="a"/><rect x="192" y="94" width="40" height="20" rx="4" class="box"/><rect x="236" y="94" width="40" height="20" rx="4" class="box"/><text x="284" y="109" class="t-mut">3개 뒤 🙅</text>
+            <text x="0" y="148">전체 6</text><rect x="60" y="134" width="40" height="20" rx="4" class="a"/><rect x="104" y="134" width="40" height="20" rx="4" class="a"/><rect x="148" y="134" width="40" height="20" rx="4" class="a"/><rect x="192" y="134" width="40" height="20" rx="4" class="box"/><rect x="236" y="134" width="40" height="20" rx="4" class="box"/><rect x="280" y="134" width="40" height="20" rx="4" class="box"/><text x="326" y="149" class="t-mut">3개 뒤</text>
+            <rect x="60" y="170" width="14" height="12" rx="3" class="a"/><text x="80" y="181">거부 전 옮김</text><rect x="170" y="170" width="14" height="12" rx="3" class="box"/><text x="190" y="181">달랜 뒤 옮김</text>
+          </g>
+        </svg>
+      </div>
+      <div class="small">거부는 작업당 한 번 · 달래면(채팅 · 🎤 · r 키) 나머지는 끝까지</div>
+    </div>
+  </div>
+  <div class="foot">6 / 10</div>
+</section>
+
+<!-- 7. 행동 -->
+<section class="slide">
+  <div class="kicker">ACTION</div><h2>행동: ACT 정책을 OpenVINO로</h2>
+  <p class="sub">physical-ai-studio에서 녹화·학습 → OpenVINO로 내보내 노트북 CPU에서 추론</p>
+  <svg viewBox="0 0 1000 120" role="img" aria-label="ACT 학습부터 실행까지">
+    <g class="t-m">
+      <rect x="10" y="20" width="200" height="72" rx="12" class="b"/><text x="110" y="50" text-anchor="middle" class="t-l">녹화</text><text x="110" y="74" text-anchor="middle" class="t-s">리더 팔 텔레옵 · 31 에피소드</text>
+      <rect x="265" y="20" width="200" height="72" rx="12" class="b"/><text x="365" y="50" text-anchor="middle" class="t-l">학습</text><text x="365" y="74" text-anchor="middle" class="t-s">ACT (ResNet18) · chunk 100</text>
+      <rect x="520" y="20" width="200" height="72" rx="12" class="v"/><text x="620" y="50" text-anchor="middle" class="t-l">내보내기</text><text x="620" y="74" text-anchor="middle" class="t-s">OpenVINO IR (act.xml)</text>
+      <rect x="775" y="20" width="215" height="72" rx="12" class="a"/><text x="882" y="50" text-anchor="middle" class="t-l">실행</text><text x="882" y="74" text-anchor="middle" class="t-s">physicalai 런타임 · CPU</text>
+      <path d="M210 56H260" class="arrow" marker-end="url(#ah)"/><path d="M465 56H515" class="arrow" marker-end="url(#ah)"/><path d="M720 56H770" class="arrow" marker-end="url(#ah)"/>
+    </g>
+  </svg>
+  <div class="body" style="margin-top:.6em">
+    <div class="col">
+      <div class="card"><b>놓는 순간을 그리퍼 값으로 감지</b> <span class="small">(0 닫힘 ~ 100 열림, 실측)</span>
+        <svg viewBox="0 0 460 130" role="img" aria-label="그리퍼 값 눈금: 빈손 49에서 50, 오란다 쥠 54에서 55, 닫힘 기준 56, 열림 기준 56.5, 끝까지 벌림 79">
+          <line x1="20" y1="62" x2="440" y2="62" stroke="var(--muted)" stroke-width="2"/>
+          <rect x="73" y="50" width="12" height="24" rx="3" class="box"/><text x="60" y="34" text-anchor="middle" class="t-s">빈손 49~50</text>
+          <rect x="130" y="50" width="16" height="24" rx="3" class="a"/><text x="118" y="108" text-anchor="middle" class="t-s">쥠 54~55</text>
+          <line x1="152" y1="40" x2="152" y2="84" stroke="var(--blue)" stroke-width="2.5"/><text x="165" y="34" text-anchor="middle" class="t-s">닫힘 &lt;56</text>
+          <line x1="158" y1="40" x2="158" y2="84" stroke="var(--red)" stroke-width="2.5"/><text x="168" y="108" class="t-s">열림 &gt;56.5 (0.15초 유지)</text>
+          <rect x="164" y="50" width="264" height="24" rx="4" class="g"/><text x="400" y="34" text-anchor="middle" class="t-s">벌림 ~79</text>
+          <text x="20" y="126" class="t-s t-mut">45</text><text x="428" y="126" class="t-s t-mut">80</text>
+        </svg>
+        <div class="small">닫힘 → 열림이면 ACT 멈춤 → 코드가 lift → home. 녹화 31개로 시뮬레이션: 23개 놓는 순간 정지, 조기 정지 0</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card"><b>정책 입력</b>
+        <ul class="small"><li>관절 6개 + 카메라 3대(위쪽 · 사이드 · 손목), 384×384 레터박스</li><li>출력: 100스텝 관절 목표(약 3.3초 분량)</li></ul>
+      </div>
+      <div class="card"><b>도리도리</b>
+        <ul class="small"><li>학습한 도리도리 모델은 실기에서 몸통을 ±1만 움직임</li><li>→ 코드 도리도리(몸통 ±15, 2회)로 교체, 버튼 · 채팅 · 거부 모두 같은 동작</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot">7 / 10</div>
+</section>
+
+<!-- 8. 대화 · 음성 -->
+<section class="slide">
+  <div class="kicker">VOICE &amp; CHAT</div><h2>대화: 말로 시키고, 말로 달랜다</h2>
+  <p class="sub">음성 인식은 노트북 안에서(OpenVINO), 대사 생성·음성 합성은 API</p>
+  <svg viewBox="0 0 1000 165" role="img" aria-label="음성 대화 흐름">
+    <g class="t-m">
+      <rect x="10" y="40" width="160" height="80" rx="12" class="box"/><text x="90" y="74" text-anchor="middle" class="t-l">🎤 말하기</text><text x="90" y="98" text-anchor="middle" class="t-s">"보리야 힘내 줘"</text>
+      <rect x="215" y="40" width="190" height="80" rx="12" class="g"/><text x="310" y="74" text-anchor="middle" class="t-l">STT</text><text x="310" y="98" text-anchor="middle" class="t-s">Whisper small · OpenVINO</text>
+      <rect x="450" y="40" width="190" height="80" rx="12" class="v"/><text x="545" y="74" text-anchor="middle" class="t-l">의도 · 대사</text><text x="545" y="98" text-anchor="middle" class="t-s">LLM → resume / chat …</text>
+      <rect x="685" y="40" width="140" height="80" rx="12" class="b"/><text x="755" y="74" text-anchor="middle" class="t-l">TTS</text><text x="755" y="98" text-anchor="middle" class="t-s">Gemini</text>
+      <rect x="870" y="40" width="120" height="80" rx="12" class="a"/><text x="930" y="74" text-anchor="middle" class="t-l">동작</text><text x="930" y="98" text-anchor="middle" class="t-s">재개 · 옮기기</text>
+      <path d="M170 80H210" class="arrow" marker-end="url(#ah)"/><path d="M405 80H445" class="arrow" marker-end="url(#ah)"/><path d="M640 80H680" class="arrow" marker-end="url(#ah)"/><path d="M825 80H865" class="arrow" marker-end="url(#ah)"/>
+      <text x="310" y="150" text-anchor="middle" class="t-s t-mut">CPU 1.2~1.8초 / 문장</text>
+      <text x="545" y="150" text-anchor="middle" class="t-s t-mut">허용 의도만 (상태별)</text>
+      <text x="815" y="150" text-anchor="middle" class="t-s t-mut">소리가 나기 시작하면 동작 시작</text>
+    </g>
+  </svg>
+  <div class="body" style="margin-top:.6em">
+    <div class="card col"><b>상태별로 받아들이는 말</b>
+      <table>
+        <tr><th>상태</th><th>허용 의도</th><th>예</th></tr>
+        <tr><td>대기</td><td>작업 시작 · 잡담 · 도리도리</td><td>"오란다 옮겨줘"</td></tr>
+        <tr><td>거부 중</td><td>재개 · 잡담</td><td>"조금만 더 힘내 줘"</td></tr>
+        <tr><td>작업 중</td><td>잡담</td><td>대답만, 작업엔 영향 없음</td></tr>
+      </table>
+    </div>
+    <div class="card col"><b>왜 이렇게 골랐나</b>
+      <ul class="small">
+        <li><b>Whisper small (OpenVINO)</b>: 와이파이·API 한도와 무관, base는 "한 번만 더" 같은 달래기 말을 놓쳤다</li>
+        <li><b>채팅과 음성은 같은 경로</b>: LLM이 실패해도 키워드 규칙으로 이어진다</li>
+        <li><b>말과 동작 동기</b>: 대사 소리가 나기 시작하면 팔이 움직인다</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot">8 / 10</div>
+</section>
+
+<!-- 9. 실기 결과 -->
+<section class="slide">
+  <div class="kicker">RESULTS</div><h2>실기 결과 (2026-10-23)</h2>
+  <p class="sub">노트북에 실제 팔·카메라를 연결해 확인한 숫자</p>
+  <div class="stats">
+    <div class="stat"><b style="color:var(--green)">성공</b><span>오란다 1회 · 놓기 감지 · 쥠 성공 · 22.7초</span></div>
+    <div class="stat"><b>3 / 3</b><span>OpenCV 개수 (볼 · 초코송이 섞여도) · 17ms</span></div>
+    <div class="stat"><b>0.14~0.23초</b><span>ACT 추론 1회 (CPU, 100스텝 분량)</span></div>
+    <div class="stat"><b>469</b><span>자동 테스트 통과</span></div>
+  </div>
+  <div class="body" style="margin-top:.8em">
+    <div class="col" style="flex:1.2">
+      <div class="card"><b>시작 시간: GPU 컴파일 vs CPU</b> <span class="small">(정책 2개, 초)</span>
+        <svg viewBox="0 0 520 150" role="img" aria-label="시작 시간 막대 그래프: GPU 컴파일 약 120초, CPU 로드 약 6초, 연결과 워밍업 9초">
+          <g class="t-s">
+            <text x="0" y="34">GPU 컴파일</text>
+            <rect x="120" y="18" width="360" height="24" rx="4" fill="var(--blue)"><title>GPU 컴파일: 모델 2개 약 120초 (65초 + 55초)</title></rect><text x="486" y="35">120</text>
+            <text x="0" y="80">CPU 로드</text>
+            <rect x="120" y="64" width="18" height="24" rx="4" fill="var(--blue)"><title>CPU 로드: 약 6초</title></rect><text x="144" y="81">6</text>
+            <text x="0" y="126">연결+워밍업</text>
+            <rect x="120" y="110" width="27" height="24" rx="4" fill="var(--blue)"><title>팔 · 카메라 연결 + 정책 2개 워밍업: 9초</title></rect><text x="153" y="127">9</text>
+          </g>
+        </svg>
+        <div class="small">→ 정책은 CPU로 실행 (추론 1회로 3.3초 분량을 움직이니 충분)</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card"><b>현장에서 고친 것</b>
+        <ul class="small">
+          <li>Windows 카메라 목록 오류 → 보정 코드</li>
+          <li>카메라 3대 동시 열기 실패 → USB 포트 분산</li>
+          <li>개수가 2↔3으로 흔들림 → 색 화소 마스크 + 5장 중앙값</li>
+          <li>성공인데 실패로 판정 → 그리퍼 놓기도 성공 근거로</li>
+          <li>도리도리 모델이 안 흔듦 → 코드 도리도리</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="foot">9 / 10</div>
+</section>
+
+<!-- 10. 정리 -->
+<section class="slide">
+  <div class="kicker">WRAP-UP</div><h2>배운 점과 다음 할 일</h2>
+  <div class="body" style="margin-top:.6em">
+    <div class="col">
+      <div class="card"><b>배운 점</b>
+        <ul>
+          <li><b>역할을 나누면 안전하다</b>: ACT는 동작 하나, 횟수 · 순서는 코드, LLM은 말만</li>
+          <li><b>현장은 데이터로</b>: 그리퍼 기준값 · lift 자세를 녹화 데이터에서 계산</li>
+          <li><b>OpenVINO 하나로</b> ACT · Whisper를 노트북 안에서</li>
+          <li>센서는 흔들린다 → 여러 근거(카메라 + 그리퍼)를 같이 본다</li>
+        </ul>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card"><b>다음 할 일</b>
+        <ul>
+          <li>제어 주기 11~13Hz → 30Hz (학습 조건과 맞추기)</li>
+          <li>전체 흐름 리허설: 시작 → 거부 → 달래기 → 완료</li>
+          <li>VLM으로 개수 세기 비교 (받은 모델 연결)</li>
+          <li>도리도리 데이터 다시 녹화해 모델 개선</li>
+        </ul>
+      </div>
+      <div class="card" style="text-align:center"><span style="font-size:1.6em">🙅 → 🥺 → 💪</span><br><span class="small">지쳐도 달래면 다시 일하는 로봇, 보리</span></div>
+    </div>
+  </div>
+  <div class="foot">10 / 10</div>
+</section>
+
+</div>
+<div class="nav"><button id="prev" aria-label="이전">◀</button><span id="pos"></span><button id="next" aria-label="다음">▶</button></div>
+<script>
+(() => {
+  const slides = [...document.querySelectorAll('.slide')];
+  let i = Math.min(slides.length - 1, Math.max(0, (parseInt(location.hash.slice(1), 10) || 1) - 1));
+  const show = (n) => {
+    i = Math.min(slides.length - 1, Math.max(0, n));
+    slides.forEach((s, k) => s.classList.toggle('on', k === i));
+    document.getElementById('pos').textContent = `${i + 1} / ${slides.length}`;
+    history.replaceState(null, '', `#${i + 1}`);
+  };
+  document.getElementById('prev').onclick = () => show(i - 1);
+  document.getElementById('next').onclick = () => show(i + 1);
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(slides.length - 1);
+  });
+  show(i);
+})();
+</script>
+</body>
+</html>

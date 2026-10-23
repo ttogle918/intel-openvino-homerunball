@@ -23,7 +23,7 @@ class FakeSkills:
         self.runs.append(name)
         if self.estopped:
             return RunResult("estop", False, 1)
-        if name == "dori_dori":
+        if name in ("dori_dori", "dori_policy"):
             return RunResult("timeout", False, 1)
         grasped = self.grasps.pop(0) if self.grasps else True
         if on_phase:
@@ -161,13 +161,124 @@ def _cycles(path):
     return [json.loads(x) for x in next(path.glob("cycles-*.jsonl")).read_text(encoding="utf-8").splitlines()]
 
 
-def test_flicker_up_after_move_is_success_by_gripper_and_remaining_never_rises(cfg, tmp_path):
-    # 실기 증상: 처음 2개, 옮긴 뒤 3개로 읽힘 -> 그리퍼가 놓았으니 성공, 남은 개수는 1
-    c, _ = make(cfg, FakeSkills(grasps=[True]), vision=FakeVision(Count(2, "opencv"), Count(3, "opencv")),
-                log_dir=tmp_path)
+def test_flicker_up_then_recount_decreases_is_success_and_remaining_never_rises(cfg, tmp_path):
+    # 처음 2개, 옮긴 직후 3개로 읽힘(팔이 가림·깜빡임) -> 놓았으니 잠시 뒤 다시 센다: 1개로 줄었으면 성공, 남은 개수는 1
+    c, _ = make(cfg, FakeSkills(grasps=[True]),
+                vision=FakeVision(Count(2, "opencv"), Count(3, "opencv"), Count(1, "opencv")), log_dir=tmp_path)
     c.chat("과자 옮겨줘")
     assert c.step() == "success" and (c.count, c.remaining, c.total) == (1, 1, 2)
-    assert _cycles(tmp_path)[0]["judge"] == "gripper"
+    assert _cycles(tmp_path)[0]["judge"] == "vision_confirm"
+
+
+def test_released_but_recount_unchanged_is_fail(cfg, tmp_path):
+    # 쥐었다 놓았지만 다시 세어도 그대로: 옮기지 못한 것 (그리퍼만 믿지 않는다)
+    c, _ = make(cfg, FakeSkills(grasps=[True]),
+                vision=FakeVision(Count(2, "opencv"), Count(2, "opencv"), Count(2, "opencv")), log_dir=tmp_path)
+    c.chat("과자 옮겨줘")
+    assert c.step() == "fail" and (c.count, c.remaining, c.retries) == (0, 2, 1)
+    assert _cycles(tmp_path)[0]["judge"] == "vision"
+
+
+def test_not_released_skips_recount(cfg):
+    v = FakeVision(Count(3, "opencv"), Count(3, "opencv"), Count(1, "opencv"))
+    c, _ = make(cfg, FakeSkills(grasps=["no_release"]), vision=v)
+    c.chat("과자 옮겨줘")
+    assert c.step() == "fail" and len(v.counts) == 1     # 놓기 감지가 없으면 다시 세지 않는다
+
+
+def test_released_and_no_count_at_all_falls_back_to_gripper(cfg, tmp_path):
+    c, _ = make(cfg, FakeSkills(grasps=[True]), vision=FakeVision(Count(2, "opencv")), log_dir=tmp_path)
+    c.chat("과자 옮겨줘")
+    assert c.step() == "success" and _cycles(tmp_path)[0]["judge"] == "gripper"
+    assert (c.count, c.remaining) == (1, 1)
+
+
+def test_recount_failure_after_release_is_fail(cfg):
+    c, _ = make(cfg, FakeSkills(grasps=[True]), vision=FakeVision(Count(2, "opencv"), Count(2, "opencv")))
+    c.chat("과자 옮겨줘")
+    assert c.step() == "fail" and (c.count, c.remaining) == (0, 2)   # 앞 세기는 됐고 다시 세기가 비었다
+
+
+def test_confirm_wait_uses_config_and_aborts_on_estop(cfg):
+    cfg["vision"]["confirm_s"] = 30
+    c, _ = make(cfg)
+    assert c.confirm_s == 30.0
+    del cfg["vision"]["confirm_s"]
+    assert make(cfg)[0].confirm_s == 0.7
+
+    cfg["vision"]["confirm_s"] = 30
+    v = FakeVision(Count(2, "opencv"), Count(2, "opencv"), Count(0, "opencv"))
+    c, _ = make(cfg, FakeSkills(grasps=[True]), vision=v)
+    c.chat("과자 옮겨줘")
+    out = []
+    t = threading.Thread(target=lambda: out.append(c.step()))
+    t0 = time.monotonic()
+    t.start()
+    while v.counts and len(v.counts) > 1:      # 두 번째 세기까지 끝나 확인 대기에 들어갈 때까지
+        time.sleep(0.01)
+    time.sleep(0.1)
+    c.command("estop")
+    t.join(5)
+    assert not t.is_alive() and out == ["estop"] and time.monotonic() - t0 < 5
+    assert len(v.counts) == 1                  # 다시 세지 않았다
+
+
+def test_field_sequence_revive_then_camera_keeps_seeing_two_is_not_done(cfg):
+    # 실기: 처음 2 -> 0까지 줄었다고 판정 -> 카메라는 2개 보임(되살림) -> 놓아도 카메라가 계속 2개: 거짓 done 금지
+    cfg["decision"]["max_retry"] = 5
+    cfg["decision"]["refuse"] = "fixed"
+    seq = [2, 1, 1, 0, 2, 2, 2]
+    c, _ = make(cfg, FakeSkills(grasps=[True] * 4), vision=FakeVision(*[Count(n, "opencv") for n in seq]))
+    c.chat("과자 옮겨줘")
+    assert c.step() == "success" and c.remaining == 1      # 2 -> 1
+    assert c.step() == "success" and c.remaining == 0      # 1 -> 0 (0으로 센 값)
+    assert c.step() == "fail" and c.remaining == 2         # 앞 세기 2: 되살림. 놓았지만 2,2 그대로: 실패
+    assert c.total == 4 and c.state == "WORKING"           # 아직 끝나지 않았다
+    assert c.total - c.remaining == 2                      # 이미 2개 옮겼다: LLM의 this_item은 "세 번째"로 이어진다
+    assert c.refused is False                              # 되살림은 거부 상태를 건드리지 않는다
+
+
+def test_field_sequence_revive_in_half_mode_never_refuses_when_first_total_was_two(cfg):
+    # 현장 config(refuse: half): 맨 처음 센 개수가 전체 개수. 처음 2개였으면 되살림(total 4) 뒤에도 거부하지 않는다
+    cfg["decision"]["max_retry"] = 5
+    cfg["decision"]["refuse"] = "half"
+    seq = [2, 1, 1, 0, 2, 2, 2, 2, 1]
+    c, _ = make(cfg, FakeSkills(grasps=[True] * 5), vision=FakeVision(*[Count(n, "opencv") for n in seq]))
+    c.chat("과자 옮겨줘")
+    assert c.step() == "success" and c.step() == "success"
+    assert c.step() == "fail" and c.total == 4 and c.refuse_total == 2     # 되살림: 번호만 이어지고 거부 기준은 그대로
+    assert c.snapshot()["refuse_at"] is None and c.total - c.remaining == 2   # 다음 번호는 세 번째
+    assert c.step() == "success"                                           # 거부(도리도리) 대신 계속 옮긴다
+    assert c.refused is False and c.skills.runs.count("dori_dori") == 0 and c.state == "WORKING"
+
+
+def test_revive_keeps_refuse_point_of_first_total_six(cfg):
+    cfg["decision"]["refuse"] = "half"
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision(Count(6, "opencv"), Count(5, "opencv")))
+    c.chat("과자 옮겨줘")
+    c.step()
+    assert c.refuse_total == 6 and c.snapshot()["refuse_at"] == 3          # 6개로 시작: 3개 뒤 거부 그대로
+
+
+def test_revive_does_not_trigger_second_refusal(cfg):
+    cfg["decision"]["refuse"] = "half"
+    seq = [2, 1, 1, 0, 3, 2, 2, 1]
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision(*[Count(n, "opencv") for n in seq]))
+    c.chat("과자 옮겨줘")
+    c.step()                                               # 첫 세기로 total 2
+    c.refused = True                                       # 이미 한 번 거부했다
+    c.step()
+    c.step()                                               # 되살림 사이클 (total 5, moved 2 < refuse_at 3, 그 뒤에도 거부 안 함)
+    c.step()
+    assert c.refused is True and c.state == "WORKING" and c.total == 5
+    assert c.skills.runs.count("dori_dori") == 0           # 다시 거부(도리도리)하지 않았다
+
+
+def test_model_dori_test_button_runs_dori_policy(cfg):
+    c, ev = make(cfg)
+    assert c.command("test", skill="dori_policy") is not False
+    assert c.step_test() == "timeout" and c.skills.runs == ["dori_policy"] and c.state == "IDLE"
+    assert any("모델 도리도리: 정책 동작 완료" in e.get("text", "") for e in ev if e["type"] == "message")
 
 
 def test_vision_decrease_logs_vision_judge(cfg, tmp_path):
@@ -183,6 +294,53 @@ def test_pre_count_higher_than_remaining_keeps_remaining(cfg):
     c.chat("과자 옮겨줘")
     assert c.step() == "success" and c.remaining == 2
     assert c.step() == "success" and (c.remaining, c.count) == (1, 2)    # 앞 세기 6(손)은 무시
+
+
+def test_field_sequence_first_count_one_then_two_two_corrects_total_before_move(cfg):
+    # 실기: 첫 세기 1(손이 보임), 이어 2, 2: 연속 두 번 더 많이 보면 아직 안 옮겼으니 첫 개수를 2로 바로잡는다
+    cfg["decision"]["refuse"] = "half"
+    c, ev = make(cfg, FakeSkills(grasps=[False, False, False]),
+                 vision=FakeVision(*[Count(n, "opencv") for n in (1, 1, 2, 2, 2, 2)]))   # 사이클마다 (앞, 뒤)
+    c.chat("과자 옮겨줘")
+    assert c.step() == "fail" and (c.total, c.remaining) == (1, 1)       # 첫 세기 1(손이 보임)
+    assert c.step() == "fail" and (c.total, c.remaining) == (1, 1)       # 앞 세기 2 (첫 번째 높음): 무시
+    assert c.step() == "fail"                                            # 앞 세기 2 (두 번째 높음): 정정
+    assert (c.total, c.refuse_total, c.remaining, c.count) == (2, 2, 2, 0)
+    assert c.snapshot()["refuse_at"] is None                             # 2개 기준: 거부 시점 없음
+    assert any("남은 개수를 2개로 고칠게요" in e.get("text", "") for e in ev if e["type"] == "message")
+
+
+def test_single_higher_pre_count_is_ignored_and_streak_resets(cfg):
+    cfg["decision"]["max_retry"] = 9
+    c, _ = make(cfg, FakeSkills(grasps=[False] * 4),
+                vision=FakeVision(*[Count(n, "opencv") for n in (2, 2, 3, 3, 2, 2, 3, 3)]))   # 사이클마다 (앞, 뒤)
+    c.chat("과자 옮겨줘")
+    c.step()
+    c.step()                                  # 앞 세기 3: 한 번만 높다
+    assert c._higher_streak == 1 and (c.total, c.remaining) == (2, 2)
+    c.step()                                  # 앞 세기 2: 연속이 끊긴다
+    assert c._higher_streak == 0
+    c.step()                                  # 앞 세기 3: 다시 한 번만
+    assert (c.total, c.remaining, c._higher_streak) == (2, 2, 1)
+
+
+def test_increase_after_moves_grows_total_but_not_refuse_total(cfg):
+    cfg["decision"]["refuse"] = "half"
+    seq = [3, 2, 4, 4, 4, 4]
+    c, _ = make(cfg, FakeSkills(grasps=[True, False, False]), vision=FakeVision(*[Count(n, "opencv") for n in seq]))
+    c.chat("과자 옮겨줘")
+    assert c.step() == "success" and (c.total, c.remaining, c.count) == (3, 2, 1)
+    c.step()                                  # 앞 세기 4 (첫 번째 높음)
+    assert c.total == 3 and c.remaining == 2
+    c.step()                                  # 앞 세기 4 (두 번째 높음): total 3 + (4 - 2)
+    assert (c.total, c.remaining, c.refuse_total) == (5, 4, 3) and c.count == 1
+
+
+def test_higher_streak_resets_on_new_task_and_revive(cfg):
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision())
+    c._higher_streak = 1
+    c.chat("과자 옮겨줘")
+    assert c._higher_streak == 0
 
 
 def test_fail_without_release_keeps_remaining(cfg):
@@ -248,23 +406,25 @@ def test_grasped_without_release_and_no_decrease_is_fail(cfg, tmp_path):
 
 
 def test_zero_remaining_but_camera_sees_more_revives_once_then_done(cfg):
-    # 실기 증상: 처음 2로 읽혔지만 카메라는 계속 3 + 그리퍼는 매번 쥠·놓음 -> 0이 돼도 한 번은 이어서 한다
-    c, ev = make(cfg, FakeSkills(), vision=FakeVision(*[Count(n, "opencv") for n in (2,) + (3,) * 14]))
+    # 처음 2로 읽혔지만 실제 3개: 0이 돼도 카메라가 보면 한 번은 이어서 한다 (옮길 때마다 개수가 실제로 줄어든다)
+    cfg["decision"]["refuse"] = "fixed"     # 거부 시점은 이 시험의 관심이 아니다
+    seq = [2, 1, 1, 0, 3, 2, 2, 1, 1, 0, 0]
+    c, ev = make(cfg, FakeSkills(), vision=FakeVision(*[Count(n, "opencv") for n in seq]))
     c.chat("과자 옮겨줘")
     results = [c.step() for _ in range(6)]
-    assert results[:2] == ["success", "success"] and c.total == 2
-    assert results[2] == "success"                                   # 0인데 3개 보임: 되살려 계속
+    assert results[:2] == ["success", "success"] and c.total == 5      # 되살린 뒤 total = 2 + 3
     assert any("카메라에 아직 3개" in e.get("text", "") for e in ev if e["type"] == "message")
-    assert results[3:5] == ["success", "success"]
+    assert results[2:5] == ["success", "success", "success"]
     assert results[5] == "done" and c.state == "IDLE"                # 두 번째 0은 그대로 done
 
 
 def test_undercount_first_then_revive_covers_real_three(cfg):
     # 첫 세기 과소(실제 3, 2로 읽힘): 0이 돼도 카메라가 보는 만큼 이어서 옮기고 끝낸다
-    c, _ = make(cfg, FakeSkills(), vision=FakeVision(*[Count(n, "opencv") for n in (2, 3, 3, 2, 2, 1, 1, 0, 0)]))
+    cfg["decision"]["refuse"] = "fixed"
+    c, _ = make(cfg, FakeSkills(), vision=FakeVision(*[Count(n, "opencv") for n in (2, 1, 1, 0, 1, 0, 0)]))
     c.chat("과자 옮겨줘")
-    results = [c.step() for _ in range(5)]
-    assert results == ["success"] * 4 + ["done"] and c.state == "IDLE"
+    results = [c.step() for _ in range(4)]
+    assert results == ["success"] * 3 + ["done"] and c.state == "IDLE" and c.count == 3
 
 
 def test_revive_flag_resets_on_new_task(cfg):
@@ -276,7 +436,7 @@ def test_revive_flag_resets_on_new_task(cfg):
 
 def test_multi_frame_start_count_flicker_median_sets_total(cfg):
     cfg["vision"]["frames"], cfg["vision"]["frame_gap_s"] = 3, 0
-    c, _ = make(cfg, FakeSkills(grasps=[True]), vision=FrameVision(2, 3, 2, 2, 3, 3))
+    c, _ = make(cfg, FakeSkills(grasps=[True]), vision=FrameVision(2, 3, 2, 2, 3, 3, 1, 1, 1))
     c.chat("과자 옮겨줘")
     assert c.step() == "success" and c.total == 2 and (c.count, c.remaining) == (1, 1)
 
@@ -1473,7 +1633,7 @@ def test_half_vision_failure_uses_initial_count(cfg):
 
 
 def test_half_more_snacks_do_not_advance_refusal(cfg):
-    counts = [Count(6, "opencv"), Count(5, "opencv"), Count(7, "opencv"), Count(6, "opencv")]
+    counts = [Count(6, "opencv"), Count(5, "opencv"), Count(7, "opencv"), Count(4, "opencv")]
     c, _ = make(cfg, vision=FakeVision(*counts))
     c.chat("과자 옮겨줘")
     assert c.step() == "success" and c.step() == "success"      # 두 번째 앞 세기가 7: moved = max(0, 6 - 7) = 0

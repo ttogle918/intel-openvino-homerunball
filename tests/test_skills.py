@@ -47,6 +47,10 @@ def test_dori_dori(cfg):
     assert DrySkills(cfg).run("dori_dori") == RunResult("timeout", False, 0)
 
 
+def test_dori_policy_behaves_like_dry_dori_dori(cfg):
+    assert DrySkills(cfg).run("dori_policy") == RunResult("timeout", False, 0)
+
+
 def test_dori_script_waits_like_dori_dori_and_reports_script(cfg):
     assert DrySkills(cfg).run("dori_script") == RunResult("script", False, 0)
 

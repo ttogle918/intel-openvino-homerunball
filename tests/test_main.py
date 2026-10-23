@@ -850,7 +850,7 @@ def test_build_dry_run_info_tests_all_enabled(cfg):
     try:
         assert parts["info"]["tests"] == [
             {"skill": "oranda_pickup", "label": "오란다 1회", "enabled": True, "reason": ""},
-            {"skill": "dori_dori", "label": "도리도리 1회", "enabled": True, "reason": ""},
+            {"skill": "dori_policy", "label": "모델 도리도리 1회", "enabled": True, "reason": ""},
             {"skill": "dori_script", "label": "코드 도리도리 1회", "enabled": True, "reason": ""},
             {"skill": "home", "label": "홈으로", "enabled": True, "reason": ""}]
     finally:
@@ -864,7 +864,7 @@ def test_build_real_robot_without_models_uses_scripted_dori(real_cfg, capsys):
         info = parts["info"]
         assert info["models"]["act"] == "ACT · OpenVINO · GPU (정책 없음, oranda_pickup 모델 없음) · 도리도리: 코드 동작"
         assert [(t["skill"], t["enabled"], t["reason"]) for t in info["tests"]] == [
-            ("oranda_pickup", False, "모델 없음"), ("dori_dori", True, ""),
+            ("oranda_pickup", False, "모델 없음"), ("dori_policy", False, "모델 없음"),
             ("dori_script", True, ""), ("home", True, "")]
         assert "코드 도리도리·home만" in capsys.readouterr().err
     finally:
@@ -878,6 +878,19 @@ def test_build_real_robot_oranda_with_scripted_dori_act_info(real_cfg, monkeypat
     parts = build(real_cfg, {}, dry_run=False)
     try:
         assert parts["info"]["models"]["act"] == "ACT · OpenVINO · GPU (oranda_pickup) · 도리도리: 코드 동작"
-        assert all(t["enabled"] for t in parts["info"]["tests"])
+        assert [(t["skill"], t["enabled"]) for t in parts["info"]["tests"]] == [
+            ("oranda_pickup", True), ("dori_policy", False), ("dori_script", True), ("home", True)]
+    finally:
+        parts["voice"].close()
+
+
+def test_build_real_robot_script_source_with_dori_model_enables_model_button(real_cfg, monkeypatch):
+    import snackbot.robot as robot
+    monkeypatch.setattr(robot, "build_policies", lambda c: ({"oranda_pickup": object(), "dori_dori": object()}, {}))
+    real_cfg["skills"]["dori_dori"]["source"] = "script"
+    parts = build(real_cfg, {}, dry_run=False)
+    try:
+        assert [(t["skill"], t["enabled"]) for t in parts["info"]["tests"]] == [
+            ("oranda_pickup", True), ("dori_policy", True), ("dori_script", True), ("home", True)]
     finally:
         parts["voice"].close()

@@ -10,7 +10,7 @@ RobotRuntime 하나를 시작할 때 연결해 두고, run()마다 동작 출처
 - 카메라·시리얼은 스레드 안전하지 않다 → _io 락으로 한 번에 한 스레드만 쓴다.
 - close()는 SO101.disconnect()가 측정값을 목표로 다시 쓴다 (프로세스를 끝내는 시점이라 토크는 유지된다).
 
-python -m snackbot.robot oranda_pickup | dori_dori | dori_script | home   # 스킬 하나만 실행 (현장 점검용)
+python -m snackbot.robot oranda_pickup | dori_dori | dori_policy | dori_script | home   # 스킬 하나만 실행 (현장 점검용)
 """
 import logging
 import math
@@ -28,6 +28,7 @@ from .twin import JOINTS
 
 log = logging.getLogger(__name__)
 POLICIES = ("oranda_pickup", "dori_dori")
+POLICY_DORI = "dori_policy"   # 모델 도리도리 (테스트 버튼): source와 무관하게 항상 정책으로 실행
 SCRIPT_DORI = "dori_script"   # 코드 도리도리 (테스트 버튼·점검용): 정책이 아니라 source·모델과 무관하게 항상 코드로 실행
 DORI_SOURCES = ("auto", "policy", "script")
 DORI_MAX_AMPLITUDE = 30.0                 # 코드 도리도리 진폭 안전 상한 (normalized)
@@ -134,9 +135,6 @@ def build_policies(cfg):
         raise SystemExit("skills.dori_dori.source가 policy인데 dori_dori 모델이 없어요: export_dir 폴더를 확인하거나 "
                          "source를 auto(모델이 없으면 코드 도리도리) 또는 script로 바꾸세요.")
     for name in POLICIES:
-        if name == "dori_dori" and dori_source == "script":
-            log.info("dori_dori: source가 script라 정책을 로드하지 않아요 (코드 도리도리)")
-            continue
         export_dir = Path(sk[name]["export_dir"])
         if export_dir.is_dir():
             found[name] = export_dir
@@ -180,10 +178,8 @@ class RobotSkills:
         self.dori_source = "policy" if source != "script" and "dori_dori" in policies else "script"
         self.dori_script = dori_settings(dori_cfg.get("script"))   # dori_script 테스트 때문에 source와 무관하게 항상 검사
         self.dori = None
-        if self.dori_source == "script":   # 모델이 있어도 쓰지 않는다 (warmup도 하지 않는다)
+        if self.dori_source == "script":   # run("dori_dori")만 코드 동작이다: 모델이 있으면 로드·warmup해서 "모델 도리도리" 버튼에 쓴다
             self.dori = self.dori_script
-            policies.pop("dori_dori", None)
-            models.pop("dori_dori", None)
             log.info("dori_dori: 코드 도리도리 (%s ±%.0f, %d번, 한쪽 %.2f초)", BODY_JOINTS[self.dori["joint"]],
                      self.dori["amplitude"], self.dori["shakes"], self.dori["shake_s"])
         self.policies, self.models = policies, models
@@ -225,29 +221,43 @@ class RobotSkills:
             frames = {name: cam.read() for name, cam in self.runtime.cameras.items()}
         with self.tap.lock:   # 3D 화면이 첫 틱 전에도 지금 자세를 그리도록
             self.tap.joints = np.asarray(obs.joint_positions, np.float32).copy()
-        for name, policy in self.policies.items():
+        for name, policy in list(self.policies.items()):
             model = self.models.get(name)
             if model is None:
                 continue
-            inputs = policy.to_model_input(obs, remap_frames(frames, self.camera_maps.get(name)))
             try:
-                chunk = model.predict_action_chunk(inputs)
-            except KeyError as e:
-                key = str(e.args[0]).splitlines()[0] if e.args else e
-                raise SystemExit(f"정책 {name} 입력이 안 맞아요: {key} — manifest.json의 images.<이름>과 "
-                                 "config cameras / camera_map 확인") from e
-            except Exception as e:   # 차원·해상도 불일치 등
-                raise SystemExit(f"정책 {name} 첫 추론이 실패했어요: {type(e).__name__}: {str(e)[:200]} — "
-                                 "state 차원, 카메라 해상도, export_dir 확인") from e
-            model.reset()
-            log.info("%s warmup 완료: chunk %s", name, getattr(chunk, "shape", "?"))
+                self._warmup(name, policy, model, obs, frames)
+            except SystemExit as e:
+                if name == "dori_dori" and self.dori_source == "script":
+                    # 코드 도리도리가 본 동작이다: 테스트 버튼용 모델 때문에 시작 전체를 막지 않는다 (버튼은 "모델 없음")
+                    log.warning("dori_dori 모델 warmup 실패, 모델 도리도리 버튼을 끄고 계속합니다: %s", e)
+                    self.policies.pop(name, None)
+                    self.models.pop(name, None)
+                    continue
+                raise
+
+    def _warmup(self, name, policy, model, obs, frames):
+        inputs = policy.to_model_input(obs, remap_frames(frames, self.camera_maps.get(name)))
+        try:
+            chunk = model.predict_action_chunk(inputs)
+        except KeyError as e:
+            key = str(e.args[0]).splitlines()[0] if e.args else e
+            raise SystemExit(f"정책 {name} 입력이 안 맞아요: {key} — manifest.json의 images.<이름>과 "
+                             "config cameras / camera_map 확인") from e
+        except Exception as e:   # 차원·해상도 불일치 등
+            raise SystemExit(f"정책 {name} 첫 추론이 실패했어요: {type(e).__name__}: {str(e)[:200]} — "
+                             "state 차원, 카메라 해상도, export_dir 확인") from e
+        model.reset()
+        log.info("%s warmup 완료: chunk %s", name, getattr(chunk, "shape", "?"))
 
     def new_task(self, n):
         pass
 
     def run(self, name, on_phase=None):
-        if name not in POLICIES and name != SCRIPT_DORI:
+        if name not in POLICIES and name not in (SCRIPT_DORI, POLICY_DORI):
             raise ValueError(f"알 수 없는 스킬: {name}")
+        if name == POLICY_DORI and "dori_dori" not in self.policies:
+            raise RuntimeError("도리도리 모델이 로드되지 않았어요 (config.yaml skills.dori_dori.export_dir 폴더 확인)")
         if (name in POLICIES and name not in self.policies
                 and not (name == "dori_dori" and self.dori_source == "script")):
             raise RuntimeError(f"{name} 정책이 로드되지 않았어요 (config.yaml skills.{name}.export_dir 폴더 확인)")
@@ -292,7 +302,7 @@ class RobotSkills:
             if self._move([lift, self.home], gen) == "estop":
                 return RunResult("estop", self.watch.grasped, _ms(t0))
             return RunResult(stop_reason, self.watch.grasped, _ms(t0))
-        if self._policy(name, gen) == "estop":
+        if self._policy("dori_dori", gen) == "estop":   # dori_dori 또는 dori_policy (source와 무관하게 모델)
             return RunResult("estop", False, _ms(t0))
         if self._move([self.home], gen) == "estop":
             return RunResult("estop", False, _ms(t0))
@@ -428,7 +438,7 @@ def main(argv=None):
     from .config import load_config, load_poses
 
     p = argparse.ArgumentParser(prog="python -m snackbot.robot", description="스킬 하나만 실행 (현장 점검용)")
-    p.add_argument("skill", choices=[*POLICIES, SCRIPT_DORI, "home"])
+    p.add_argument("skill", choices=[*POLICIES, POLICY_DORI, SCRIPT_DORI, "home"])
     p.add_argument("--config", default="config.yaml")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

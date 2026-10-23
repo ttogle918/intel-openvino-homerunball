@@ -18,8 +18,8 @@ from .brain import refuse_at
 log = logging.getLogger(__name__)
 
 IDLE, WORKING, REFUSING, DONE, ESTOP, TESTING = "IDLE", "WORKING", "REFUSING", "DONE", "ESTOP", "TESTING"
-TEST_SKILLS = ("oranda_pickup", "dori_dori", "dori_script", "home")
-TEST_LABELS = {"dori_dori": "도리도리", "dori_script": "코드 도리도리", "home": "홈으로"}   # oranda_pickup은 target 이름
+TEST_SKILLS = ("oranda_pickup", "dori_dori", "dori_policy", "dori_script", "home")
+TEST_LABELS = {"dori_dori": "도리도리", "dori_policy": "모델 도리도리", "dori_script": "코드 도리도리", "home": "홈으로"}   # oranda_pickup은 target 이름
 STOP_REASON_KO = {"gripper_open": "놓기 감지로 끝남", "timeout": "시간 초과로 끝남", "estop": "비상정지로 멈춤",
                   "script": "코드 동작 완료", "done": "완료"}
 
@@ -48,6 +48,8 @@ class Controller:
         self.frames = max(1, 5 if frames is None else int(frames))      # 한 번 셀 때 읽는 프레임 수 (중앙값, 0 이하면 1)
         gap = cfg["vision"].get("frame_gap_s")
         self.frame_gap_s = 0.1 if gap is None else float(gap)
+        confirm = cfg["vision"].get("confirm_s")
+        self.confirm_s = 0.7 if confirm is None else max(0.0, float(confirm))   # 놓은 뒤 개수가 안 줄었을 때 다시 세기 전 대기
         sync = (cfg.get("voice") or {}).get("sync_timeout_s")
         self.sync_timeout_s = 10.0 if sync is None else float(sync)
         self.restart_wait_s = 5.0  # 재시작이 진행 중인 동작(skills.run)이 멈추기를 기다리는 최대 시간
@@ -63,8 +65,10 @@ class Controller:
         self.skill = None
         self.total = 0                # 이번 작업의 전체 개수 (시작 개수, 첫 개수 세기 성공 때 한 번 교체)
         self.refused = False          # 이번 작업에서 이미 거부했는가 (작업당 한 번, 재개로는 초기화하지 않는다)
+        self.refuse_total = 0         # 거부 시점을 정하는 전체 개수: 맨 처음 센 값 (되살림으로 total이 늘어도 바꾸지 않는다)
         self._total_counted = False   # total을 카메라로 정했는가
         self._revived = False         # "0인데 카메라가 아직 본다"로 남은 개수를 되살렸는가 (작업당 한 번)
+        self._higher_streak = 0       # 사이클 앞 세기가 남은 개수보다 많이 본 연속 횟수 (2번째에 정정, 아니면 0으로)
         self.vision_method = "estimate"
         self.vision_choice = "auto"   # 개수 세기 방법: auto(체인 순서) | off(B단계) | counter 이름
         self.last_count = None        # 마지막 "지금 세기" 결과 {n, method, ms, ts} (화면 표시용)
@@ -100,7 +104,7 @@ class Controller:
         """half 모드에서 몇 개를 옮긴 뒤 거부하는지 (fixed 모드이거나 전체가 2개 이하면 None)."""
         if self.decision.get("refuse") != "half":
             return None
-        return refuse_at(self.total)
+        return refuse_at(self.refuse_total)
 
     # ---- 개수 세기 방법 ----
     def vision_options(self):
@@ -215,8 +219,9 @@ class Controller:
                 return False
             if not busy:
                 self._gen += 1
-                self.remaining = self.total = n or self.initial_count
+                self.remaining = self.total = self.refuse_total = n or self.initial_count
                 self.refused = self._total_counted = self._revived = False
+                self._higher_streak = 0
                 self.count = self.retries = 0
                 self.skill, self.vision_method, self.last_boxes = None, "estimate", None
                 self.state, self.phase = WORKING, "idle"
@@ -420,7 +425,7 @@ class Controller:
     def _test_text(self, skill, origin, stop_reason, grasped, ms, record):
         """결과 한 줄: 버튼 '테스트 · 오란다: 놓기 감지로 끝남 · 쥠 성공 · 12.3초 · 기록 …', LLM '도리도리 · …'."""
         how = STOP_REASON_KO.get(stop_reason, "알 수 없음" if stop_reason is None else str(stop_reason))
-        if skill == "dori_dori" and stop_reason == "timeout":
+        if skill in ("dori_dori", "dori_policy") and stop_reason == "timeout":
             how = "정책 동작 완료"  # 정책 도리도리는 끝 신호가 없어 시간이 끝나는 것이 정상 종료다 (RunResult·로그는 원본)
         label = self.target_name if skill == "oranda_pickup" else TEST_LABELS[skill]
         parts = [f"{label} · {how}" if origin == "llm" else f"테스트 · {label}: {how}"]
@@ -488,6 +493,10 @@ class Controller:
                             and self._gen == gen and self.state == WORKING):
                         # 0까지 줄었는데 카메라는 아직 본다 (첫 세기 과소·잘못 쥠): 작업당 한 번만 되살려 이어서 한다
                         self._revived = revived = True
+                        self._higher_streak = 0
+                        # 이미 옮긴 수(= total, remaining이 0이었다) 뒤에 이어 센다: LLM의 this_item이 "세 번째"로 이어진다
+                        # (거부 시점 refuse_total은 처음 센 값 그대로: 되살린 몫으로 새 거부를 만들지 않는다)
+                        self.total += seen
                         self.remaining = seen
                     n_before = self.remaining   # 깜빡임·손으로 늘어 보여도 남은 개수는 늘리지 않는다 (_count가 이미 min)
                 if revived:
@@ -501,8 +510,9 @@ class Controller:
         t0 = time.monotonic()
         with self._lock:
             hist = list(self.history)
-            total, refused = self.total, self.refused
-        d = self.brain.decide(n_before, self.count, WORKING, None, history=hist, total=total, refused=refused)
+            total, refused, refuse_total = self.total, self.refused, self.refuse_total
+        d = self.brain.decide(n_before, self.count, WORKING, None, history=hist, total=total, refused=refused,
+                              refuse_total=refuse_total)
         ms["llm"] = _ms(t0)
         if not self._working() or self._gen != gen:
             return None
@@ -567,6 +577,17 @@ class Controller:
             return "refuse"
         return self._judge(n_before, ms, d, r, gen, count_args)
 
+    def _pause(self, seconds, gen):
+        """seconds만큼 쉰다. 종료되거나 세션이 바뀌면 바로 멈추고 False (0.1초 단위로 확인한다)."""
+        end = time.monotonic() + seconds
+        while True:
+            left = end - time.monotonic()
+            if self._stop.is_set() or self.generation() != gen:
+                return False
+            if left <= 0:
+                return True
+            self._stop.wait(min(0.1, left))
+
     def _sample(self, gen, only=None):
         """여러 프레임을 읽어 센 뒤 개수의 중앙값을 낸다 (깜빡임 제거). 중앙값과 같은 n을 낸 첫 프레임의 Count를 돌려준다.
         세션이 바뀌었거나 종료 중이면 None. 모두 실패하면 None (프레임 읽기 예외는 전부 실패했을 때만 올린다)."""
@@ -597,6 +618,7 @@ class Controller:
         t0 = time.monotonic()
         c = self._sample(gen, only)
         ms["vision"] = ms.get("vision", 0) + _ms(t0)
+        corrected = 0
         with self._lock:
             if self._gen != gen:  # 세는 동안 세션이 바뀌었다: 이전 세션의 결과로 새 세션을 덮지 않는다
                 return None
@@ -607,11 +629,28 @@ class Controller:
             if update_remaining:
                 if set_total and not self._total_counted and self.count == 0 and not self.refused:
                     self._total_counted = True    # 작업의 첫 개수 세기 성공(옮기기 전): 이 값이 전체 개수 (한 번만)
-                    self.total = self.remaining = c.n
-                else:
-                    if c.n > self.remaining:      # 깜빡임이나 손이 보인 것: 남은 개수는 늘리지 않는다
+                    self.total = self.refuse_total = self.remaining = c.n
+                elif c.n > self.remaining:
+                    if self.remaining > 0 and self._higher_streak >= 1:
+                        # 사이클 앞 세기가 연속 두 번 더 많이 봤다: 한 번의 깜빡임·손이 아니라 처음이 틀린 것 (정정)
+                        # (남은 개수 0은 되살림 규칙이 따로 맡는다: 겹쳐 적용하지 않는다)
+                        self._higher_streak = 0
+                        grow = c.n - self.remaining
+                        if self.count == 0 and not self.refused:
+                            self.total = self.refuse_total = c.n   # 아직 하나도 안 옮겼다: 첫 개수를 바로잡는다
+                        else:
+                            self.total += grow                      # 번호는 이어 센다 (refuse_total은 그대로)
+                        self.remaining = c.n
+                        corrected = c.n
+                    else:
+                        self._higher_streak += 1      # 한 번만 더 많이 보인 것은 무시한다 (깜빡임·손)
                         log.info("카메라가 남은 개수(%d)보다 많이 봤어요: %d (남은 개수 유지)", self.remaining, c.n)
+                else:
+                    self._higher_streak = 0
                     self.remaining = min(c.n, self.remaining)
+        if corrected:
+            log.info("카메라에 %d개 보여 남은 개수를 고칩니다 (연속 두 번)", corrected)
+            self.notify(f"카메라에 {corrected}개 보여요. 남은 개수를 {corrected}개로 고칠게요")
         self._publish()
         return c.n
 
@@ -676,7 +715,16 @@ class Controller:
         if seen is not None and seen < n_before:
             success, judge = True, "vision"
         elif seen is not None:
-            success, judge = released, "gripper" if released else "vision"   # 개수가 깜빡여도 그리퍼가 옮겼다고 하면 성공
+            # 개수가 그대로여도 그리퍼가 쥐었다 놓았으면 잠시 뒤 한 번 더 센다 (팔이 비켜난 뒤 / 과자가 자리 잡은 뒤).
+            # 그래도 줄지 않았으면 옮기지 못한 것이다 (그리퍼만 믿으면 남은 과자가 있는데 끝낸다)
+            success, judge = False, "vision"
+            if released and self._pause(self.confirm_s, gen):
+                self._set_phase("counting")
+                again = self._count(ms, gen, only=only, update_remaining=False)
+                if again is not None:
+                    seen = again
+                    if again < n_before:
+                        success, judge = True, "vision_confirm"
         else:
             success, judge = bool(r.grasped), "gripper"
         with self._lock:
