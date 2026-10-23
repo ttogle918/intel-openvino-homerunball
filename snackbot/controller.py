@@ -81,11 +81,12 @@ class Controller:
 
     def snapshot(self):
         with self._lock:
+            idle = self.state == IDLE   # 대기에는 진행 중인 작업이 없다: 지난 작업의 전체/거부 시점을 화면에 남기지 않는다
             return {"type": "state", "state": self.state, "phase": self.phase, "count": self.count,
                     "remaining": self.remaining, "skill": self.skill, "vision_method": self.vision_method,
                     "vision_choice": self._effective_choice(), "vision_options": self.vision_options(),
-                    "last_count": self.last_count,
-                    "total": self.total, "refuse_at": self._refuse_at(),
+                    "last_count": self.last_count, "refuse_mode": self.decision.get("refuse", "fixed"),
+                    "total": None if idle else self.total, "refuse_at": None if idle else self._refuse_at(),
                     "thresholds": {"safe_max": self.decision["safe_max"],
                                    "force_refuse": self.decision["force_refuse"]}}
 
@@ -114,7 +115,7 @@ class Controller:
     def set_vision_method(self, name):
         """개수 세기 방법 선택: auto | off | counter 이름. 다음 개수 세기부터 적용된다 (진행 중인 사이클은 그대로)."""
         with self._lock:
-            if name != "auto" and name not in self.vision_options() or not self.vision:
+            if not self.vision or (name != "auto" and name not in self.vision_options()):
                 raise ValueError(f"알 수 없는 개수 세기 방법: {name}")
             self.vision_choice = name
         self._publish()
@@ -470,16 +471,19 @@ class Controller:
         with self._lock:
             n_before = self.remaining
             gen = self._gen
-        if self._count_args()[0]:
+        count_args = self._count_args()   # 개수 세기 방법은 사이클 시작에 한 번만 읽는다 (사이클 안에서 섞지 않는다)
+        if count_args[0]:
             self._set_phase("counting")
-            seen = self._count(ms, gen, set_total=True)
+            seen = self._count(ms, gen, set_total=True, only=count_args[1])
             if seen is not None:
                 n_before = seen
+        else:
+            with self._lock:
+                self.vision_method = "estimate"   # 끔: 카메라 대신 추정 (화면에 지난 counter 이름이 남지 않게)
         self._set_phase("thinking")
         t0 = time.monotonic()
         with self._lock:
             hist = list(self.history)
-        with self._lock:
             total, refused = self.total, self.refused
         d = self.brain.decide(n_before, self.count, WORKING, None, history=hist, total=total, refused=refused)
         ms["llm"] = _ms(t0)
@@ -499,11 +503,11 @@ class Controller:
             self._log_cycle("estop", ms, d)  # 기다리는 중 중단: 대사만 나가고 동작은 안 했다
             return None
         try:
-            return self._act(n_before, ms, d, gen)
+            return self._act(n_before, ms, d, gen, count_args)
         finally:
             self._run_idle.set()
 
-    def _act(self, n_before, ms, d, gen):
+    def _act(self, n_before, ms, d, gen, count_args=None):
         self._set_phase("acting")
         t0 = time.monotonic()
         returning_at = []
@@ -544,12 +548,11 @@ class Controller:
             self._publish()
             self._log_cycle("refuse", ms, d, r)
             return "refuse"
-        return self._judge(n_before, ms, d, r, gen)
+        return self._judge(n_before, ms, d, r, gen, count_args)
 
-    def _count(self, ms, gen, set_total=False):
-        """A단계 개수 세기. 실패하면 None (그 사이클은 B로 판정)."""
+    def _count(self, ms, gen, set_total=False, only=None):
+        """A단계 개수 세기. 실패하면 None (그 사이클은 B로 판정). only: 사이클 시작에 고른 counter (None이면 체인 전체)."""
         t0 = time.monotonic()
-        _, only = self._count_args()
         c = self.vision.count(self.skills.latest_frame(self.camera), only=only)
         ms["vision"] = ms.get("vision", 0) + _ms(t0)
         with self._lock:
@@ -612,16 +615,17 @@ class Controller:
             log.warning("개수 로그 기록 실패: %s", e)
         return c is not None
 
-    def _judge(self, n_before, ms, d, r, gen):
+    def _judge(self, n_before, ms, d, r, gen, count_args=None):
         with self._lock:
             aborted = self.state != WORKING or self._gen != gen
         if aborted:
             self._log_cycle("estop", ms, d, r)
             return "estop"
         seen = None
-        if self._count_args()[0]:
+        count_on, only = count_args or self._count_args()   # step이 사이클 시작에 읽은 값을 그대로 쓴다
+        if count_on:
             self._set_phase("counting")
-            seen = self._count(ms, gen)
+            seen = self._count(ms, gen, only=only)
         success = seen < n_before if seen is not None else r.grasped
         with self._lock:
             aborted = self.state != WORKING or self._gen != gen

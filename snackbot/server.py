@@ -183,7 +183,7 @@ def create_app(controller, info, frame_fn=None, stt=None, static_dir="frontend",
                         else:
                             log.info("알 수 없는 개수 세기 방법 무시: %r", method)
                     elif kind == "command" and msg.get("name") == "count":
-                        commands.put_nowait((controller.command, ("count",)))   # 세는 동안 다른 명령이 밀리지 않게 큐 뒤에서
+                        commands.put_nowait((controller.command, ("count",)))   # 연결 큐에서 차례대로 (세는 동안 이 연결의 다른 명령은 뒤에서 기다린다. estop은 큐를 거치지 않는다)
                     elif kind == "command" and msg.get("name") in UI_COMMANDS:
                         commands.put_nowait((controller.command, (msg["name"],)))
                 except Exception as e:

@@ -44,8 +44,7 @@ DECIDE_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {tar
 
 규칙:
 - 반드시 allowed 안에서만 skill을 골라.
-- count가 3쯤이면 슬슬 힘들다는 예고를 해.
-- count가 4~5면 계속할지 거부할지 네가 정해. 거부하면 dori_dori.
+{rules}
 - remaining이 0이면 done을 고르고 뿌듯해해.
 
 출력은 JSON 한 줄만:
@@ -64,6 +63,12 @@ CHAT_SYSTEM = """너의 이름은 {robot_name}이고, 과자 공장에서 {targe
 
 출력은 JSON 한 줄만:
 {"intent": "...", "say": "...", "n": null}"""
+
+
+DECIDE_RULES_FIXED = """- count가 3쯤이면 슬슬 힘들다는 예고를 해.
+- count가 4~5면 계속할지 거부할지 네가 정해. 거부하면 dori_dori."""
+DECIDE_RULES_HALF = """- allowed에 행동이 하나뿐이면 그 skill을 그대로 고르고, 그 행동에 어울리는 대사만 써.
+  (oranda_pickup이면 옮기는 말, dori_dori면 힘들어서 거부하는 말)"""
 
 
 def refuse_at(total):
@@ -171,10 +176,12 @@ class Brain:
             if half:
                 info.update(total=total, refuse_at=None if refused else at)
             user = json.dumps(info, ensure_ascii=False)
-            data, source = self._ask(DECIDE_SYSTEM, user, history)
+            rules = DECIDE_RULES_HALF if half else DECIDE_RULES_FIXED
+            data, source = self._ask(DECIDE_SYSTEM.replace("{rules}", rules), user, history)
             if data is not None and data.get("skill") in SKILLS:
-                skill = data["skill"] if data["skill"] in allowed else rule_skill
-                say = data.get("say")
+                if data["skill"] in allowed:
+                    skill, say = data["skill"], data.get("say")
+                # allowed 밖이면 skill과 함께 대사도 버린다 (말과 동작이 어긋나지 않게 규칙 대사 사용)
             else:
                 source = "rules"
         line_key = self._skill_line(skill, count, tired if half else None)

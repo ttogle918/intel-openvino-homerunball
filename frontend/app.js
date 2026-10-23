@@ -33,16 +33,35 @@ function renderState() {
   });
 
   const { safe_max, force_refuse } = S.th;
-  const tier = S.count >= force_refuse ? 'max' : S.count > safe_max ? 'mid' : '';
+  let tier, fill, mark, countTxt, maxTxt;
+  if (S.refuse_mode === 'half') {   // 전체의 절반을 옮기면 거부: 옮긴 수(전체 − 남은)와 거부 시점으로 계산
+    const moved = S.total != null && S.remaining != null ? Math.max(0, S.total - S.remaining) : 0;
+    const at = S.refuse_at;
+    if (at) {
+      tier = S.state === 'REFUSING' || moved >= at ? 'max' : moved >= at - 1 ? 'mid' : '';
+      fill = (moved / at) * 100; mark = ((at - 1) / at) * 100;
+      maxTxt = `전체 ${S.total} · ${at}개째 뒤 거부`;
+    } else {
+      tier = ''; mark = 100;
+      fill = S.total ? (moved / S.total) * 100 : 0;
+      maxTxt = S.total ? `전체 ${S.total} · 거부 없음` : '대기 중';
+    }
+    countTxt = `${moved}개 옮김`;
+  } else {
+    tier = S.count >= force_refuse ? 'max' : S.count > safe_max ? 'mid' : '';
+    fill = (S.count / Math.max(1, force_refuse)) * 100;
+    mark = (safe_max / Math.max(1, force_refuse)) * 100;
+    countTxt = `${S.count}회 옮김`; maxTxt = `한계 ${force_refuse}회`;
+  }
   const t = $('#fatigueTier');
   t.textContent = tier === 'max' ? '한계' : tier === 'mid' ? '지침' : '쌩쌩';
   t.className = 'tier ' + tier;
   const f = $('#gaugeFill');
   f.className = 'gauge-fill ' + tier;
-  f.style.width = Math.min(100, (S.count / Math.max(1, force_refuse)) * 100) + '%';
-  $('#gaugeMark').style.left = (safe_max / Math.max(1, force_refuse)) * 100 + '%';
-  $('#gaugeCount').textContent = `${S.count}회 옮김`;
-  $('#gaugeMax').textContent = S.total && S.refuse_at ? `전체 ${S.total} · ${S.refuse_at}개째 뒤 거부` : `한계 ${force_refuse}회`;
+  f.style.width = Math.min(100, fill) + '%';
+  $('#gaugeMark').style.left = mark + '%';
+  $('#gaugeCount').textContent = countTxt;
+  $('#gaugeMax').textContent = maxTxt;
 
   let mood = tier === 'max' ? 'limit' : tier === 'mid' ? 'tired' : 'fresh';
   if (S.state === 'REFUSING') mood = 'refuse';
@@ -163,7 +182,7 @@ function handle(m) {
       S.vision_method = m.vision_method || null; S.skill = m.skill || null;
       S.vision_choice = m.vision_choice || 'off'; S.vision_options = Array.isArray(m.vision_options) ? m.vision_options : [];
       S.last_count = m.last_count || null;
-      S.total = m.total ?? null; S.refuse_at = m.refuse_at ?? null;
+      S.total = m.total ?? null; S.refuse_at = m.refuse_at ?? null; S.refuse_mode = m.refuse_mode || 'fixed';
       if (m.thresholds) S.th = { safe_max: m.thresholds.safe_max, force_refuse: m.thresholds.force_refuse };
       renderState();
       onReplayState(prev);
