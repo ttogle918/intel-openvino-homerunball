@@ -82,7 +82,7 @@ ol.steps li{margin:6px 0}
 <section id="overview">
 <h2>1. 한눈에 보기</h2>
 <p>SO-ARM101 로봇팔이 여러 과자가 섞인 트레이에서 <b>목표 과자(지금은 오란다, <code>config.target.name</code>으로 바꿀 수 있음)</b>만 골라 빈 트레이로 옮긴다. 사람이 채팅이나 음성으로 작업을 시키면 일을 시작하고, 몇 번 하면 지쳐서 <code>dori_dori</code>(도리도리)로 일을 거부한다. 진행자가 달래거나 <code>r</code> 키를 누르면 다시 일하고, 마지막 과자를 옮기면 완료 멘트 후 IDLE로 돌아간다.</p>
-<p>하드웨어는 SO-ARM101 팔로워 1대·학습용 리더 1대, 카메라 3대(tower · side 외부 2대 + follow 손목)이고, 2일 해커톤 프로젝트다. 시연 노트북은 Windows 11 PC이고, 화면은 카메라 3칸 + 3D 디지털 트윈의 4분할이다 (2026-10-23 실기를 시작했다).</p>
+<p>하드웨어는 SO-ARM101 팔로워 1대·학습용 리더 1대, 카메라 3대(tower · side 외부 2대 + follow 손목)이고, 2일짜리 로봇팔 프로젝트다. 시연 노트북은 Windows 11 PC이고, 화면은 카메라 3칸 + 3D 디지털 트윈의 4분할이다 (2026-10-23 실기를 시작했다).</p>
 <div class="tablewrap"><table>
 <tr><th>계층</th><th>담당</th><th>구현</th></tr>
 <tr><td><b>인식</b></td><td>끝·성공 판정</td><td>B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (<b>OpenCV</b> 규칙. VLM 개수 세기는 계획만 하고 학습하지 못했다)</td></tr>
@@ -542,7 +542,7 @@ ol.steps li{margin:6px 0}
 <tr><td>M6</td><td>STT: <code>/stt</code> + stt.py</td><td>말로 시작·달래기</td></tr>
 <tr><td>M7</td><td>(선택) ACT 디바이스별 지연 비교 (<code>bench_policy.py</code>)</td><td>발표 비교표</td></tr>
 </table></div>
-<div class="callout"><b>현재 위치 (2026-10-25 정리, 시연·발표는 2026-10-23):</b> 해커톤 시연과 발표를 마쳤다. 4분할 화면·3D 트윈·녹화 재생·실행 기록, 스킬 테스트·코드 도리도리, OpenCV 개수 세기, half 거부 규칙, 채팅·음성 명령, Gemini TTS(Heami 예비)는 현장 확인(10-23)에서 동작했다. <b>시연 결과: 오란다 집기는 12번 중 1번 성공.</b> 팔이 오란다까지 가서 집고 옮기는 동작은 하지만 그리퍼가 실제로 잡지 못하고 주변을 쥐는 경우가 많았다. 원인 후보는 pickup 5 epoch만 학습(train 0.35 / val 0.66, val loss가 계속 내려가는 중), 제어 루프 11~13 Hz(학습 30 Hz, JPEG 인코딩 부하로 의심, 못 고침)다. 도리도리 모델은 과적합이라 시연은 코드 도리도리였다. VLM 개수 세기는 학습하지 못했다. 쓰지 않은 코드(YOLO-World · VLM counter, OpenAI·pyttsx3 음성, openrouter · openai · ollama)는 삭제했고 테스트는 487개다. 소개와 결과는 <a href="../README.md">README.md</a>, 진척은 <a href="PROGRESS_REPORT.html">PROGRESS_REPORT.html</a>.</div>
+<div class="callout"><b>현재 위치 (2026-10-25 정리, 시연·발표는 2026-10-23):</b> 시연과 발표를 마쳤다. 4분할 화면·3D 트윈·녹화 재생·실행 기록, 스킬 테스트·코드 도리도리, OpenCV 개수 세기, half 거부 규칙, 채팅·음성 명령, Gemini TTS(Heami 예비)는 현장 확인(10-23)에서 동작했다. <b>시연 결과: 오란다 집기는 12번 중 1번 성공.</b> 팔이 오란다까지 가서 집고 옮기는 동작은 하지만 그리퍼가 실제로 잡지 못하고 주변을 쥐는 경우가 많았다. 원인 후보는 pickup 5 epoch만 학습(train 0.35 / val 0.66, val loss가 계속 내려가는 중), 제어 루프 11~13 Hz(학습 30 Hz, JPEG 인코딩 부하로 의심, 못 고침)다. 도리도리 모델은 과적합이라 시연은 코드 도리도리였다. VLM 개수 세기는 학습하지 못했다. 쓰지 않은 코드(YOLO-World · VLM counter, OpenAI·pyttsx3 음성, openrouter · openai · ollama)는 삭제했고 테스트는 487개다. 소개와 결과는 <a href="../README.md">README.md</a>, 진척은 <a href="PROGRESS_REPORT.html">PROGRESS_REPORT.html</a>.</div>
 <div class="callout warn"><b>시간이 부족하면 자르는 순서:</b> M7 → M6 → M5 → (M3의 counter 체인). M4까지 B 판정 + 채팅 시작 + <code>r</code> 키만으로 시연이 성립한다. M1~M3은 ACT 학습이 끝나기 전(1일차)에 끝내고, M4는 2일차 맨 앞에 한다.</div>
 <details><summary>dry-run 3단계와 테스트</summary>
 <div class="tablewrap"><table>
@@ -566,7 +566,7 @@ ol.steps li{margin:6px 0}
 <tr><td><a href="superpowers/specs/2026-10-22-skill-test-and-scripted-dori-design.md">skill-test-and-scripted-dori-design.md</a></td><td>스킬 1회 실행(TESTING), 코드 도리도리, 채팅·🎤 "도리도리 해 봐"</td><td>스킬 테스트 버튼·도리도리 동작을 고칠 때</td></tr>
 <tr><td><a href="PROGRESS_REPORT.html">PROGRESS_REPORT.html</a></td><td>진행 보고서: 진척 요약, 목표 대비 비교표, 실기 결과, 다음 할 일 (2026-10-23 실기 반영)</td><td>지금 어디까지 됐는지 볼 때</td></tr>
 <tr><td><a href="memo/next-session-prompt.md">memo/next-session-prompt.md</a></td><td>다음 세션 시작 프롬프트: 현재 상태, 바로 할 일, 작업 방식</td><td>새 Claude Code 세션을 시작할 때</td></tr>
-<tr><td><a href="../course_guide.html">course_guide.html</a> (저장소 루트)</td><td>강의 가이드. 06 Physical AI 장, 07 해커톤 프로젝트(과자 옮기기 로봇) 장</td><td>과정 전체 맥락과 발표 자료를 볼 때</td></tr>
+<tr><td><a href="../course_guide.html">course_guide.html</a> (저장소 루트)</td><td>강의 가이드. 06 Physical AI 장, 07 로봇팔 프로젝트(과자 옮기기 로봇) 장</td><td>과정 전체 맥락과 발표 자료를 볼 때</td></tr>
 <tr><td><a href="ARCHITECTURE.md">ARCHITECTURE.md</a></td><td>3계층 흐름, 사이클 시퀀스, 상태·모듈 다이어그램(Mermaid), 모델 실행 위치</td><td>전체 그림이 필요할 때</td></tr>
 <tr><td><a href="DECISION_LOGIC.md">DECISION_LOGIC.md</a></td><td>거부 규칙(half · fixed), 성공 판정, LLM 프롬프트·JSON 스키마, fallback 대사, 채팅 intent</td><td>brain.py를 만들거나 프롬프트를 고칠 때</td></tr>
 <tr><td><a href="DATASET_GUIDE.md">DATASET_GUIDE.md</a></td><td>ACT 데이터셋 녹화 규칙, 배치·연속 녹화 요령, 체크리스트</td><td>녹화·학습 전 (1일차)</td></tr>
