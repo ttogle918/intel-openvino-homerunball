@@ -1,6 +1,6 @@
 # 다음 세션 시작 프롬프트
 
-> **2026-10-25: 시연·발표가 끝나 프로젝트를 마무리했다.** 이어서 할 작업은 없다. 아래는 마지막 작업 세션 기준 기록이다. 그 뒤 정리에서 YOLO·VLM counter, OpenAI·pyttsx3 음성, openrouter·ollama 설정을 지웠고 README.md를 만들었다. 시연 결과(집기 12번 중 1번 성공)와 남은 한계는 README.md에 있다.
+> **2026-10-23(금) 시연·발표가 끝났고, 2026-10-25에 저장소를 정리했다.** 이어서 할 작업은 없다. 아래는 마지막 작업 세션 기준 기록이다. 그 뒤 정리에서 YOLO·VLM counter, OpenAI·pyttsx3 음성, openrouter·ollama 설정을 지웠고 README.md를 만들었다. 시연 결과(집기 12번 중 1번 성공)와 남은 한계는 README.md에 있다.
 
 > 새 Claude Code 세션(작업 폴더 `C:\Users\ttogl\workspace\openvino_course_2610\project`)에 아래 코드 블록을 그대로 붙여넣는다.
 
@@ -29,7 +29,7 @@
 - **연속 실패(1995537):** decision.max_retry: 1. 두 번 연속 놓치면 give_up 대사(채팅+TTS) → 소리 시작 뒤 도리도리 1회(source: script라 코드) → phase waiting_operator + 안내. 대기 중 채팅 intent는 resume·chat, 키워드 "이어서·계속·재개" 추가. 횟수·피로도·refused에 안 넣는다. 재개·재시작 버튼이 납작하던 CSS도 고쳤다. **실제 팔로는 아직 확인 안 함.**
 - **도리도리:** skills.dori_dori.source: script (코드 도리도리가 기본). 모델 도리도리 1회 버튼은 source와 무관하게 모델로 1회. 모델은 데이터가 적어 과적합(100 epoch, train 0.07 / val 0.49).
 - **음성:** STT = OpenVINO Whisper small 로컬(CPU), 예비 Gemini. TTS = Gemini 2.5 flash preview tts → 실패하면 Windows Microsoft Heami(voice.fallback: windows, 한도 오류 뒤 600초·기타 오류 뒤 60초 Gemini 건너뜀). 대화 LLM = Claude → NVIDIA → 규칙. 주의: Claude Code 셸 환경에 예전 GEMINI_API_KEY가 남아 있으면 .env보다 우선한다 → 서버를 띄울 때 `env -u GEMINI_API_KEY`. .env 키는 유효하지만 하루 한도를 넘기면 429(그때는 Heami).
-- **전체 워크플로우 확인(2026-10-24, 실제 로봇):** 테스트 버튼 4개, 채팅, STT(/stt), TTS(Heami로 넘어감), 웹캠 3대 확인. 기록: logs/workflow_check/ (webcams.mp4, webcams_oranda.gif, snackbot_workflow_check.gif, screens/ 14장, git 제외).
+- **전체 워크플로우 확인(2026-10-23, 실제 로봇):** 테스트 버튼 4개, 채팅, STT(/stt), TTS(Heami로 넘어감), 웹캠 3대 확인. 기록: logs/workflow_check/ (webcams.mp4, webcams_oranda.gif, snackbot_workflow_check.gif, screens/ 14장, git 제외).
 - **발표 자료:** docs/slides.html, docs/slides.pptx (11장, 7장 데이터셋과 학습: docs/img/act_training.jpg, loss_pickup.png, loss_dori.png). pptx는 scratchpad의 pptxgenjs 스크립트로 만들었다(세션이 바뀌면 사라짐 → 고칠 때는 pptx를 직접 편집하거나 다시 생성).
 - **학습 사실:** pickup 5 epoch, batch 8, 31 에피소드 9,111 프레임, train 0.35 / val 0.66(아직 내려가는 중 = 덜 학습). dori 100 epoch, batch 4, 약 1천 프레임.
 - **열린 문제:** 제어 루프 11~13 Hz(학습 30 Hz). MJPEG 화면을 추가로 열면 4.2 Hz까지 떨어진다 → 서버 JPEG 인코딩 부하가 유력. 집기 정확도(pickup 덜 학습).
