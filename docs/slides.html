@@ -140,7 +140,7 @@ th{background:var(--box)}
       <rect x="350" y="20" width="300" height="290" rx="14" class="b"/><text x="500" y="52" text-anchor="middle" class="t-l">판단</text>
       <rect x="370" y="70" width="260" height="60" rx="10" class="box"/><text x="500" y="96" text-anchor="middle" class="t-m">controller (상태 머신)</text><text x="500" y="118" text-anchor="middle" class="t-s t-mut">개수 · 거부 시점 · 재시도</text>
       <rect x="370" y="145" width="260" height="60" rx="10" class="box"/><text x="500" y="171" text-anchor="middle" class="t-m">코드 가드 → LLM 대사</text><text x="500" y="193" text-anchor="middle" class="t-s t-mut">Claude → NVIDIA → 규칙</text>
-      <rect x="370" y="220" width="260" height="60" rx="10" class="box"/><text x="500" y="246" text-anchor="middle" class="t-m">TTS · Gemini</text><text x="500" y="268" text-anchor="middle" class="t-s t-mut">말 시작과 동작 동기</text>
+      <rect x="370" y="220" width="260" height="60" rx="10" class="box"/><text x="500" y="246" text-anchor="middle" class="t-m">TTS · Gemini → Heami 예비</text><text x="500" y="268" text-anchor="middle" class="t-s t-mut">말 시작과 동작 동기</text>
 
       <rect x="690" y="20" width="300" height="290" rx="14" class="a"/><text x="840" y="52" text-anchor="middle" class="t-l">행동</text>
       <rect x="710" y="70" width="260" height="60" rx="10" class="box"/><text x="840" y="96" text-anchor="middle" class="t-m">ACT oranda_pickup</text><text x="840" y="118" text-anchor="middle" class="t-s t-mut">OpenVINO · physicalai 런타임</text>
@@ -350,7 +350,7 @@ th{background:var(--box)}
       <rect x="10" y="40" width="160" height="80" rx="12" class="box"/><text x="90" y="74" text-anchor="middle" class="t-l">🎤 말하기</text><text x="90" y="98" text-anchor="middle" class="t-s">"보리야 힘내 줘"</text>
       <rect x="215" y="40" width="190" height="80" rx="12" class="g"/><text x="310" y="74" text-anchor="middle" class="t-l">STT</text><text x="310" y="98" text-anchor="middle" class="t-s">Whisper small · OpenVINO</text>
       <rect x="450" y="40" width="190" height="80" rx="12" class="v"/><text x="545" y="74" text-anchor="middle" class="t-l">의도 · 대사</text><text x="545" y="98" text-anchor="middle" class="t-s">LLM → resume / chat …</text>
-      <rect x="685" y="40" width="140" height="80" rx="12" class="b"/><text x="755" y="74" text-anchor="middle" class="t-l">TTS</text><text x="755" y="98" text-anchor="middle" class="t-s">Gemini</text>
+      <rect x="685" y="40" width="140" height="80" rx="12" class="b"/><text x="755" y="74" text-anchor="middle" class="t-l">TTS</text><text x="755" y="98" text-anchor="middle" class="t-s">Gemini · Heami</text>
       <rect x="870" y="40" width="120" height="80" rx="12" class="a"/><text x="930" y="74" text-anchor="middle" class="t-l">동작</text><text x="930" y="98" text-anchor="middle" class="t-s">재개 · 옮기기</text>
       <path d="M170 80H210" class="arrow" marker-end="url(#ah)"/><path d="M405 80H445" class="arrow" marker-end="url(#ah)"/><path d="M640 80H680" class="arrow" marker-end="url(#ah)"/><path d="M825 80H865" class="arrow" marker-end="url(#ah)"/>
       <text x="310" y="150" text-anchor="middle" class="t-s t-mut">CPU 1.2~1.8초 / 문장</text>
@@ -364,6 +364,7 @@ th{background:var(--box)}
         <tr><th>상태</th><th>허용 의도</th><th>예</th></tr>
         <tr><td>대기</td><td>작업 시작 · 잡담 · 도리도리</td><td>"오란다 옮겨줘"</td></tr>
         <tr><td>거부 중</td><td>재개 · 잡담</td><td>"조금만 더 힘내 줘"</td></tr>
+        <tr><td>두 번 놓친 뒤</td><td>재개 · 잡담</td><td>"이어서 해줘"</td></tr>
         <tr><td>작업 중</td><td>잡담</td><td>대답만, 작업엔 영향 없음</td></tr>
       </table>
     </div>
@@ -386,7 +387,7 @@ th{background:var(--box)}
     <div class="stat"><b style="color:var(--green)">성공</b><span>오란다 1회 · 놓기 감지 · 쥠 성공 · 22.7초</span></div>
     <div class="stat"><b>3 / 3</b><span>OpenCV 개수 (볼 · 초코송이 섞여도) · 17ms</span></div>
     <div class="stat"><b>0.14~0.23초</b><span>ACT 추론 1회 (CPU, 100스텝 분량)</span></div>
-    <div class="stat"><b>495</b><span>자동 테스트 통과</span></div>
+    <div class="stat"><b>499</b><span>자동 테스트 통과</span></div>
   </div>
   <div class="body" style="margin-top:.8em">
     <div class="col" style="flex:1.2">
@@ -410,7 +411,8 @@ th{background:var(--box)}
           <li>Windows 카메라 목록 오류 → 보정 코드</li>
           <li>카메라 3대 동시 열기 실패 → USB 포트 분산</li>
           <li>개수가 2↔3으로 흔들림 → 색 화소 마스크 + 5장 중앙값</li>
-          <li>성공인데 실패로 판정 → 그리퍼 놓기도 성공 근거로</li>
+          <li>성공인데 실패로 판정 → 놓은 뒤 0.7초 후 다시 세어 확인</li>
+          <li>두 번 놓치면 → 투덜대고 도리도리, "이어서 해줘"로 재개</li>
           <li>도리도리 모델이 안 흔듦 → 코드 도리도리</li>
         </ul>
       </div>

@@ -56,7 +56,7 @@ decision:
   refuse: half       # half(기본) | fixed
   safe_max: 3        # fixed: 이하면 무조건 일함
   force_refuse: 6    # fixed: 이상이면 무조건 거부
-  max_retry: 2       # 옮기기 실패 시 재시도 횟수
+  max_retry: 1       # 옮기기 실패 시 재시도 횟수 (1 = 두 번 연속 놓치면 투덜대고 도리도리)
 ```
 
 ## 3. 성공 판정
@@ -70,7 +70,7 @@ B → A 순서로 구현한다 (설계 문서 6.0절).
 | 남은 개수 | 시작 개수 − 성공 수 | counter 결과 |
 
 - 성공 → `count += 1`
-- 실패 → 실패 멘트 후 재시도 (최대 `max_retry`회) → 그래도 실패하면 `phase = waiting_operator`로 진행자 재개 대기
+- 실패 → 실패 멘트 후 재시도 (최대 `max_retry`회, 지금 1) → 그래도 실패하면(두 번 연속 놓침) 투덜대는 대사(`give_up`) → 소리가 시작되면 도리도리 1회 → `phase = waiting_operator`로 진행자 재개 대기 ("이어서 해줘"·🎤·재개 버튼·`r`). 이 도리도리는 횟수·피로도·작업당 거부(`refused`)에 넣지 않고, 비상정지가 오면 도중에 그만둔다. 재개하면 같은 과자를 다시 시도하고 count는 그대로다.
 - 실패는 count에 넣지 않는다.
 - A에서 counter가 전부 실패한 사이클은 그 사이클만 B로 판정한다.
 - 개수는 한 번에 `vision.frames`(기본 5)개 프레임을 `vision.frame_gap_s`(0.1초) 간격으로 읽어 **중앙값**으로 낸다 (2↔3 깜빡임, 손이 보이는 한 프레임 제거).
@@ -135,6 +135,7 @@ B → A 순서로 구현한다 (설계 문서 6.0절).
 | dori_dori | "싫어요! 힘들어요!", "오늘은 여기까지예요…" |
 | done | "다 옮겼어요! 칭찬해 주세요.", "{target} 정리 완료!" |
 | 실패 재시도 | "어라, 놓쳤네요. 다시 해볼게요." |
+| 연속 실패 (give_up, 도리도리 전) | "으아, 또 놓쳤잖아요! 손이 미끄러워서 못 하겠어요!", "두 번이나 놓쳤어요… 안 할래요, 좀 도와줘요!" |
 | 재개 (r 키 · 달래기) | "알겠어요… 조금만 더 할게요." |
 | 잡담 (chat fallback) | "저는 과자 옮기는 로봇이에요. '과자 옮겨줘'라고 해 주세요!" |
 | 일하는 중 잡담 | "지금 일하는 중이에요! 이따 얘기해요." |
@@ -147,8 +148,9 @@ B → A 순서로 구현한다 (설계 문서 6.0절).
 |---|---|
 | IDLE | `start_task`, `chat`, `dori_dori` |
 | DONE | `start_task`, `chat` |
-| WORKING / ESTOP / TESTING | `chat` |
+| WORKING (대기 아님) / ESTOP / TESTING | `chat` |
 | REFUSING | `resume`, `chat` (M5부터. 그 전에는 `chat`만) |
+| WORKING + `phase = waiting_operator` (두 번 놓친 뒤 대기) | `resume`, `chat` |
 
 출력 스키마:
 
@@ -159,7 +161,7 @@ B → A 순서로 구현한다 (설계 문서 6.0절).
 - `n`: 작업 지시에 개수가 있으면 숫자, 없으면 null. B단계의 시작 개수로 쓴다.
 - 검증: JSON 실패 / 허용 외 intent → 키워드 규칙
   - start_task: 옮겨, 집어, 시작, 일해
-  - resume: 조금만, 부탁, 힘내, 한 번만
+  - resume: 조금만, 부탁, 힘내, 한 번만, 이어서, 계속, 재개
   - dori_dori (IDLE만): 도리도리, 고개 저어, 고개를 저어
   - 우선순위: start_task가 dori_dori보다 앞이다 ("도리도리 하지 말고 옮겨줘" → start_task. 사용자 결정)
   - 그 외: chat

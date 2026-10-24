@@ -47,9 +47,12 @@ flowchart TD
     HOME -->|"성공 판정 → count += 1"| CTRL
     S2 --> WAIT["재개 대기<br/>r · UI 버튼 · 달래기"]
     WAIT -->|"count = 0"| CTRL
+    HOME -->|"두 번 연속 놓침"| GIVE["투덜 대사 → 도리도리 1회<br/>진행자 확인 대기"]
+    GIVE -->|"이어서 해줘 · 재개 (count 그대로)"| CTRL
 ```
 
 - 점선: A단계(개수 세기, 지금은 OpenCV). UI 토글로 끄면 B단계만으로도 전체 흐름이 돈다.
+- 개수는 한 번에 5프레임을 읽어 중앙값을 쓴다. 놓았는데 줄지 않았으면 0.7초 뒤 한 번 더 센다 (상세는 `DECISION_LOGIC.md` 3장).
 - 과자를 찾아 집는 일은 ACT가 영상만 보고 한다. 인식 계층은 **언제 끝낼지**와 **성공했는지**만 판정한다.
 - LLM은 로봇을 직접 움직이지 않고, **허용된 값 하나와 대사**만 출력한다.
 - `oranda_pickup` ACT는 **놓기까지만** 한다. 홈 복귀는 학습하지 않고 코드가 저장된 자세로 강제한다.
@@ -119,7 +122,7 @@ stateDiagram-v2
     TESTING --> IDLE: 1회 끝
     TESTING --> ESTOP: space · UI 비상정지
     IDLE --> WORKING: start_task (채팅 · 음성 · s 키)
-    WORKING --> WORKING: 옮기기 성공 (count + 1) / 실패 재시도 (최대 2회)
+    WORKING --> WORKING: 옮기기 성공 (count + 1) / 실패 재시도 (1회)
     WORKING --> REFUSING: 거부 결정 (dori_dori 실행)
     REFUSING --> WORKING: r 키 · UI 재개 · 달래기 (count = 0)
     WORKING --> DONE: 남은 0개
@@ -130,7 +133,7 @@ stateDiagram-v2
 ```
 
 - 거부(REFUSING)는 `decision.refuse: half`에서 전체의 절반(올림)을 옮긴 뒤 작업당 한 번이다 (`fixed`는 옛 고정 임계값 3·6). 상세는 `DECISION_LOGIC.md`.
-- 재시도를 넘겨도 실패하면 WORKING 상태에서 `phase = waiting_operator`로 재개 명령을 기다린다.
+- 재시도를 넘겨도 실패하면(두 번 연속 놓침) 투덜대는 대사 → 도리도리 1회 뒤 WORKING 상태에서 `phase = waiting_operator`로 재개 명령을 기다린다. 채팅·🎤 "이어서 해줘", 재개 버튼, `r` 키로 다시 시도하고 count는 그대로다. 이 도리도리는 거부(REFUSING)가 아니다.
 
 ## 4. 모듈 구조
 
@@ -182,4 +185,4 @@ flowchart LR
 | 판단·대사·채팅 의도 | instruct LLM | **API** (OpenRouter / NVIDIA / 유료) → 선택적으로 로컬 OpenVINO → 규칙 | 필수 |
 | 개수 세기 (A) | OpenCV(현재) / YOLO-World(OpenVINO) / VLM | 로컬 | M3 |
 | STT | Whisper | 로컬 OpenVINO 또는 API | M6 |
-| TTS | 한국어 TTS | 로컬 | 선택 |
+| TTS | Gemini `gemini-2.5-flash-preview-tts` → 실패하면 Windows Microsoft Heami (SAPI) | API → 로컬 예비 | 선택 |

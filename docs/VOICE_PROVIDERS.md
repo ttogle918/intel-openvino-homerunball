@@ -1,6 +1,6 @@
 # 음성 인식(STT) · 음성 합성(TTS) 선택 기록
 
-2026-10-22 기준. 무엇을 골랐고, 어떤 후보를 검토했으며, 왜 그렇게 정했는지 적는다.
+2026-10-22 기준 (2026-10-24 Windows 예비 TTS 추가). 무엇을 골랐고, 어떤 후보를 검토했으며, 왜 그렇게 정했는지 적는다.
 설정은 `config.yaml`의 `stt.chain`, `voice` 절에 있고, 바꿀 때 코드 수정은 필요 없다.
 
 ## 결론
@@ -8,7 +8,7 @@
 | 역할 | 선택 | 실행 위치 | 예비 |
 |---|---|---|---|
 | STT | **OpenVINO Whisper small (int8)**, `openvino-genai` 2026.4.1, CPU | 노트북 안 (온디바이스) | Gemini `gemini-3.5-flash-lite` (오디오 입력 채팅) |
-| TTS | **Gemini `gemini-2.5-flash-preview-tts`**, 목소리 `Leda`, 무료 등급 키 | Google API | 없음 (실패하면 소리 없이 진행, 채팅 글은 그대로) |
+| TTS | **Gemini `gemini-2.5-flash-preview-tts`**, 목소리 `Leda`, 무료 등급 키 | Google API | **Windows Microsoft Heami** (SAPI, PowerShell로 합성 · 노트북 안). Ubuntu는 없음 (소리 없이 진행, 채팅 글은 그대로) |
 | 대화 LLM (참고) | Claude `claude-opus-5-5` (effort low) → NVIDIA → 규칙 | API | 규칙 대사 |
 
 음성은 UI의 🎤를 누르고 말하는 방식이다 (항상 듣지 않는다 — 발표장 소음, 모터 소리, 로봇 자신의 TTS를 다시 알아듣는 문제 때문. 의논 기록 10번).
@@ -59,7 +59,8 @@
 | **Gemini `gemini-2.5-flash-preview-tts`, 무료 키** | 동작, 왕복 검사 통과 | **채택** (아래 이유) |
 | Gemini `gemini-3.8-flash-tts` / `-flash-lite-tts` | 동작하지만 **말투 지시문("귀엽고 금방 지치는 … 말해")까지 소리 내어 읽음**. 4.6~5.0초 / 3.0~3.8초 | 지시문을 다른 방식으로 넘겨야 하고 빠르지도 않다 |
 | NVIDIA 음성 NIM (Magpie 등) | Riva gRPC | 새 어댑터 필요, 한국어 TTS 확인 못 함 |
-| pyttsx3 (OS TTS) | 미설치 | Windows는 한국어 Heami 음성이 괜찮지만 시연 노트북(Ubuntu)은 espeak-ng라 기계음 |
+| pyttsx3 (OS TTS) | 미설치 | Windows는 한국어 Heami 음성이 괜찮지만 Ubuntu는 espeak-ng라 기계음 |
+| **Windows SAPI Heami (PowerShell System.Speech)** | 동작 (설치 없음, 오프라인) | **예비로 채택** (2026-10-24). 시연 노트북이 Windows로 정해져서. pyttsx3 없이 PowerShell로 WAV를 만든다 |
 | edge-tts (Edge 브라우저 읽어주기) | 동작 (한국어 SunHi/InJoon/Hyunsu, 1문장 1.1초) | 키 없이 무료지만 **비공식 엔드포인트**라 언제든 막힐 수 있음. mp3라 재생 코드 추가 필요 |
 | Supertonic 3 (Supertone, 99M, 31개 언어, ONNX) | 조사만 | 한국어 지원, OpenVINO로 온디바이스 가능 → **온디바이스 점수를 노릴 때의 다음 후보**. 예제가 ONNX Runtime용이라 이식 작업, OpenRAIL-M 라이선스 |
 | MeloTTS-Korean | 조사만 | OpenVINO 변환 글은 영어·중국어만. 한국어 변환은 확인 안 됨, torch 필요 |
@@ -78,9 +79,16 @@
 
 ### 알고 쓰는 약점
 - **느리다:** 문장당 약 4초. 그래서 **대사 소리가 나기 시작하면 동작을 시작**하도록 맞춘다 (사이클마다 약 4초 늘어남. TTS 실패·`voice.sync_timeout_s` 초과면 기다리지 않고 동작). 소리보다 동작이 먼저 끝나 "싫어!"가 도리도리 뒤에 들리는 문제를 막는다.
-- **무료 등급 하루 한도를 모른다:** 공식 문서에서 숫자를 찾지 못했다. 리허설을 많이 하는 날은 AI Studio의 Rate limits 화면을 확인한다. 한도에 걸리면 소리만 안 나고 시연은 계속된다 (채팅 글은 나온다).
-- **인터넷이 필요하다.** 끊기면 소리만 빠진다.
-- 예비 TTS는 두지 않기로 했다 (사용자 결정). 필요해지면 후보는 edge-tts(빠르게) 또는 Supertonic 3(온디바이스).
+- **무료 등급 하루 한도를 모른다:** 공식 문서에서 숫자를 찾지 못했다. 리허설을 많이 하는 날은 AI Studio의 Rate limits 화면을 확인한다. 2026-10-24 실기에서 하루 한도를 넘겨 429가 났다 → 아래 예비 음성이 대신 말했다.
+- **인터넷이 필요하다.** 끊기면 예비 음성으로 말한다.
+- 처음에는 예비 TTS를 두지 않기로 했다가, 시연 노트북이 Windows로 정해진 뒤 사용자 요청으로 **Heami 예비**를 넣었다 (`6238d58`).
+
+### 예비 음성 (Windows Heami)
+- `voice.fallback: windows`, `fallback_voice: Microsoft Heami Desktop`, `fallback_rate: 1` (-10~10).
+- Gemini가 실패하면 그 문장을 Heami로 합성한다 (PowerShell + `System.Speech`, 환경 변수로 문장을 넘겨 따옴표 문제를 피한다).
+- 한도 오류(402/403/429) 뒤 `fallback_cooldown_s`(600초), 시간 초과·연결 오류 뒤 `fallback_error_cooldown_s`(60초) 동안은 Gemini를 건너뛰고 바로 Heami로 말한다 (문장마다 timeout을 기다리지 않게).
+- 말투 지시(instructions)는 쓰지 않는다. 캐릭터 느낌은 Gemini보다 약하다.
+- 그 밖의 후보는 edge-tts(빠르게) 또는 Supertonic 3(온디바이스).
 
 ---
 
