@@ -14,7 +14,7 @@ flowchart TD
 
     subgraph P["인식 계층"]
         CAM["카메라 3대<br/>tower · side · follow"]
-        CNT_A["A: counter 체인<br/>OpenCV (YOLO-World · VLM 자리)"]
+        CNT_A["A: counter 체인<br/>OpenCV"]
         GRIP["B: 시작 개수 +<br/>그리퍼 쥠 판정"]
     end
 
@@ -182,7 +182,7 @@ flowchart LR
 | 구성요소 | 모델 | 실행 위치 | 단계 |
 |---|---|---|---|
 | ACT 2개 | physical-ai-studio 학습 → OpenVINO 결과물 | **로컬** CPU / GPU / NPU (시연 노트북은 CPU: GPU 컴파일이 정책마다 55~65초) | 필수 |
-| 판단·대사·채팅 의도 | instruct LLM | **API** (OpenRouter / NVIDIA / 유료) → 선택적으로 로컬 OpenVINO → 규칙 | 필수 |
-| 개수 세기 (A) | OpenCV(현재) / YOLO-World(OpenVINO) / VLM | 로컬 | M3 |
+| 판단·대사·채팅 의도 | instruct LLM | **API** (Claude → NVIDIA) → 선택적으로 로컬 OpenVINO → 규칙 | 필수 |
+| 개수 세기 (A) | OpenCV 규칙 (YOLO·VLM은 계획만 하고 쓰지 않음) | 로컬 | M3 |
 | STT | Whisper | 로컬 OpenVINO 또는 API | M6 |
 | TTS | Gemini `gemini-2.5-flash-preview-tts` → 실패하면 Windows Microsoft Heami (SAPI) | API → 로컬 예비 | 선택 |
