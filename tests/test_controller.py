@@ -971,7 +971,7 @@ def test_stale_count_does_not_overwrite_new_session_remaining(cfg):
             self.ctrl._estop()
             self.ctrl._restart()
             self.ctrl._start_task(5)
-            return Count(0, "yolo")
+            return Count(0, "opencv")
 
     vis = Vis()
     c, _ = make(cfg, vision=vis)
@@ -1524,16 +1524,16 @@ def test_vision_options_and_set_method(cfg):
     c.set_vision_method("off")
     assert c.snapshot()["vision_choice"] == "off" and ev[-1]["vision_choice"] == "off"
     with pytest.raises(ValueError):
-        c.set_vision_method("vlm")
-    c2, _ = make(cfg, vision=FakeVision(names=["yolo", "opencv"]))
-    assert c2.vision_options() == ["auto", "yolo", "opencv", "off"] and c2.snapshot()["vision_choice"] == "auto"
+        c.set_vision_method("nope")
+    c2, _ = make(cfg, vision=FakeVision(names=["fake", "opencv"]))
+    assert c2.vision_options() == ["auto", "fake", "opencv", "off"] and c2.snapshot()["vision_choice"] == "auto"
     c3, _ = make(cfg)
     with pytest.raises(ValueError):
         c3.set_vision_method("off")
 
 
 def test_vision_off_uses_b_stage_and_named_choice_passes_only(cfg):
-    v = FakeVision(Count(3, "opencv"), names=["yolo", "opencv"])
+    v = FakeVision(Count(3, "opencv"), names=["fake", "opencv"])
     c, _ = make(cfg, FakeSkills(grasps=[True]), vision=v)
     c.set_vision_method("off")
     c.chat("2개 옮겨줘")

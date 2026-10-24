@@ -26,7 +26,7 @@ class FakeWhisper:
 @pytest.fixture
 def fake_genai(monkeypatch):
     FakeWhisper.created, FakeWhisper.generated = [], []
-    mod = types.SimpleNamespace(WhisperPipeline=FakeWhisper, LLMPipeline=FakeWhisper, VLMPipeline=FakeWhisper)
+    mod = types.SimpleNamespace(WhisperPipeline=FakeWhisper, LLMPipeline=FakeWhisper)
     monkeypatch.setitem(sys.modules, "openvino_genai", mod)
     return mod
 

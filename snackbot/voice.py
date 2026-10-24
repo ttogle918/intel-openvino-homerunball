@@ -69,16 +69,15 @@ QUOTA_STATUS = (402, 403, 429)   # 크레딧·권한·한도: 잠시 예비 음�
 
 
 class Voice:
-    """options = config의 voice 항목. engine: openai/gemini면 providers[options.provider]와 env의 키를 쓴다.
+    """options = config의 voice 항목. engine: gemini면 providers[options.provider]와 env의 키를 쓴다.
     options.fallback: windows 이면 API 합성이 실패할 때 Windows 내장 음성(fallback_voice)으로 대신 말한다."""
 
     def __init__(self, engine="none", options=None, providers=None, env=None, transport=None):
         self.options = dict(options or {})
         self._http = None
-        self.engine_name = engine
         self.fallback = self.options.get("fallback") if sys.platform == "win32" else None
         self._primary_off_until = 0.0   # 한도 오류 뒤 이 시각까지는 API를 건너뛰고 예비 음성
-        if engine in ("openai", "gemini"):
+        if engine == "gemini":
             try:
                 self._http = self._open_http(providers, env, transport)
             except Exception as e:
@@ -92,7 +91,6 @@ class Voice:
         self._q = queue.Queue()
         self._closed = False
         self._close_lock = threading.Lock()
-        self._tts = None
         self._pq = queue.Queue(maxsize=2)  # 합성이 끝난 (wav, text, event): 재생 스레드가 가져간다
         self._join_timeout_s = 2  # close()가 두 스레드를 기다리는 전체 상한 (나눠 쓰지 않고 하나의 마감 시간)
         self._abandon = threading.Event()  # close()의 마감 시간이 지난 뒤: 남은 문장은 재생하지 않고 Event만 set 한다
@@ -111,25 +109,13 @@ class Voice:
         if not key:
             raise ValueError(f"{pc.get('api_key_env')} 없음")
         timeout = float(o.get("timeout_s", 15))
-        if self.engine_name == "gemini":  # 네이티브 API: 키는 헤더로만 보낸다
-            base = pc.get("native_base_url") or pc["base_url"].rstrip("/").removesuffix("/openai")
-            return httpx.Client(base_url=base.rstrip("/"), headers={"x-goog-api-key": key},
-                                timeout=timeout, transport=transport)
-        return httpx.Client(base_url=pc["base_url"].rstrip("/"), headers={"Authorization": f"Bearer {key}"},
+        # 네이티브 API: 키는 헤더로만 보낸다
+        base = pc.get("native_base_url") or pc["base_url"].rstrip("/").removesuffix("/openai")
+        return httpx.Client(base_url=base.rstrip("/"), headers={"x-goog-api-key": key},
                             timeout=timeout, transport=transport)
 
     def synthesize(self, text):
-        if self.engine == "gemini":
-            return self._synthesize_gemini(text)
-        body = {"model": self.options["model"], "voice": self.options["voice"],
-                "input": text, "response_format": "wav"}
-        if self.options.get("instructions"):
-            body["instructions"] = self.options["instructions"]
-        r = self._http.post("/audio/speech", json=body)
-        r.raise_for_status()
-        return r.content
-
-    def _synthesize_gemini(self, text):
+        """Gemini TTS → WAV bytes."""
         o = self.options
         prompt = f"{o['instructions']} {text}" if o.get("instructions") else text
         body = {"contents": [{"parts": [{"text": prompt}]}],
@@ -255,7 +241,7 @@ class Voice:
             if epoch != self._epoch:  # 비상정지 등으로 비워진 뒤에 손에 든 문장
                 started.set()
                 continue
-            if self.engine in ("openai", "gemini", "windows"):
+            if self.engine in ("gemini", "windows"):
                 try:
                     wav = self._synthesize_any(text)
                 except Exception:
@@ -305,19 +291,7 @@ class Voice:
         if self.engine == "log":
             go()
             print(f"[TTS] {text}", flush=True)
-        elif self.engine == "pyttsx3":
-            if self._tts is None:
-                import pyttsx3
-                self._tts = pyttsx3.init()
-            try:
-                go()
-                self._tts.say(text)
-                self._tts.runAndWait()
-            except Exception:
-                # 다음 대사에서 엔진을 다시 만든다 (로그는 호출한 쪽이 한 번만 남긴다)
-                self._tts = None
-                raise
-        elif self.engine in ("openai", "gemini", "windows"):
+        elif self.engine in ("gemini", "windows"):
             go()
             play_wav(wav)
         elif self.engine != "none":
