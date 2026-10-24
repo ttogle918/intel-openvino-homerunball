@@ -11,7 +11,7 @@ decision:
                             # fixed: 아래 고정 임계값 (safe_max 이하 일함, force_refuse 이상 거부, 사이는 LLM)
   safe_max: 3               # fixed 모드: 이하면 무조건 일함
   force_refuse: 6           # fixed 모드: 이상이면 무조건 거부
-  max_retry: 2              # 옮기기 실패 시 재시도 횟수
+  max_retry: 1              # 옮기기 실패 시 재시도 횟수 (1 = 두 번 연속 놓치면 투덜대고 도리도리 → 진행자 확인 대기)
 
 providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 역할의 chain에서 고른다.
   openrouter: {type: openai_compat, base_url: "https://openrouter.ai/api/v1", api_key_env: OPENROUTER_API_KEY}

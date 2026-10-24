@@ -8,6 +8,7 @@
 - 기간: 2일 해커톤
 - 시연: 섞인 트레이에서 목표 과자(지금은 **오란다**)만 빈 트레이로 옮긴다. 채팅·음성으로 작업을 시키고,
   전체의 절반(올림)을 옮기면 작업당 한 번 지쳐서 도리도리로 거부하며(`decision.refuse: half`, 옛 고정 임계값은 `fixed`), 달래면(채팅·음성·r 키) 다시 일한다.
+  같은 과자를 두 번 연속 놓치면 투덜대고 도리도리 1회 뒤 진행자를 기다린다(`decision.max_retry: 1`, "이어서 해줘"·재개 버튼으로 다시).
 
 ## 3계층 구조
 | 계층 | 담당 | 구현 |
@@ -20,7 +21,7 @@
 1. **횟수는 코드가 센다.** LLM은 프롬프트로 받은 숫자를 해석만 한다.
 2. **ACT 정책 하나 = 동작 하나.** ACT는 기억이 없으므로 순서·횟수는 controller가 관리한다.
 3. **LLM 출력은 허용된 값만.** skill은 `oranda_pickup | dori_dori | done`, 채팅 intent는 상태별 허용 목록
-   (`start_task | chat | resume | dori_dori`) 안에서만. 벗어나면 규칙으로 결정한다. `dori_dori`(도리도리 1회)는 대기 상태에서만.
+   (`start_task | chat | resume | dori_dori`) 안에서만. 벗어나면 규칙으로 결정한다. `dori_dori`(도리도리 1회)는 대기 상태에서만, `resume`은 거부 중·두 번 놓친 뒤 대기(`waiting_operator`)에서만.
 4. **STT는 UI 🎤 누르고 말하기.** 인식된 문장은 채팅과 같은 경로(`controller.chat`)로 들어간다.
 5. **파인튜닝 없음.** 개수 세기는 제로샷(YOLO-World 텍스트 클래스, VLM)과 OpenCV. 외부에서 받은 OpenVINO 검출 모델은 같은 자리에 꽂을 수 있다.
 6. **physicalai / LeRobot 코어 수정 금지.** 설치된 버전의 API를 확인하고 그대로 사용한다.
@@ -56,13 +57,12 @@
 │   ├── brain.py        # decide() 작업 판단, chat() 의도·대사
 │   ├── vision.py       # counter 체인 (OpenCV v2 사용 중, YOLO-World/VLM 자리)
 │   ├── stt.py          # STT 체인 (OpenVINO Whisper 로컬 → Gemini), 워밍업, 단독 확인 CLI
-│   ├── voice.py        # TTS (Gemini), 합성·재생 두 스레드, 대사 소리 시작 알림
+│   ├── voice.py        # TTS (Gemini → Windows Heami 예비), 합성·재생 두 스레드, 대사 소리 시작 알림
 │   ├── skills.py       # DrySkills (dry-run), RunResult
 │   ├── motion.py       # 그리퍼 감시, 보간 이동, 정지 신호 (physicalai 없이 테스트)
 │   ├── twin.py         # 3D 트윈: 관절 normalized→라디안, 재생 에피소드(episode.json) 읽기
 │   ├── recorder.py     # 실행 기록: 정책 phase 관절값·프레임 → logs/runs/ (백그라운드 저장)
 │   ├── wincam.py       # Windows 카메라 목록 보정 (pynokhwa JSON 역슬래시 버그), 카메라 열기 전 호출
-│   ├── wincam.py       # Windows 카메라 목록 보정 (pynokhwa JSON 버그)
 │   └── robot.py        # 실제 로봇: RobotRuntime 하나 + 동작 출처 교체, 비상정지 세대, warmup
 ├── frontend/           # Claude Design 결과물 (index.html, app.js, style.css) + twin.js(3D)
 │   ├── vendor/         # three@0.186.1, urdf-loader@0.13.1 고정 파일 (import map)
@@ -113,7 +113,7 @@ cp .env.example .env                                      # 쓸 API 키만 채�
 - 의존 방향: `server → controller → (brain, vision, skills, voice)`. controller는 FastAPI를 모른다.
 - 로봇 포트는 한 프로그램만 잡을 수 있다. 실행 전 physical-ai-studio 세션을 닫는다.
 - 시연 노트북(Windows) 장치: 팔로워 `COM5`, 리더 `COM6`, 카메라 1 = follow(손목) · 2 = tower · 3 = side (0 = 내장, 쓰지 않음). 카메라는 USB 포트를 나눠 꽂는다 (NV12 비압축이라 한 경로에 두 대면 시간 초과). 정책은 CPU (`skills.device`).
-- 개수 세기 ROI는 `python -m snackbot.vision <사진> --blobs`로 맞춘다. 열린 문제: 제어 루프 11~13 Hz(목표 30), 모델 도리도리 동작 안 함 → 상세는 `docs/PROGRESS_REPORT.html`.
+- 개수 세기 ROI는 `python -m snackbot.vision <사진> --blobs`로 맞춘다. 열린 문제: 제어 루프 11~13 Hz(목표 30, 화면을 여러 창에서 열면 4 Hz), pickup 덜 학습(5 epoch), 모델 도리도리 과적합(데이터 부족, 시연은 코드 도리도리), VLM 개수 세기는 나중 → 상세는 `docs/PROGRESS_REPORT.html`.
 
 ## 진행자 키 (UI 버튼과 같은 동작)
 | 키 | 동작 |

@@ -93,11 +93,12 @@ stateDiagram-v2
 |---|---|---|
 | IDLE / DONE | `start_task`, `chat` | start_task → 시작 개수 정하고 사이클 시작 (6.0절) |
 | WORKING | `chat` | 대답만, 작업 영향 없음 |
+| WORKING + `phase=waiting_operator` | `resume`, `chat` | resume → 같은 과자 다시 시도, count 불변 (2026-10-25 추가: "이어서 해줘") |
 | REFUSING | `resume`, `chat` (M5부터 resume) | resume → count = 0, WORKING |
 | ESTOP | `chat` | 대답만. 해제는 restart 명령으로만 |
 
 - `phase` (UI 표시용, WORKING 내부 단계): `idle | counting | thinking | speaking | acting | returning | waiting_operator` (speaking: 대사 소리가 나기 시작할 때까지 동작 대기, 최대 `voice.sync_timeout_s`)
-- 옮기기 실패가 `max_retry`를 넘으면 WORKING 유지 + `phase=waiting_operator`. 재개 명령으로 다시 시도. count 불변.
+- 옮기기 실패가 `max_retry`(지금 1)를 넘으면(두 번 연속 놓침) 투덜대는 대사 → 도리도리 1회 → WORKING 유지 + `phase=waiting_operator`. 재개 명령·채팅 resume으로 다시 시도. count 불변. 이 도리도리는 거부·피로도에 넣지 않는다.
 - 동시성: controller의 상태 변경은 락 하나로 보호. brain의 LLM 호출(decide/chat)은 provider 내부 락으로 직렬화.
 
 ## 5. 모듈 인터페이스
@@ -285,9 +286,9 @@ target:
 |---|---|
 | counter 실패·파싱 실패 | 체인의 다음 counter. 전부 실패 → 그 사이클은 B 판정(시작 개수 − 성공 수, `grasped`) |
 | LLM decide 실패 / 허용 외 값 | 다음 provider → 전부 실패 시 가드 규칙 + 준비된 대사 |
-| LLM chat 실패 | 키워드 규칙: start(옮겨, 집어, 시작, 일해), resume(조금만, 부탁, 힘내, 한 번만) + 준비된 대사 |
+| LLM chat 실패 | 키워드 규칙: start(옮겨, 집어, 시작, 일해), resume(조금만, 부탁, 힘내, 한 번만, 이어서, 계속, 재개) + 준비된 대사 |
 | API 키 없음 | 해당 provider를 체인에서 건너뛰고 시작 시 경고 |
-| 옮기기 재시도 초과 | `phase=waiting_operator`, 재개 명령 대기, count 불변 |
+| 옮기기 재시도 초과 | 투덜 대사 + 도리도리 1회 → `phase=waiting_operator`, 재개 명령·"이어서 해줘" 대기, count 불변 |
 | 그리퍼 정지 미감지 | `max_time_s`에서 정지 → 복귀, `stop_reason=timeout` 기록. 성공 여부는 개수로 판정 |
 | STT 실패 | UI에 system 메시지 "못 알아들었어요", 상태 영향 없음 |
 | TTS 실패 | 무시 (대사는 UI에 이미 표시) |

@@ -123,7 +123,7 @@ th{background:var(--box)}
     <div class="card col"><b>절대 규칙</b><span class="small">횟수는 <b>코드</b>가 센다 · LLM은 허용된 값(옮기기 / 도리도리 / 끝)과 대사만 · 비상정지는 토크 유지</span></div>
     <div class="card col"><b>거부 시점</b><span class="small">전체 3·4개 → 2개 옮긴 뒤, 5·6개 → 3개 옮긴 뒤 (작업당 한 번, 1~2개면 거부 없음)</span></div>
   </div>
-  <div class="foot">2 / 10</div>
+  <div class="foot">2 / 11</div>
 </section>
 
 <!-- 3. 시스템 구조 -->
@@ -140,7 +140,7 @@ th{background:var(--box)}
       <rect x="350" y="20" width="300" height="290" rx="14" class="b"/><text x="500" y="52" text-anchor="middle" class="t-l">판단</text>
       <rect x="370" y="70" width="260" height="60" rx="10" class="box"/><text x="500" y="96" text-anchor="middle" class="t-m">controller (상태 머신)</text><text x="500" y="118" text-anchor="middle" class="t-s t-mut">개수 · 거부 시점 · 재시도</text>
       <rect x="370" y="145" width="260" height="60" rx="10" class="box"/><text x="500" y="171" text-anchor="middle" class="t-m">코드 가드 → LLM 대사</text><text x="500" y="193" text-anchor="middle" class="t-s t-mut">Claude → NVIDIA → 규칙</text>
-      <rect x="370" y="220" width="260" height="60" rx="10" class="box"/><text x="500" y="246" text-anchor="middle" class="t-m">TTS · Gemini</text><text x="500" y="268" text-anchor="middle" class="t-s t-mut">말 시작과 동작 동기</text>
+      <rect x="370" y="220" width="260" height="60" rx="10" class="box"/><text x="500" y="246" text-anchor="middle" class="t-m">TTS · Gemini → Heami 예비</text><text x="500" y="268" text-anchor="middle" class="t-s t-mut">말 시작과 동작 동기</text>
 
       <rect x="690" y="20" width="300" height="290" rx="14" class="a"/><text x="840" y="52" text-anchor="middle" class="t-l">행동</text>
       <rect x="710" y="70" width="260" height="60" rx="10" class="box"/><text x="840" y="96" text-anchor="middle" class="t-m">ACT oranda_pickup</text><text x="840" y="118" text-anchor="middle" class="t-s t-mut">OpenVINO · physicalai 런타임</text>
@@ -149,7 +149,7 @@ th{background:var(--box)}
       <path d="M312 165H346" class="arrow" marker-end="url(#ah)"/><path d="M652 165H686" class="arrow" marker-end="url(#ah)"/>
     </g>
   </svg>
-  <div class="foot">3 / 10</div>
+  <div class="foot">3 / 11</div>
 </section>
 
 <!-- 4. 하드웨어 · 화면 -->
@@ -186,7 +186,7 @@ th{background:var(--box)}
       <div class="small">FastAPI + WebSocket · 화면은 서버 메시지로만 그린다</div>
     </div>
   </div>
-  <div class="foot">4 / 10</div>
+  <div class="foot">4 / 11</div>
 </section>
 
 <!-- 5. 인식 -->
@@ -211,7 +211,7 @@ th{background:var(--box)}
       <div class="card small">사진 5장을 0.1초 간격으로 세어 <b>중앙값</b> → 손·흔들림에 강하다.<br>옮기기 전후 개수가 줄면 성공, 안 줄어도 그리퍼가 쥐었다 놓았으면 성공.</div>
     </div>
   </div>
-  <div class="foot">5 / 10</div>
+  <div class="foot">5 / 11</div>
 </section>
 
 <!-- 6. 판단 -->
@@ -255,10 +255,53 @@ th{background:var(--box)}
       <div class="small">거부는 작업당 한 번 · 달래면(채팅 · 🎤 · r 키) 나머지는 끝까지</div>
     </div>
   </div>
-  <div class="foot">6 / 10</div>
+  <div class="foot">6 / 11</div>
 </section>
 
-<!-- 7. 행동 -->
+<!-- 7. 데이터셋과 학습 -->
+<section class="slide">
+  <div class="kicker">DATASET &amp; TRAINING</div><h2>데이터셋과 학습</h2>
+  <p class="sub">사람이 리더 팔로 보여 주면(텔레옵) 로봇이 따라 배운다 · physical-ai-studio에서 ACT 학습</p>
+  <div class="body">
+    <div class="col" style="flex:0.62">
+      <img class="photo" style="max-height:17em" src="img/act_training.jpg" alt="녹화 현장: 검은 매트 위 과자와 트레이, 로봇팔, 카메라 거치대 두 개, 노트북">
+      <div class="small">녹화 현장 · 위쪽 · 사이드 카메라 거치대</div>
+    </div>
+    <div class="col" style="flex:1.6">
+      <svg viewBox="0 0 640 70" role="img" aria-label="텔레옵 녹화에서 OpenVINO 내보내기까지 4단계">
+        <g class="t-m">
+          <rect x="0" y="5" width="140" height="60" rx="10" class="b"/><text x="70" y="31" text-anchor="middle" class="t-l">텔레옵 녹화</text><text x="70" y="52" text-anchor="middle" class="t-s">30fps 시범</text>
+          <rect x="166" y="5" width="140" height="60" rx="10" class="g"/><text x="236" y="31" text-anchor="middle" class="t-l">데이터셋</text><text x="236" y="52" text-anchor="middle" class="t-s">관절 6 + 카메라 3</text>
+          <rect x="332" y="5" width="140" height="60" rx="10" class="v"/><text x="402" y="31" text-anchor="middle" class="t-l">ACT 학습</text><text x="402" y="52" text-anchor="middle" class="t-s">Studio · ResNet18</text>
+          <rect x="498" y="5" width="140" height="60" rx="10" class="a"/><text x="568" y="31" text-anchor="middle" class="t-l">내보내기</text><text x="568" y="52" text-anchor="middle" class="t-s">OpenVINO IR</text>
+          <path d="M140 35H162" class="arrow" marker-end="url(#ah)"/><path d="M306 35H328" class="arrow" marker-end="url(#ah)"/><path d="M472 35H494" class="arrow" marker-end="url(#ah)"/>
+        </g>
+      </svg>
+      <div class="body" style="gap:2%">
+        <div class="col" style="flex:1.25">
+          <table style="font-size:.78em;white-space:nowrap">
+            <tr><th></th><th>오란다 집기</th><th>도리도리</th></tr>
+            <tr><td>데이터</td><td>31개 · 9,111프레임</td><td>약 1천 프레임*</td></tr>
+            <tr><td>학습</td><td>5 에포크 · 배치 8</td><td>100 에포크 · 배치 4</td></tr>
+            <tr><td>train loss</td><td>0.35</td><td>0.07</td></tr>
+            <tr><td>val loss</td><td>0.66 (계속 감소)</td><td>0.49 (최저 0.45)</td></tr>
+          </table>
+          <div class="small">* 학습 단계 수 × 배치로 추정</div>
+        </div>
+        <div class="col">
+          <img class="photo" style="max-height:none;width:100%" src="img/loss_pickup.png" alt="오란다 학습 손실과 검증 손실: 둘 다 끝까지 내려간다">
+          <div class="small">오란다: 학습 · 검증 손실</div>
+          <img class="photo" style="max-height:none;width:100%" src="img/loss_dori.png" alt="도리도리 학습 손실과 검증 손실">
+          <div class="small">도리도리: 학습 · 검증 손실</div>
+        </div>
+      </div>
+      <div class="card small"><b>데이터가 말해 준 것</b> · 오란다는 덜 학습(검증 손실이 아직 내려감) · 도리도리는 데이터 부족 · 과적합 → 실기에서 거의 안 흔듦</div>
+    </div>
+  </div>
+  <div class="foot">7 / 11</div>
+</section>
+
+<!-- 8. 행동 -->
 <section class="slide">
   <div class="kicker">ACTION</div><h2>행동: ACT 정책을 OpenVINO로</h2>
   <p class="sub">physical-ai-studio에서 녹화·학습 → OpenVINO로 내보내 노트북 CPU에서 추론</p>
@@ -291,14 +334,14 @@ th{background:var(--box)}
         <ul class="small"><li>관절 6개 + 카메라 3대(위쪽 · 사이드 · 손목), 384×384 레터박스</li><li>출력: 100스텝 관절 목표(약 3.3초 분량)</li></ul>
       </div>
       <div class="card"><b>도리도리</b>
-        <ul class="small"><li>학습한 도리도리 모델은 실기에서 몸통을 ±1만 움직임</li><li>→ 코드 도리도리(몸통 ±15, 2회)로 교체, 버튼 · 채팅 · 거부 모두 같은 동작</li></ul>
+        <ul class="small"><li>학습한 도리도리 모델은 실기에서 몸통을 ±1만 움직임</li><li>거부 · 채팅은 코드 도리도리(몸통 ±15, 2회), 버튼으로 모델도 시험</li></ul>
       </div>
     </div>
   </div>
-  <div class="foot">7 / 10</div>
+  <div class="foot">8 / 11</div>
 </section>
 
-<!-- 8. 대화 · 음성 -->
+<!-- 9. 대화 · 음성 -->
 <section class="slide">
   <div class="kicker">VOICE &amp; CHAT</div><h2>대화: 말로 시키고, 말로 달랜다</h2>
   <p class="sub">음성 인식은 노트북 안에서(OpenVINO), 대사 생성·음성 합성은 API</p>
@@ -307,7 +350,7 @@ th{background:var(--box)}
       <rect x="10" y="40" width="160" height="80" rx="12" class="box"/><text x="90" y="74" text-anchor="middle" class="t-l">🎤 말하기</text><text x="90" y="98" text-anchor="middle" class="t-s">"보리야 힘내 줘"</text>
       <rect x="215" y="40" width="190" height="80" rx="12" class="g"/><text x="310" y="74" text-anchor="middle" class="t-l">STT</text><text x="310" y="98" text-anchor="middle" class="t-s">Whisper small · OpenVINO</text>
       <rect x="450" y="40" width="190" height="80" rx="12" class="v"/><text x="545" y="74" text-anchor="middle" class="t-l">의도 · 대사</text><text x="545" y="98" text-anchor="middle" class="t-s">LLM → resume / chat …</text>
-      <rect x="685" y="40" width="140" height="80" rx="12" class="b"/><text x="755" y="74" text-anchor="middle" class="t-l">TTS</text><text x="755" y="98" text-anchor="middle" class="t-s">Gemini</text>
+      <rect x="685" y="40" width="140" height="80" rx="12" class="b"/><text x="755" y="74" text-anchor="middle" class="t-l">TTS</text><text x="755" y="98" text-anchor="middle" class="t-s">Gemini · Heami</text>
       <rect x="870" y="40" width="120" height="80" rx="12" class="a"/><text x="930" y="74" text-anchor="middle" class="t-l">동작</text><text x="930" y="98" text-anchor="middle" class="t-s">재개 · 옮기기</text>
       <path d="M170 80H210" class="arrow" marker-end="url(#ah)"/><path d="M405 80H445" class="arrow" marker-end="url(#ah)"/><path d="M640 80H680" class="arrow" marker-end="url(#ah)"/><path d="M825 80H865" class="arrow" marker-end="url(#ah)"/>
       <text x="310" y="150" text-anchor="middle" class="t-s t-mut">CPU 1.2~1.8초 / 문장</text>
@@ -321,6 +364,7 @@ th{background:var(--box)}
         <tr><th>상태</th><th>허용 의도</th><th>예</th></tr>
         <tr><td>대기</td><td>작업 시작 · 잡담 · 도리도리</td><td>"오란다 옮겨줘"</td></tr>
         <tr><td>거부 중</td><td>재개 · 잡담</td><td>"조금만 더 힘내 줘"</td></tr>
+        <tr><td>두 번 놓친 뒤</td><td>재개 · 잡담</td><td>"이어서 해줘"</td></tr>
         <tr><td>작업 중</td><td>잡담</td><td>대답만, 작업엔 영향 없음</td></tr>
       </table>
     </div>
@@ -332,10 +376,10 @@ th{background:var(--box)}
       </ul>
     </div>
   </div>
-  <div class="foot">8 / 10</div>
+  <div class="foot">9 / 11</div>
 </section>
 
-<!-- 9. 실기 결과 -->
+<!-- 10. 실기 결과 -->
 <section class="slide">
   <div class="kicker">RESULTS</div><h2>실기 결과 (2026-10-23)</h2>
   <p class="sub">노트북에 실제 팔·카메라를 연결해 확인한 숫자</p>
@@ -343,7 +387,7 @@ th{background:var(--box)}
     <div class="stat"><b style="color:var(--green)">성공</b><span>오란다 1회 · 놓기 감지 · 쥠 성공 · 22.7초</span></div>
     <div class="stat"><b>3 / 3</b><span>OpenCV 개수 (볼 · 초코송이 섞여도) · 17ms</span></div>
     <div class="stat"><b>0.14~0.23초</b><span>ACT 추론 1회 (CPU, 100스텝 분량)</span></div>
-    <div class="stat"><b>469</b><span>자동 테스트 통과</span></div>
+    <div class="stat"><b>499</b><span>자동 테스트 통과</span></div>
   </div>
   <div class="body" style="margin-top:.8em">
     <div class="col" style="flex:1.2">
@@ -367,16 +411,17 @@ th{background:var(--box)}
           <li>Windows 카메라 목록 오류 → 보정 코드</li>
           <li>카메라 3대 동시 열기 실패 → USB 포트 분산</li>
           <li>개수가 2↔3으로 흔들림 → 색 화소 마스크 + 5장 중앙값</li>
-          <li>성공인데 실패로 판정 → 그리퍼 놓기도 성공 근거로</li>
+          <li>성공인데 실패로 판정 → 놓은 뒤 0.7초 후 다시 세어 확인</li>
+          <li>두 번 놓치면 → 투덜대고 도리도리, "이어서 해줘"로 재개</li>
           <li>도리도리 모델이 안 흔듦 → 코드 도리도리</li>
         </ul>
       </div>
     </div>
   </div>
-  <div class="foot">9 / 10</div>
+  <div class="foot">10 / 11</div>
 </section>
 
-<!-- 10. 정리 -->
+<!-- 11. 정리 -->
 <section class="slide">
   <div class="kicker">WRAP-UP</div><h2>배운 점과 다음 할 일</h2>
   <div class="body" style="margin-top:.6em">
@@ -393,16 +438,16 @@ th{background:var(--box)}
     <div class="col">
       <div class="card"><b>다음 할 일</b>
         <ul>
-          <li>제어 주기 11~13Hz → 30Hz (학습 조건과 맞추기)</li>
-          <li>전체 흐름 리허설: 시작 → 거부 → 달래기 → 완료</li>
-          <li>VLM으로 개수 세기 비교 (받은 모델 연결)</li>
-          <li>도리도리 데이터 다시 녹화해 모델 개선</li>
+          <li>오란다 모델 더 학습 (에포크 5 → 늘리기)</li>
+          <li>도리도리 10~20 에피소드 다시 녹화</li>
+          <li>제어 주기 11~13Hz → 30Hz (화면 영상 압축 부하 줄이기)</li>
+          <li>전체 흐름 리허설 · VLM 개수 세기 비교</li>
         </ul>
       </div>
       <div class="card" style="text-align:center"><span style="font-size:1.6em">🙅 → 🥺 → 💪</span><br><span class="small">지쳐도 달래면 다시 일하는 로봇, 보리</span></div>
     </div>
   </div>
-  <div class="foot">10 / 10</div>
+  <div class="foot">11 / 11</div>
 </section>
 
 </div>

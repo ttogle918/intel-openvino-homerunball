@@ -315,3 +315,10 @@ def test_decide_fixed_mode_guard_unchanged_with_moved(cfg):
     d = b.decide(5, 0, "WORKING", total=5)      # count 0 -> 허용은 oranda_pickup뿐: LLM의 dori_dori는 버려진다
     assert d["skill"] == "oranda_pickup"
     assert json.loads(_sent(b)[-1]["content"])["moved"] == 0
+
+
+def test_allowed_intents_resume_in_waiting_operator():
+    from snackbot.brain import allowed_intents
+    assert allowed_intents("WORKING", "waiting_operator") == ["resume", "chat"]
+    assert allowed_intents("WORKING", "acting") == ["chat"]
+    assert allowed_intents("WORKING") == ["chat"]

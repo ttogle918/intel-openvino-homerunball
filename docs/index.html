@@ -144,7 +144,7 @@ ol.steps li{margin:6px 0}
 <li>진행자가 "조금만 더 해 주세요~"라고 달래거나(채팅·음성) UI 재개 버튼 또는 <code>r</code> 키를 누르면 count = 0으로 초기화되고 다시 WORKING. 한 번 달랜 뒤에는 같은 작업에서 다시 거부하지 않고 끝까지 옮긴다.</li>
 <li>마지막 오란다까지 옮기면(남은 0개) 완료 멘트 → DONE → 자동으로 IDLE. 트레이를 다시 세팅하면 채팅만으로 다시 시작할 수 있다.</li>
 <li>이상 시 <code>space</code> 또는 UI 비상정지 → ESTOP, 해제는 restart(home_pose 복귀 후 IDLE).</li>
-<li>대기 중에는 화면 아래 <b>스킬 테스트</b> 줄(<code>오란다 1회</code> · <code>도리도리 1회</code> · <code>코드 도리도리 1회</code> · <code>홈으로</code>)이나 "도리도리 해 봐"로 동작 하나만 1회 실행해 볼 수 있다 (TESTING 상태).</li>
+<li>대기 중에는 화면 아래 <b>스킬 테스트</b> 줄(<code>오란다 1회</code> · <code>모델 도리도리 1회</code> · <code>코드 도리도리 1회</code> · <code>홈으로</code>)이나 "도리도리 해 봐"로 동작 하나만 1회 실행해 볼 수 있다 (TESTING 상태).</li>
 </ol>
 <div class="callout">시연 직전 체크, 장애 대응, 발표용 숫자는 <a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a>에 있다.</div>
 </section>
@@ -174,7 +174,7 @@ ol.steps li{margin:6px 0}
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg   # 모듈 단독 테스트 (--blobs: ROI·면적 맞추기)
 .venv/Scripts/python -m tools.robot_probe save home   # 현재 팔 자세를 home_pose로 (lift도 동일)
 .venv/Scripts/python -m snackbot.robot home           # 스킬 하나만: home | dori_dori | dori_script | oranda_pickup
-.venv/Scripts/python -m pytest                        # 445개</code></pre>
+.venv/Scripts/python -m pytest                        # 499개</code></pre>
 <div class="callout"><b>의존 방향:</b> <code>server → controller → (brain, vision, skills, voice)</code>. controller는 FastAPI를 모른다. <code>--no-ui</code>면 server 없이 돈다. 실제 로봇이면 <code>skills</code> 자리에 <code>robot.py</code>의 <code>RobotSkills</code>가 들어간다.</div>
 <h3>저장소 구조</h3>
 <div class="tablewrap"><table>
@@ -190,7 +190,7 @@ ol.steps li{margin:6px 0}
 <tr><td><code>snackbot/brain.py</code></td><td><code>decide()</code> 작업 판단(가드 규칙 half·fixed), <code>chat()</code> 의도·대사</td></tr>
 <tr><td><code>snackbot/vision.py</code></td><td>counter 체인(opencv v2 / yolo / vlm / fake). 개수 세기 방법 토글·지금 세기가 이 체인을 고른다</td></tr>
 <tr><td><code>snackbot/stt.py</code></td><td>STT 체인 (OpenVINO Whisper 로컬 → Gemini), 워밍업, 단독 확인 CLI</td></tr>
-<tr><td><code>snackbot/voice.py</code></td><td>TTS (Gemini), 합성·재생 두 스레드, 대사 소리 시작 알림</td></tr>
+<tr><td><code>snackbot/voice.py</code></td><td>TTS (Gemini, 실패 시 Windows Heami 예비), 합성·재생 두 스레드, 대사 소리 시작 알림</td></tr>
 <tr><td><code>snackbot/skills.py</code></td><td><code>DrySkills</code>(dry-run, 녹화 재생 포함), <code>RunResult</code></td></tr>
 <tr><td><code>snackbot/robot.py</code></td><td>실제 로봇 <code>RobotSkills</code>: <code>RobotRuntime</code> 하나 + 동작 출처 교체(<code>Switch</code>: 정책 / 보간 이동), 비상정지 세대 번호, warmup, 코드 도리도리</td></tr>
 <tr><td><code>snackbot/motion.py</code></td><td>그리퍼 감시(<code>GripperWatch</code>), 보간 이동, 정지 신호 (physicalai 없이 테스트)</td></tr>
@@ -199,7 +199,7 @@ ol.steps li{margin:6px 0}
 <tr><td><code>snackbot/wincam.py</code></td><td>Windows 카메라 목록 보정 (pynokhwa의 JSON 역슬래시 버그)</td></tr>
 <tr><td><code>frontend/</code></td><td>Claude Design 결과물: index.html, app.js, style.css + <code>twin.js</code>(3D). <code>vendor/</code>(three, urdf-loader 고정 파일), <code>twin/so101/</code>(URDF + STL). 빌드 없음</td></tr>
 <tr><td><code>tools/</code></td><td><code>fetch_calibration</code>(Studio 캘리브레이션, GET만), <code>robot_probe</code>(watch / save), <code>fetch_replays</code>(Studio 녹화 → <code>replays/</code>), <code>cameras</code>(목록·시리얼·사진), <code>export_yolo_world</code></td></tr>
-<tr><td><code>tests/</code></td><td>445개. <code>samples/</code>(dry-run용 트레이 사진)</td></tr>
+<tr><td><code>tests/</code></td><td>499개. <code>samples/</code>(dry-run용 트레이 사진)</td></tr>
 <tr><td><code>models/</code>, <code>logs/</code>, <code>replays/</code>, <code>calibration/</code></td><td>로컬 모델, 사이클별 JSONL 로그와 실행 기록, dry-run 재생 데이터, 팔로워 캘리브레이션 (git 제외)</td></tr>
 <tr><td><code>docs/</code></td><td>문서 (11장 문서 지도)</td></tr>
 </table></div>
@@ -267,7 +267,7 @@ ol.steps li{margin:6px 0}
     [*] --&gt; IDLE
     IDLE --&gt; IDLE: 잡담 → 캐릭터 대답
     IDLE --&gt; WORKING: start_task (채팅 · 음성 · s 키)
-    WORKING --&gt; WORKING: 옮기기 성공 (count + 1) / 실패 재시도 (최대 2회)
+    WORKING --&gt; WORKING: 옮기기 성공 (count + 1) / 실패 재시도 (1회)
     WORKING --&gt; REFUSING: 거부 결정 (dori_dori 실행)
     REFUSING --&gt; WORKING: r 키 · UI 재개 · 달래기 (count = 0)
     WORKING --&gt; DONE: 남은 0개
@@ -282,13 +282,13 @@ ol.steps li{margin:6px 0}
 <tr><th>상태</th><th>채팅 허용 intent</th><th>처리</th></tr>
 <tr><td>IDLE</td><td><code>start_task</code>, <code>chat</code>, <code>dori_dori</code></td><td>start_task → 시작 개수 정하고 사이클 시작. dori_dori → 대사 소리 시작 뒤 도리도리 1회 (TESTING)</td></tr>
 <tr><td>DONE</td><td><code>start_task</code>, <code>chat</code></td><td>완료 멘트 후 자동으로 IDLE</td></tr>
-<tr><td>WORKING</td><td><code>chat</code></td><td>대답만, 작업 영향 없음</td></tr>
+<tr><td>WORKING</td><td><code>chat</code>, (<code>phase=waiting_operator</code>일 때) <code>resume</code></td><td>대답만, 작업 영향 없음. waiting_operator에서 resume → 같은 오란다를 다시 시도 (count 불변)</td></tr>
 <tr><td>REFUSING</td><td><code>resume</code>, <code>chat</code></td><td>resume → count = 0, WORKING (거부는 작업당 한 번이라 다시 거부하지 않는다)</td></tr>
 <tr><td>ESTOP / TESTING</td><td><code>chat</code></td><td>대답만. ESTOP 해제는 restart 명령으로만. TESTING 중 작업 지시·<code>s</code>·<code>r</code>은 거부</td></tr>
 </table></div>
 <ul>
 <li><code>phase</code>(UI 표시용, WORKING 내부 단계): <code>idle | counting | thinking | speaking | acting | returning | waiting_operator</code></li>
-<li>옮기기 실패가 <code>max_retry</code>(기본 2)를 넘으면 WORKING을 유지한 채 <code>phase=waiting_operator</code>. 재개 명령으로 다시 시도하며 count는 변하지 않는다.</li>
+<li>옮기기 실패가 <code>max_retry</code>(기본 1)를 넘으면, 즉 같은 오란다를 두 번 연속 놓치면 투덜대는 대사(채팅 + TTS) → 소리가 시작되면 도리도리 1회 → WORKING을 유지한 채 <code>phase=waiting_operator</code>. 횟수·피로도·작업당 거부에는 넣지 않는다. 채팅 "이어서 해줘"·🎤·재개 버튼·<code>r</code> 키로 같은 오란다를 다시 시도하며 count는 변하지 않는다. 비상정지는 도중에도 먹는다.</li>
 <li>ESTOP 후 restart는 home_pose로 천천히 복귀한 뒤 IDLE (사람이 명시적으로 다시 시작하는 쪽이 안전). 재시작은 진행 중인 동작이 멈춘 뒤에만 받고, 접수한 순간의 세션 번호가 바뀌었으면(그 사이 비상정지) 거부한다.</li>
 </ul>
 
@@ -368,7 +368,7 @@ ol.steps li{margin:6px 0}
   refuse: half       # half(기본) | fixed
   safe_max: 3        # fixed: 이하면 무조건 일함
   force_refuse: 6    # fixed: 이상이면 무조건 거부
-  max_retry: 2       # 옮기기 실패 시 재시도 횟수</code></pre>
+  max_retry: 1       # 옮기기 실패 시 재시도 횟수 (1 = 두 번 연속 놓치면 투덜대고 도리도리)</code></pre>
 
 <h3>왜 ACT가 과자를 찾는데도 개수를 세는가 (B → A)</h3>
 <div class="callout">찾아 집는 일은 ACT가 영상만 보고 한다. 개수 판정은 정확도 때문이 아니라 ACT가 못 하는 두 가지 때문이다: <b>언제 끝낼지</b>(ACT는 "이제 없다"를 몰라 0개여도 허공이나 다른 과자를 집는다)와 <b>성공했는지</b>(count는 성공 때만 올라가고 이것이 거부 타이밍을 정한다).</div>
@@ -382,7 +382,7 @@ ol.steps li{margin:6px 0}
 <ul>
 <li>현재 <code>vision.chain</code>에는 OpenCV counter 하나가 있어 기본이 A다. 화면의 <b>개수 세기</b> 토글(끔 · OpenCV)로 B로 내릴 수 있고, <b>지금 세기</b> 버튼(대기 상태)으로 한 번 세어 확인할 수 있다 (횟수·피로도는 그대로). chain이 비어 있으면 항상 B. A에서 counter가 전부 실패한 사이클은 <b>그 사이클만</b> B로 판정한다 (멈추지 않음).</li>
 <li>UI의 <code>vision_method</code>: B면 <code>estimate</code>("추정"으로 표시), A면 실제 counter 이름. 토글 상태는 state의 <code>vision_choice</code>·<code>vision_options</code>로 온다.</li>
-<li>성공이면 <code>count += 1</code>. 실패는 count에 넣지 않고 실패 멘트 후 재시도(최대 <code>max_retry</code>회) → 그래도 실패면 <code>phase=waiting_operator</code>.</li>
+<li>성공이면 <code>count += 1</code>. 실패는 count에 넣지 않고 실패 멘트 후 재시도(최대 <code>max_retry</code>회, 기본 1) → 그래도 실패(두 번 연속)면 투덜대는 대사 → 도리도리 1회 → <code>phase=waiting_operator</code>. 놓은 뒤 개수가 안 줄었으면 <code>vision.confirm_s</code>(0.7초) 뒤 한 번 더 세어 확인하고(그리퍼만 믿고 성공으로 치지 않는다), 앞 세기가 남은 개수보다 많은 값이 연속 두 번 나오면 정정한다.</li>
 </ul>
 
 <details><summary>LLM 출력 스키마와 검증 순서</summary>
@@ -401,13 +401,14 @@ ol.steps li{margin:6px 0}
 <tr><th>상태</th><th>allowed intent</th></tr>
 <tr><td>IDLE</td><td><code>start_task</code>, <code>chat</code>, <code>dori_dori</code></td></tr>
 <tr><td>DONE</td><td><code>start_task</code>, <code>chat</code></td></tr>
-<tr><td>WORKING / ESTOP / TESTING</td><td><code>chat</code></td></tr>
+<tr><td>WORKING (<code>phase=waiting_operator</code>)</td><td><code>resume</code>, <code>chat</code></td></tr>
+<tr><td>WORKING (그 밖의 단계) / ESTOP / TESTING</td><td><code>chat</code></td></tr>
 <tr><td>REFUSING</td><td><code>resume</code>, <code>chat</code></td></tr>
 </table></div>
-<p>JSON 실패나 허용 외 intent면 키워드 규칙: start_task(옮겨, 집어, 시작, 일해), resume(조금만, 부탁, 힘내, 한 번만), 그 외 chat. 한 문장에 도리도리와 작업 시작이 같이 있으면 작업 시작이 먼저다 ("도리도리 하지 말고 옮겨줘"). <code>n</code>은 숫자 또는 한글 수사(하나·둘·셋…) 정규식으로 파싱한다.</p>
+<p>JSON 실패나 허용 외 intent면 키워드 규칙: start_task(옮겨, 집어, 시작, 일해), resume(조금만, 부탁, 힘내, 한 번만, 이어서, 계속, 재개), 그 외 chat. 한 문장에 도리도리와 작업 시작이 같이 있으면 작업 시작이 먼저다 ("도리도리 하지 말고 옮겨줘"). <code>n</code>은 숫자 또는 한글 수사(하나·둘·셋…) 정규식으로 파싱한다.</p>
 </details>
 <details><summary>fallback 대사 (LLM 실패 시)</summary>
-<p>준비된 대사 목록이 있다: oranda_pickup, count 3 예고, dori_dori("싫어요! 힘들어요!"), done, 실패 재시도, 재개, 잡담, 일하는 중 잡담. 목록은 <a href="DECISION_LOGIC.md">DECISION_LOGIC.md</a> 6장.</p>
+<p>준비된 대사 목록이 있다: oranda_pickup, count 3 예고, dori_dori("싫어요! 힘들어요!"), done, 실패 재시도, 연속 실패 give_up(투덜대는 대사), 재개, 잡담, 일하는 중 잡담. 목록은 <a href="DECISION_LOGIC.md">DECISION_LOGIC.md</a> 6장.</p>
 </details>
 </section>
 
@@ -440,7 +441,7 @@ ol.steps li{margin:6px 0}
 <tr><th>type</th><th>방식</th></tr>
 <tr><td><code>yolo</code></td><td>Ultralytics OpenVINO 모델 폴더. YOLO-World에 텍스트 클래스를 지정해 내보낸 모델(제로샷) 또는 외부 검출 모델. 박스를 화면에 오버레이할 수 있다</td></tr>
 <tr><td><code>vlm</code></td><td>provider(로컬 openvino VLM 또는 API)에 이미지 + 질문, 숫자만 파싱, 1회 재시도</td></tr>
-<tr><td><code>opencv</code> <span class="tag">사용 중</span></td><td>counter v2: 검은 매트 ROI 안에서 어두운 링 검사(도착 트레이 제외), hue ≤ 22 · 면적 ≥ 800(노란 공·버섯 과자 제외), 붙은 덩어리는 <code>unit_area</code> 1700으로 분리. tower cam 실제 프레임에서 오란다 3개, 17 ms. ROI는 카메라가 바뀌면 <code>snackbot.vision &lt;사진&gt; --blobs</code>로 다시 맞춘다</td></tr>
+<tr><td><code>opencv</code> <span class="tag">사용 중</span></td><td>counter v2: 검은 매트 ROI 안에서 어두운 링 검사(도착 트레이 제외), 오란다 색 화소 마스크(H 5~21, S≥80, min_area 600)로 초코송이와 붙어 있어도 따로 세고, 붙은 덩어리는 <code>unit_area</code> 1700으로 분리. 한 번 셀 때 5장(<code>vision.frames</code>, 0.1초 간격)의 중앙값을 쓴다. tower cam 실제 프레임에서 오란다 3개, 17 ms. ROI는 카메라가 바뀌면 <code>snackbot.vision &lt;사진&gt; --blobs</code>로 다시 맞춘다</td></tr>
 <tr><td><code>fake</code></td><td>dry-run 사진 파일명(<code>tray_3.jpg</code>)에서 개수</td></tr>
 </table></div>
 <p>VLM은 일단 빼 두었고(사용자의 1 epoch VLM을 나중에 chain에 추가), YOLO-World는 큰 패키지를 설치하지 않아 보류다. STT 체인 예: 로컬 Whisper(openvino, CPU, ko) → openai 전사 모델. 설정 예시는 설계 문서 6장.</p>
@@ -451,10 +452,10 @@ ol.steps li{margin:6px 0}
 <tr><td>counter 실패</td><td>체인의 다음 counter → 전부 실패하면 그 사이클만 B 판정</td></tr>
 <tr><td>LLM decide 실패 / 허용 외 값</td><td>다음 provider → 전부 실패 시 가드 규칙 + 준비된 대사</td></tr>
 <tr><td>LLM chat 실패</td><td>키워드 규칙 + 준비된 대사</td></tr>
-<tr><td>옮기기 재시도 초과</td><td><code>phase=waiting_operator</code>, 재개 대기, count 불변</td></tr>
+<tr><td>옮기기 재시도 초과 (두 번 연속 놓침)</td><td>투덜 대사 + 도리도리 1회 → <code>phase=waiting_operator</code>. 채팅 "이어서 해줘"·재개 버튼으로 재개, count 불변</td></tr>
 <tr><td>그리퍼 정지 미감지</td><td><code>max_time_s</code>에서 정지 → 복귀, <code>stop_reason=timeout</code></td></tr>
 <tr><td>STT 실패</td><td>UI에 system 메시지 "못 알아들었어요", 상태 영향 없음</td></tr>
-<tr><td>TTS 실패 / WebSocket 끊김</td><td>무시 / controller 영향 없음, 재접속 시 상태·기록 재전송</td></tr>
+<tr><td>TTS 실패 / WebSocket 끊김</td><td>Gemini TTS가 실패하면 Windows 한국어 음성 Heami로 대신 말한다 (한도 오류 뒤 600초, 시간 초과 뒤 60초 Gemini를 건너뜀) / controller 영향 없음, 재접속 시 상태·기록 재전송</td></tr>
 <tr><td>로봇 포트 점유</td><td>시작 시 에러: "Studio 세션을 닫으세요"</td></tr>
 <tr><td>카메라 첫 프레임 시간 초과</td><td>시작 시 오류. USB 포트를 나눠 다시 꽂는다 (11장 아래 12장 참고)</td></tr>
 </table></div>
@@ -525,7 +526,7 @@ ol.steps li{margin:6px 0}
 <ul>
 <li>접속 직후: <code>info</code> 1개, <code>state</code> 1개, 최근 <code>message</code> 50개. WebSocket이 끊기면 화면이 2초마다 재연결하고, 서버 없이도 <code>?mock</code> 모드로 전체 흐름을 재생한다.</li>
 <li>피로도 게이지는 half 모드에서 <code>total</code>·<code>refuse_at</code>으로 "전체 N · M개째 뒤 거부"를 그리고, fixed 모드에서는 <code>thresholds</code>(safe_max, force_refuse)를 쓴다. <code>vision_method</code>가 <code>estimate</code>면 "추정"으로 표시한다.</li>
-<li>스킬 테스트 줄(<code>오란다 1회</code> · <code>도리도리 1회</code> · <code>코드 도리도리 1회</code> · <code>홈으로</code>)은 대기 상태에서만 눌리고, 모델이 없는 버튼은 꺼진다 (reason 툴팁). 실제 로봇이면 진짜 팔이 움직이고, TESTING 중에도 비상정지는 즉시 먹는다. dry-run에서는 녹화 재생으로 대신한다.</li>
+<li>스킬 테스트 줄(<code>오란다 1회</code> · <code>모델 도리도리 1회</code> · <code>코드 도리도리 1회</code> · <code>홈으로</code>)은 대기 상태에서만 눌리고, 모델이 없는 버튼은 꺼진다 (reason 툴팁). 실제 로봇이면 진짜 팔이 움직이고, TESTING 중에도 비상정지는 즉시 먹는다. dry-run에서는 녹화 재생으로 대신한다.</li>
 <li>개수 세기 토글(끔 · OpenCV · 자동)과 <b>지금 세기</b> 버튼은 화면 아래에 있다. 센 결과는 "오란다 3개 · OpenCV · 120ms"로 보여 주고 횟수·피로도는 바꾸지 않는다.</li>
 </ul>
 </section>
@@ -543,7 +544,7 @@ ol.steps li{margin:6px 0}
 <tr><td>M6</td><td>STT: <code>/stt</code> + stt.py</td><td>말로 시작·달래기</td></tr>
 <tr><td>M7</td><td>(선택) ACT 디바이스별 지연 비교 (<code>bench_policy.py</code>)</td><td>발표 비교표</td></tr>
 </table></div>
-<div class="callout"><b>현재 위치 (2026-10-23):</b> M0~M6 코드는 끝났고, 4분할 화면·3D 트윈·녹화 재생·실행 기록, 스킬 테스트·코드 도리도리, OpenCV 개수 세기, half 거부 규칙도 구현됐다. M4 실기는 시연 노트북(Windows)에서 시작해 <code>오란다 1회</code> 성공까지 확인했다. 남은 일은 <b>제어 루프 주기 조사(11~13 Hz)</b> → 전체 흐름 실기 → 도리도리 모델/코드 결정이다. 자세한 진척은 <a href="PROGRESS_REPORT.html">PROGRESS_REPORT.html</a>.</div>
+<div class="callout"><b>현재 위치 (2026-10-25):</b> M0~M6 코드는 끝났고, 4분할 화면·3D 트윈·녹화 재생·실행 기록, 스킬 테스트(버튼 4개)·코드 도리도리, OpenCV 개수 세기(5장 중앙값·확인 재세기·정정), half 거부 규칙, 두 번 놓치면 투덜대고 도리도리 → 대기 → 채팅 재개, Windows Heami 예비 TTS, 발표 자료 11장(<code>slides.html</code>·<code>slides.pptx</code>)도 구현됐다. 시연 노트북(Windows)에서 실제 로봇으로 전체 흐름(테스트 버튼·채팅·STT·TTS)을 브라우저에서 확인했고 도리도리는 코드(<code>source: script</code>)로 정했다. 남은 일은 <b>제어 루프 주기(11~13 Hz, 학습은 30 Hz)</b>, pickup 추가 학습(5 epoch로 덜 학습), 도리도리 데이터 추가 녹화(모델은 과적합), VLM 개수 세기다. 자세한 진척은 <a href="PROGRESS_REPORT.html">PROGRESS_REPORT.html</a>.</div>
 <div class="callout warn"><b>시간이 부족하면 자르는 순서:</b> M7 → M6 → M5 → (M3의 counter 체인). M4까지 B 판정 + 채팅 시작 + <code>r</code> 키만으로 시연이 성립한다. M1~M3은 ACT 학습이 끝나기 전(1일차)에 끝내고, M4는 2일차 맨 앞에 한다.</div>
 <details><summary>dry-run 3단계와 테스트</summary>
 <div class="tablewrap"><table>
@@ -552,7 +553,7 @@ ol.steps li{margin:6px 0}
 <tr><td>②</td><td>샘플 사진에 실제 counter</td><td>실제 provider</td><td>sleep</td><td>프롬프트·클래스 텍스트 다듬기, 지연 측정</td></tr>
 <tr><td>③</td><td>카메라 (또는 B)</td><td>실제</td><td>physicalai</td><td>시연</td></tr>
 </table></div>
-<p>dry skills는 <code>dry_run.fail_rate</code> 확률로 <code>grasped=false</code>를 돌려준다. 자동 테스트 445개: <code>test_brain.py</code>(가드 표 half·fixed, 출력 검증, 키워드 fallback, provider 체인), <code>test_controller.py</code>(B/A 판정, 상태 전이, 재시도 초과, TESTING, 거부 한 번), <code>test_motion.py</code>, <code>test_server.py</code> 등. Windows에서 <code>test_server.py</code>가 가끔 WinError 10014로 1~3개 실패하면 재실행한다. UI·하드웨어는 런북 체크리스트로 수동 확인한다.</p>
+<p>dry skills는 <code>dry_run.fail_rate</code> 확률로 <code>grasped=false</code>를 돌려준다. 자동 테스트 499개: <code>test_brain.py</code>(가드 표 half·fixed, 출력 검증, 키워드 fallback, provider 체인), <code>test_controller.py</code>(B/A 판정, 상태 전이, 재시도 초과, TESTING, 거부 한 번), <code>test_motion.py</code>, <code>test_server.py</code> 등. Windows에서 <code>test_server.py</code>가 가끔 WinError 10014로 1~3개 실패하면 재실행한다. UI·하드웨어는 런북 체크리스트로 수동 확인한다.</p>
 </details>
 </section>
 
@@ -571,7 +572,7 @@ ol.steps li{margin:6px 0}
 <tr><td><a href="DECISION_LOGIC.md">DECISION_LOGIC.md</a></td><td>거부 규칙(half · fixed), 성공 판정, LLM 프롬프트·JSON 스키마, fallback 대사, 채팅 intent</td><td>brain.py를 만들거나 프롬프트를 고칠 때</td></tr>
 <tr><td><a href="DATASET_GUIDE.md">DATASET_GUIDE.md</a></td><td>ACT 데이터셋 녹화 규칙, 배치·연속 녹화 요령, 체크리스트</td><td>녹화·학습 전 (1일차)</td></tr>
 <tr><td><a href="DEMO_RUNBOOK.md">DEMO_RUNBOOK.md</a></td><td>2일 일정, 시연 직전 체크리스트, 노트북 로봇 첫 연결(2-2), 4분할·3D·녹화(2-3), 스킬 1회 실행·코드 도리도리(2-4), 개수 세기·토글(2-5), 진행자 대본, 장애 대응, 발표 숫자</td><td>리허설·시연 당일</td></tr>
-<tr><td><a href="VOICE_PROVIDERS.md">VOICE_PROVIDERS.md</a></td><td>음성 인식(OpenVINO Whisper)·음성 합성(Gemini) 선택 이유, 검토한 후보, 측정값, 약점</td><td>음성 설정을 바꾸거나 "왜 이 모델?"이 궁금할 때</td></tr>
+<tr><td><a href="VOICE_PROVIDERS.md">VOICE_PROVIDERS.md</a></td><td>음성 인식(OpenVINO Whisper)·음성 합성(Gemini, Windows Heami 예비) 선택 이유, 검토한 후보, 측정값, 약점</td><td>음성 설정을 바꾸거나 "왜 이 모델?"이 궁금할 때</td></tr>
 <tr><td><a href="UI_DESIGN_PROMPT.md">UI_DESIGN_PROMPT.md</a></td><td>Claude Design에 붙여넣는 프롬프트 + WebSocket/HTTP 연동 계약 전체</td><td>frontend를 만들거나 server.py의 메시지 형식을 구현할 때</td></tr>
 <tr><td><a href="memo/2026-10-22-design-discussion.html">memo/2026-10-22-design-discussion.html</a> (<a href="memo/2026-10-22-design-discussion.md">.md</a>)</td><td>설계 의논 기록: 19개 결정과 그 이유</td><td>"왜 이렇게 정했지?"가 궁금할 때</td></tr>
 <tr><td><a href="PROMPT_for_claude_code.md">PROMPT_for_claude_code.md</a> <span class="tag">오래됨</span></td><td>초기 작업 프롬프트. 현재 설계와 맞지 않는 옛 기록</td><td>읽지 않아도 된다 (역사 기록용)</td></tr>
@@ -588,7 +589,7 @@ ol.steps li{margin:6px 0}
 <li><b>학습 카메라 이름:</b> dori_dori는 <code>tower cam</code> / <code>follow cam</code>, oranda_pickup은 <code>a</code> / <code>b</code> / <code>follow</code> (<code>camera_map</code>으로 config 이름에 매핑). a/b를 서로 바꿔도 정책 출력은 같다.</li>
 <li><b>노트북 장치:</b> Ubuntu 대신 Windows 11 PC가 시연 노트북이다. 정책은 CPU(GPU 컴파일 55~65초). 포트 COM5/COM6, 카메라 1·2·3.</li>
 <li><b>그리퍼 기준값:</b> 실측으로 확정(빈손 49.4~50.1, 쥠 54.2~55.4, 열림 79.0 → 56.0 / 56.5 / 52 / 0.15).</li>
-<li><b>API 모델 ID:</b> 대화 LLM은 Claude(<code>claude-opus-5-5</code>) → NVIDIA(nemotron) → 규칙, STT는 로컬 Whisper → Gemini, TTS는 Gemini.</li>
+<li><b>API 모델 ID:</b> 대화 LLM은 Claude(<code>claude-opus-5-5</code>) → NVIDIA(nemotron) → 규칙, STT는 로컬 Whisper → Gemini, TTS는 Gemini → Windows Heami 예비.</li>
 </ul>
 <h3>열린 문제 (2026-10-23)</h3>
 <ul>
