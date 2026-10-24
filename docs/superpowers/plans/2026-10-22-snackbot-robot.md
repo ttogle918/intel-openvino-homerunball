@@ -131,8 +131,8 @@ skills:
   device: GPU                              # CPU | GPU | NPU (정책별로 device를 따로 써도 된다)
   # camera_map: 학습 때 Studio 카메라 이름이 위 cameras 키와 다르면 {학습 이름: config 이름}.
   #   학습 이름은 결과물 manifest.json의 "images.<이름>"에서 확인한다. 예: {A: tower cam, B: side cam}
-  oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
-  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}}
+  oranda_pickup: {export_dir: trained_model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
+  dori_dori:     {export_dir: trained_model/dori_dori/exports/openvino, max_time_s: 6, camera_map: {}}
   gripper:                                 # python -m tools.robot_probe watch 로 값을 읽고 정한다 (0..100, 작을수록 닫힘)
     closed_below: null                     # 이보다 작으면 "닫힘"
     open_above: null                       # 닫힘 뒤 이보다 큰 값이 open_hold_s 동안 이어지면 "놓음" → ACT 정지
@@ -156,7 +156,7 @@ feetech-servo-sdk
 - [ ] **Step 4: 통과 확인**
 
 Run: `.venv/Scripts/python -m pytest tests/test_config.py -v`
-Expected: 5 passed (이 PC에는 `traind-model/dori-dori-model`이 있어서 dori_dori의 카메라 2대가 config에 있는지까지 확인된다)
+Expected: 5 passed (이 PC에는 `trained_model/dori_dori`이 있어서 dori_dori의 카메라 2대가 config에 있는지까지 확인된다)
 
 - [ ] **Step 5: 전체 테스트**
 
@@ -1254,7 +1254,7 @@ Co-Authored-By: <세션의 attribution 줄>"
 
 1. Studio 세션을 모두 끄고 `docker compose down` (로봇 포트는 한 프로그램만 잡는다)
 2. 환경: `python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt`
-3. 모델: `traind-model/<이름>-model/exports/openvino`에 넣고 `config.yaml skills.*.export_dir` 확인 →
+3. 모델: `trained_model/<이름>-model/exports/openvino`에 넣고 `config.yaml skills.*.export_dir` 확인 →
    `.venv/bin/python -m pytest tests/test_config.py` (정책의 카메라 이름 = config 카메라 이름인지 검사)
 4. 캘리브레이션: `.venv/bin/python -m tools.fetch_calibration --studio http://192.168.0.6:7860 --project <id> --env <id>`,
    `ls /dev/ttyACM*`로 포트를 찾아 `config.yaml robot.port`, 카메라 번호는 `cameras.*.device`

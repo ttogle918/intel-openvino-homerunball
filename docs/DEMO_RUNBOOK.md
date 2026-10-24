@@ -53,7 +53,7 @@ gantt
 준비
 - [ ] 코드: homerunball 저장소 `feat/robot-m4`(또는 main) 받기
 - [ ] 로봇 패키지: `.venv/bin/python -m pip install -r requirements.txt -r requirements-robot.txt` (physicalai 0.3.0. SO101은 physicalai 본체 `physicalai.robot.so101`에 있어 플러그인은 필요 없다)
-- [ ] 정책 결과물 복사 (git 제외 폴더): `traind-model/dori-dori-model/exports/openvino/` (act.xml, act.bin, manifest.json). 과자 모델은 **`traind-model/pickup/exports/openvino/`** (개발 PC에 있다, 2026-10-23). **모델 폴더가 없는 정책은 건너뛰고 경고만 낸다** → 한쪽 모델만 있어도 `home`·그 정책 확인 가능
+- [ ] 정책 결과물 복사 (git 제외 폴더): `trained_model/dori_dori/exports/openvino/` (act.xml, act.bin, manifest.json). 과자 모델은 **`trained_model/oranda_pickup/exports/openvino/`** (개발 PC에 있다, 2026-10-23). **모델 폴더가 없는 정책은 건너뛰고 경고만 낸다** → 한쪽 모델만 있어도 `home`·그 정책 확인 가능
 - [ ] 카메라: `ls /dev/video*` (또는 `v4l2-ctl --list-devices`)로 번호를 보고 `config.yaml`의 `cameras.<이름>.device`를 고친다. 런타임은 config의 카메라를 **모두** 연다. Studio PC 기준 값은 이미 들어 있다: `tower cam`=0(학습 이름 a), `side cam`=4(b), `follow cam`=시리얼 20240307110322(follow). **tower·side는 시리얼이 같아(zvcai231100001) 번호로만 지정된다** → 노트북에서 번호가 다르면 `tools.cameras` 사진으로 확인해 고친다 (a/b를 바꿔도 정책 출력은 같지만 UI 라벨·A단계 개수 세기 카메라가 바뀐다)
 - [ ] 포트 주의: `/dev/ttyACMn` 번호는 꽂는 순서로 바뀐다. 리더 팔이 같이 꽂혀 있고 그쪽이 `robot.port`의 번호를 받으면 **리더 팔을 팔로워로 열어 토크를 켠다.** 리더는 빼 두거나, `ls -l /dev/serial/by-id/`로 팔로워 어댑터의 경로를 찾아 `robot.port`에 쓴다 (꽂는 순서와 무관하게 고정)
 

@@ -230,10 +230,10 @@
 **상세**
 - 이 PC에 physicalai가 없어 실제 시그니처를 확인할 수 없다. 추측으로 로봇 코드를 쓰지 않는다는 규칙 때문에 나눴다.
 - 개발 PC는 `project/.venv` (작은 패키지만). openvino-genai·ultralytics·torch는 설치하지 않고 lazy import.
-- dori-dori 결과물(`traind-model/dori-dori-model/exports/openvino`)의 카메라 이름은 `tower cam` / `follow cam`, 해상도 1280×720, chunk 100. `front` / wrist 가정을 바꿔야 한다.
+- dori-dori 결과물(`trained_model/dori_dori/exports/openvino`)의 카메라 이름은 `tower cam` / `follow cam`, 해상도 1280×720, chunk 100. `front` / wrist 가정을 바꿔야 한다.
 - 06 실습은 스킬마다 runtime.yaml + `RobotRuntime.from_config` → `run(duration_s)`로 정책을 돌린다 (0.3.0 시그니처 확인됨). M4는 이 방식을 기반으로 하고, 그리퍼 정지 조건·비상정지는 `stop_event`/`callbacks`로 거는 방법을 먼저 확인한다.
 - 런타임이 카메라를 잡고 있는 동안 화면 영상·개수 세기를 어떻게 할지는 M4 숙제.
-- `traind-model/`은 약 1GB라 git에서 제외했다.
+- `trained_model/`은 약 1GB라 git에서 제외했다.
 
 ## 21. 음성(STT/TTS) provider
 

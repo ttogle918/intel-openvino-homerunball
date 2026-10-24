@@ -90,10 +90,61 @@ cp .env.example .env          # 쓰는 API 키만 채운다 (없으면 규칙 �
 .venv/Scripts/python -m snackbot
 ```
 
-- 학습한 모델은 용량 때문에 저장소에 없습니다. `config.yaml`의 `skills.<이름>.export_dir` 위치에 OpenVINO 결과물을 넣습니다. 모델이 없는 동작은 건너뜁니다.
+- 실제 로봇으로 돌리려면 학습한 ACT 모델을 먼저 넣어야 합니다 (아래 "모델 넣기").
 - 음성 인식 모델: `hf download OpenVINO/whisper-small-int8-ov --local-dir models/whisper-small`
 - 포트, 카메라 번호, 캘리브레이션, 그리퍼 값 맞추는 순서는 [시연 런북](docs/DEMO_RUNBOOK.md)에 있습니다.
 - 테스트: `.venv/Scripts/python -m pytest`
+
+## 모델 넣기
+
+학습한 ACT 모델은 용량 때문에 저장소에 없습니다. physical-ai-studio에서 OpenVINO로 내보낸 폴더를 `trained_model/` 아래 스킬 이름으로 넣습니다.
+
+```
+trained_model/
+├── oranda_pickup/exports/openvino/   # act.xml, act.bin, manifest.json
+└── dori_dori/exports/openvino/
+```
+
+- 경로는 `config.yaml`의 `skills.<스킬 이름>.export_dir`에 있습니다. 다른 곳에 두면 이 값을 바꿉니다.
+- 학습 때 카메라 이름이 `config.yaml`의 `cameras`와 다르면 `camera_map`으로 맞춥니다. 오란다 모델은 학습 이름이 `a`, `b`, `follow`라서 `{a: tower cam, b: side cam, follow: follow cam}`으로 연결해 두었습니다.
+- 넣은 뒤 `.venv/Scripts/python -m snackbot.robot oranda_pickup`으로 한 번 돌려 봅니다 (도리도리 모델은 `dori_policy`).
+- 모델이 없는 동작은 건너뛰고, 도리도리는 모델 없이 코드 동작으로도 됩니다.
+
+자세한 순서는 [trained_model/README.md](trained_model/README.md)에 있습니다.
+
+## 저장소 구조
+
+```
+.
+├── README.md
+├── config.yaml            # 카메라 · 포트 · 모델 경로 · 개수 세기 · 거부 규칙 · 음성 설정
+├── poses.yaml             # 홈 · 들어 올리기 자세 (tools.robot_probe save로 저장)
+├── calibration/           # 팔로워 캘리브레이션 (tools.fetch_calibration으로 Studio에서 받음)
+├── .env.example           # API 키 이름 (.env로 복사해서 채움, git 제외)
+├── requirements.txt       # 공통 (dry-run 포함)
+├── requirements-robot.txt # 실제 로봇용 (physicalai)
+├── snackbot/              # 본체
+│   ├── __main__.py        #   실행 진입점 (--dry-run, --no-ui, --port)
+│   ├── controller.py      #   상태 머신 (대기 · 작업 · 거부 · 완료 · 비상정지 · 테스트), 횟수 세기
+│   ├── brain.py           #   다음 행동 고르기, 채팅 의도, 대사 (코드 규칙 + LLM)
+│   ├── providers.py       #   LLM · STT 접속 (Claude, NVIDIA, Gemini, 로컬 OpenVINO)
+│   ├── vision.py          #   오란다 개수 세기 (OpenCV)
+│   ├── robot.py           #   실제 로봇: ACT 정책 실행, 홈 복귀, 비상정지
+│   ├── motion.py          #   그리퍼 감시, 천천히 이동
+│   ├── skills.py          #   dry-run용 가짜 동작
+│   ├── stt.py · voice.py  #   음성 인식 (Whisper) · 음성 합성 (Gemini, Windows 예비)
+│   ├── server.py          #   웹 서버 (채팅, 카메라 영상, 음성)
+│   ├── recorder.py        #   실행 기록 저장
+│   ├── twin.py            #   3D 팔 표시용 관절값 변환
+│   └── wincam.py          #   Windows 카메라 목록 보정
+├── frontend/              # 웹 화면 (카메라 4분할, 3D 팔, 채팅, 버튼)
+├── tools/                 # 캘리브레이션 받기, 관절값 보기 · 자세 저장, 카메라 찾기, 녹화 받기
+├── tests/                 # 자동 테스트 (pytest)
+├── trained_model/         # ACT 모델 넣는 곳 (git 제외, 위 "모델 넣기")
+├── models/                # Whisper 등 내려받은 모델 (git 제외)
+├── logs/                  # 실행 로그 (git 제외)
+└── docs/                  # 발표 자료, 진행 보고서, 구조 · 판단 규칙 · 런북, 개발 기록
+```
 
 ## 문서
 
