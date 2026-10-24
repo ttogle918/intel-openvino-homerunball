@@ -8,7 +8,7 @@
 ```text
 # 프로젝트: 홈런볼 옮기기 로봇 (SO-ARM101 + LeRobot ACT + OpenVINO)
 
-2일짜리 해커톤 프로젝트야. 저장소 루트의 CLAUDE.md와 docs/ 폴더를 먼저 전부 읽고 시작해.
+2일짜리 로봇팔 프로젝트야. 저장소 루트의 CLAUDE.md와 docs/ 폴더를 먼저 전부 읽고 시작해.
 특히 docs/ARCHITECTURE.md(전체 구조와 다이어그램), docs/DECISION_LOGIC.md(판단 규칙)를 기준으로 구현해.
 
 ## 한 줄 요약
