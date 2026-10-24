@@ -14,7 +14,7 @@ class Scripted:
     def __init__(self, *replies):
         self.replies, self.messages = list(replies), None
 
-    def complete(self, messages, max_tokens=300, image=None):
+    def complete(self, messages, max_tokens=300):
         self.messages = messages
         r = self.replies.pop(0)
         if isinstance(r, Exception):

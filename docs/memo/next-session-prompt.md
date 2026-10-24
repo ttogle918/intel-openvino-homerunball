@@ -1,5 +1,7 @@
 # 다음 세션 시작 프롬프트
 
+> **2026-10-25: 시연·발표가 끝나 프로젝트를 마무리했다.** 이어서 할 작업은 없다. 아래는 마지막 작업 세션 기준 기록이다. 그 뒤 정리에서 YOLO·VLM counter, OpenAI·pyttsx3 음성, openrouter·ollama 설정을 지웠고 README.md를 만들었다. 시연 결과(집기 12번 중 1번 성공)와 남은 한계는 README.md에 있다.
+
 > 새 Claude Code 세션(작업 폴더 `C:\Users\ttogl\workspace\openvino_course_2610\project`)에 아래 코드 블록을 그대로 붙여넣는다.
 
 ```text
@@ -46,7 +48,7 @@
 1. **두 번 놓침 흐름 실기:** 서버를 다시 켜고 일부러 두 번 놓치게 해서 투덜 대사 → 코드 도리도리 → "이어서 해줘"로 재개되는지 본다.
 2. **제어 루프 주기 조사:** MJPEG 인코딩(화면 수·해상도·품질·인코딩 주기), 카메라 NV12→RGB, recording.enabled: false, 3D 트윈을 하나씩 껐다 켜며 스텝 시간을 잰다(코드 수정이 필요하면 먼저 제안).
 3. **집기 정확도:** pickup을 더 학습(epoch 늘리기)하도록 사용자에게 권한다. 도리도리 모델은 데이터를 더 녹화해야 쓸 수 있다(지금은 코드 도리도리).
-4. VLM 개수 세기는 나중에(사용자의 VLM을 vision.chain 같은 자리에).
+4. VLM 개수 세기는 학습하지 못해 하지 않기로 했다 (OpenCV로 마무리).
 5. 사용자가 push한다(위 절차). 시연 전 replays/가 실제 녹화인지 확인.
 6. 남은 Minor는 ../.superpowers/sdd/progress.md와 리뷰 기록 참고 (시연에 필수 아님).
 

@@ -89,9 +89,11 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <div class="wrap">
 
 <h1>snackbot 진행 보고서</h1>
-<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-23 실기 갱신 · 기준: 커밋 <code>0ea623b</code> (브랜치 <code>feat/robot-m4</code>, homerunball main <code>e066990</code> 이후 로컬 커밋은 아직 push 전) · 시연 노트북 = 이 Windows 11 PC(192.168.0.17)</p>
+<p class="sub">과자 옮기기 로봇 · 작성일 2026-10-22 · 2026-10-25 최종 정리 · 기준: 커밋 <code>0ea623b</code> (브랜치 <code>feat/robot-m4</code>, homerunball main <code>e066990</code> 이후 로컬 커밋은 아직 push 전) · 시연 노트북 = 이 Windows 11 PC(192.168.0.17)</p>
 
-<div class="note"><b>이번 갱신(2026-10-25):</b> 2026-10-23 실기 이후 시연 노트북에서 나온 수정을 반영한다. 테스트는 499개 통과. <b>(1) 설정 파일:</b> <code>poses.yaml</code>·<code>calibration/follower.yaml</code> 커밋, 머리말 주석(환경별 명령)은 저장할 때 보존(<code>174f381</code>). <b>(2) 개수 세기:</b> 한 번 셀 때 <code>vision.frames</code>(5)장을 0.1초 간격으로 읽어 <b>중앙값</b>을 쓴다(2↔3 깜빡임 제거, 남은 개수는 깜빡임으로 늘지 않음). LLM에 <code>moved</code>(옮긴 수)와 <code>this_item</code>(몇 번째)을 줘 "몇 번째" 대사가 계속 "첫 번째"이던 문제를 고쳤다(<code>85091bf</code>). OpenCV는 오란다 색 화소 마스크(H 5~21, S≥80, min_area 600, unit_area 1700)로 바꿔 초코송이와 붙어 있어도 따로 센다(3개를 2개로 세던 오판 수정, <code>40f2c4c</code>). 도리도리는 코드 동작(<code>skills.dori_dori.source: script</code>). <b>(3) 되살림:</b> 남은 0개인데 카메라가 아직 오란다를 보면 작업당 한 번 이어서 진행(<code>60e58c5</code>). <b>(4) 확인 재세기:</b> 놓은 뒤 개수가 안 줄었으면 <code>vision.confirm_s</code>(0.7초) 뒤 한 번 더 세어 확인한다(judge <code>vision_confirm</code>). 그리퍼만 믿고 성공으로 치지 않는다(<code>4870270</code>). <b>(5) 정정:</b> 앞 세기가 남은 개수보다 많은 값을 연속 두 번 보면 정정한다. 첫 세기가 손에 가려 과소였던 사례 때문이다. 하나도 안 옮겼으면 total·refuse_total까지, 아니면 total만 차이만큼 늘린다(<code>c4d3c04</code>). 거부 시점은 맨 처음 센 개수(<code>refuse_total</code>)로 고정(<code>a9f548b</code>). <b>(6) 예비 TTS:</b> Gemini TTS가 실패하면 Windows 한국어 음성 Microsoft Heami로 대신 말한다(PowerShell + System.Speech, <code>6238d58</code>). 한도 오류(402/403/429) 뒤 600초, 시간 초과·연결 오류 뒤 60초 동안 Gemini를 건너뛴다. 이전의 "OS TTS 예비 없음" 결정이 사용자 요청으로 바뀌었다. SAPI 오류는 로그에 남긴다(<code>a9f548b</code>). <b>(7) 테스트 버튼 4개:</b> <code>오란다 1회</code> · <code>모델 도리도리 1회</code> · <code>코드 도리도리 1회</code> · <code>홈으로</code>. source가 script여도 모델 도리도리를 1회 실행해 볼 수 있다(<code>4870270</code>). <b>(8) 발표 자료:</b> <code>docs/slides.html</code>과 <code>docs/slides.pptx</code>(편집 가능한 도형·네이티브 차트) 11장. 7장 "데이터셋과 학습"에 녹화 사진과 손실 곡선이 들어간다(<code>0fb24e7</code>, <code>6f851e0</code>, <code>4b6c063</code>, <code>c5fb788</code>). 학습: oranda_pickup 5 epoch(31 에피소드 9,111 프레임, train 0.35 / val 0.66, 덜 학습), dori_dori 100 epoch(train 0.07 / val 0.49, 데이터가 적어 과적합). <b>(9) 두 번 놓치면:</b> <code>decision.max_retry: 2 → 1</code>. 같은 오란다를 두 번 연속 놓치면 투덜대는 대사를 채팅과 TTS로 내고, 소리가 시작되면 코드 도리도리 1번 한 뒤 <code>phase = waiting_operator</code>로 바꾼다. 횟수·피로도·작업당 거부에는 넣지 않고, 비상정지는 도중에도 먹는다(<code>1995537</code>). <b>(10) 대기 중 채팅 재개:</b> 대기 중 채팅 intent는 <code>resume</code>·<code>chat</code>이고 resume 키워드에 "이어서", "계속", "재개"를 추가했다. "이어서 해줘" / 🎤 / 재개 버튼 / r 키로 같은 오란다를 다시 시도하며 count는 그대로다. UI의 재개·재시작 버튼이 납작하게 눌리던 것과 제어 칸 스크롤도 고쳤다. <b>(11) 전체 워크플로우 브라우저 확인(실제 로봇, 10-24):</b> 모든 테스트 버튼, 채팅, STT(<code>/stt</code>에 Heami WAV), TTS를 확인했다. TTS는 Gemini 오늘 한도(429)로 Heami로 넘어갔다. 웹캠 3대 기록은 <code>logs/workflow_check/</code>(git 제외). <b>(12) 기타:</b> source가 script일 때 dori 모델 warmup 실패는 경고만 낸다. <b>열린 문제:</b> 제어 루프 11~13 Hz(학습 30 Hz, MJPEG 화면을 추가로 열면 4.2 Hz까지 하락, 서버의 JPEG 인코딩 부하로 보이며 아직 고치지 않음) · 집기 정확도(pickup 추가 학습 필요) · 모델 도리도리(데이터를 더 녹화해야 함, 시연은 코드 도리도리) · VLM 개수 세기는 나중에 · 셸 환경의 낡은 <code>GEMINI_API_KEY</code>가 <code>.env</code>보다 우선하고 하루 한도를 넘기면 429(그때는 Heami가 말함) · homerunball push는 <code>4b6c063</code> 이후 커밋을 아직 하지 않았다(사용자가 한다).</div>
+<div class="note"><b>최종 정리(2026-10-25, 시연 끝):</b> 해커톤 시연과 발표를 마쳤고, 저장소를 끝난 프로젝트로 정리했다. <b>(1) 시연 결과:</b> 오란다 집기는 12번 시도해 1번 성공했다. 팔이 오란다까지 가서 집고 옮기는 동작은 하지만, 그리퍼가 오란다를 실제로 잡지 못하고 주변을 쥐는 경우가 대부분이었다. 카메라 개수 세기, 채팅·음성 명령, 도리도리, 음성 대답은 시연 전 현장 확인(10-24)에서 동작했다. <b>(2) 원인으로 보는 것(확정은 아님):</b> oranda_pickup은 5 epoch만 학습했고 val loss가 계속 내려가는 중이었다(train 0.35 / val 0.66). 제어 루프가 11~13 Hz로 돌았는데 학습 데이터는 30 Hz였다(MJPEG/JPEG 인코딩 부하로 의심, 고치지 못했다). dori_dori 모델은 데이터가 적어 과적합이라 시연에서는 코드 도리도리를 썼다. <b>(3) 하지 못한 것:</b> VLM 개수 세기는 계획만 하고 학습하지 못했다. 개수 세기는 OpenCV 규칙으로 끝났다. 제어 루프 주기 조사, pickup 재학습, 도리도리 데이터 추가는 프로젝트 종료로 하지 않았다. <b>(4) 쓰지 않은 코드 삭제:</b> YOLO-World counter와 <code>tools/export_yolo_world.py</code>, VLM counter와 OpenVINO <code>vlm</code> kind, OpenAI TTS/STT 경로, pyttsx3 TTS 엔진, providers의 openrouter · openai · ollama(config와 <code>.env.example</code> 포함). 남은 것은 OpenCV counter(+dry-run용 가짜 counter), Gemini TTS + Windows Heami 예비(+log/none), Whisper STT + Gemini STT 예비, LLM 체인 Claude → NVIDIA → 규칙이다. <b>(5) 문서:</b> <code>README.md</code>를 새로 썼다(프로젝트 소개, 동작 흐름, 데이터셋·학습 사진, 역할, 시연 결과, 한계). <b>(6) 테스트:</b> 487개. 아래 표는 이 정리에 맞춰 닫았다(진행 중 · 남음 항목은 완료 또는 보류, 보류는 "프로젝트 종료로 하지 않음"). 그 아래의 이전 갱신 노트는 당시 기록으로 그대로 둔다.</div>
+
+<div class="note"><b>이전 갱신(2026-10-25 오전):</b> 2026-10-23 실기 이후 시연 노트북에서 나온 수정을 반영한다. 테스트는 499개 통과. <b>(1) 설정 파일:</b> <code>poses.yaml</code>·<code>calibration/follower.yaml</code> 커밋, 머리말 주석(환경별 명령)은 저장할 때 보존(<code>174f381</code>). <b>(2) 개수 세기:</b> 한 번 셀 때 <code>vision.frames</code>(5)장을 0.1초 간격으로 읽어 <b>중앙값</b>을 쓴다(2↔3 깜빡임 제거, 남은 개수는 깜빡임으로 늘지 않음). LLM에 <code>moved</code>(옮긴 수)와 <code>this_item</code>(몇 번째)을 줘 "몇 번째" 대사가 계속 "첫 번째"이던 문제를 고쳤다(<code>85091bf</code>). OpenCV는 오란다 색 화소 마스크(H 5~21, S≥80, min_area 600, unit_area 1700)로 바꿔 초코송이와 붙어 있어도 따로 센다(3개를 2개로 세던 오판 수정, <code>40f2c4c</code>). 도리도리는 코드 동작(<code>skills.dori_dori.source: script</code>). <b>(3) 되살림:</b> 남은 0개인데 카메라가 아직 오란다를 보면 작업당 한 번 이어서 진행(<code>60e58c5</code>). <b>(4) 확인 재세기:</b> 놓은 뒤 개수가 안 줄었으면 <code>vision.confirm_s</code>(0.7초) 뒤 한 번 더 세어 확인한다(judge <code>vision_confirm</code>). 그리퍼만 믿고 성공으로 치지 않는다(<code>4870270</code>). <b>(5) 정정:</b> 앞 세기가 남은 개수보다 많은 값을 연속 두 번 보면 정정한다. 첫 세기가 손에 가려 과소였던 사례 때문이다. 하나도 안 옮겼으면 total·refuse_total까지, 아니면 total만 차이만큼 늘린다(<code>c4d3c04</code>). 거부 시점은 맨 처음 센 개수(<code>refuse_total</code>)로 고정(<code>a9f548b</code>). <b>(6) 예비 TTS:</b> Gemini TTS가 실패하면 Windows 한국어 음성 Microsoft Heami로 대신 말한다(PowerShell + System.Speech, <code>6238d58</code>). 한도 오류(402/403/429) 뒤 600초, 시간 초과·연결 오류 뒤 60초 동안 Gemini를 건너뛴다. 이전의 "OS TTS 예비 없음" 결정이 사용자 요청으로 바뀌었다. SAPI 오류는 로그에 남긴다(<code>a9f548b</code>). <b>(7) 테스트 버튼 4개:</b> <code>오란다 1회</code> · <code>모델 도리도리 1회</code> · <code>코드 도리도리 1회</code> · <code>홈으로</code>. source가 script여도 모델 도리도리를 1회 실행해 볼 수 있다(<code>4870270</code>). <b>(8) 발표 자료:</b> <code>docs/slides.html</code>과 <code>docs/slides.pptx</code>(편집 가능한 도형·네이티브 차트) 11장. 7장 "데이터셋과 학습"에 녹화 사진과 손실 곡선이 들어간다(<code>0fb24e7</code>, <code>6f851e0</code>, <code>4b6c063</code>, <code>c5fb788</code>). 학습: oranda_pickup 5 epoch(31 에피소드 9,111 프레임, train 0.35 / val 0.66, 덜 학습), dori_dori 100 epoch(train 0.07 / val 0.49, 데이터가 적어 과적합). <b>(9) 두 번 놓치면:</b> <code>decision.max_retry: 2 → 1</code>. 같은 오란다를 두 번 연속 놓치면 투덜대는 대사를 채팅과 TTS로 내고, 소리가 시작되면 코드 도리도리 1번 한 뒤 <code>phase = waiting_operator</code>로 바꾼다. 횟수·피로도·작업당 거부에는 넣지 않고, 비상정지는 도중에도 먹는다(<code>1995537</code>). <b>(10) 대기 중 채팅 재개:</b> 대기 중 채팅 intent는 <code>resume</code>·<code>chat</code>이고 resume 키워드에 "이어서", "계속", "재개"를 추가했다. "이어서 해줘" / 🎤 / 재개 버튼 / r 키로 같은 오란다를 다시 시도하며 count는 그대로다. UI의 재개·재시작 버튼이 납작하게 눌리던 것과 제어 칸 스크롤도 고쳤다. <b>(11) 전체 워크플로우 브라우저 확인(실제 로봇, 10-24):</b> 모든 테스트 버튼, 채팅, STT(<code>/stt</code>에 Heami WAV), TTS를 확인했다. TTS는 Gemini 오늘 한도(429)로 Heami로 넘어갔다. 웹캠 3대 기록은 <code>logs/workflow_check/</code>(git 제외). <b>(12) 기타:</b> source가 script일 때 dori 모델 warmup 실패는 경고만 낸다. <b>열린 문제:</b> 제어 루프 11~13 Hz(학습 30 Hz, MJPEG 화면을 추가로 열면 4.2 Hz까지 하락, 서버의 JPEG 인코딩 부하로 보이며 아직 고치지 않음) · 집기 정확도(pickup 추가 학습 필요) · 모델 도리도리(데이터를 더 녹화해야 함, 시연은 코드 도리도리) · VLM 개수 세기는 나중에 · 셸 환경의 낡은 <code>GEMINI_API_KEY</code>가 <code>.env</code>보다 우선하고 하루 한도를 넘기면 429(그때는 Heami가 말함) · homerunball push는 <code>4b6c063</code> 이후 커밋을 아직 하지 않았다(사용자가 한다).</div>
 
 <div class="note"><b>이전 갱신(2026-10-23 실기):</b> 시연 노트북(이 Windows 11 PC)에 실제 팔로워·카메라를 연결해 처음으로 실기를 했다. <b>(1) 연결:</b> physicalai 0.3.0을 <code>.venv</code>에 설치(사용자 승인). 팔로워 <code>COM5</code>(서보 homing offset·토크 켜짐으로 판별), 리더 <code>COM6</code>. physicalai는 캘리브레이션의 <code>range_min/max</code>(0..4095)만 쓰고 homing offset은 서보 EEPROM에 있다. 카메라 0 = 노트북 내장(쓰지 않음), 1 = follow(손목, icspring), 2 = tower(학습 이름 a), 3 = side(b). tower·side는 시리얼이 같아(ZVCAI231100001) Windows가 둘째에 포트 기반 ID를 준다. physicalai는 NV12(비압축) 720p30을 고르므로 카메라 두 대가 같은 USB 경로에 있으면 시간 초과가 난다 → USB 포트를 나눠 꽂는다(허브 없이). pynokhwa의 Windows JSON 역슬래시 버그는 <code>snackbot/wincam.py</code>로 보정(<code>663fc7b</code>). <b>(2) 정책 장치:</b> GPU 컴파일이 정책마다 55~65초라 <code>skills.device: CPU</code>로 정했다(로드 약 6초, 100스텝 청크당 0.14~0.23초). 모션 없는 확인(연결 + warmup 2회)은 9초. <b>(3) 포즈:</b> <code>poses.yaml</code> home <code>[4.9, -59.7, 51.9, 35.1, 3.4, 49.4]</code>(사용자), lift <code>[10.5, 13.0, -10.0, 22.0, 3.4, 50.0]</code>(데이터셋 에피소드 1·5의 놓은 직후 값에서 유도, 그리퍼 닫힘). 그리퍼 watch 측정: 빈손 49.4~50.1, 오란다 쥠 54.2~55.4, 열림 79.0 → config 값(56.0 / 56.5 / 52 / hold 0.15) 유지. <b>(4) 결과:</b> <code>오란다 1회</code> <b>성공</b>(놓기 감지 <code>gripper_open</code>, 쥠 성공, 22.7초, <code>logs/runs/20261023-103209_oranda_pickup</code>), <code>홈으로</code> 2.2초. <code>도리도리 1회</code>(모델)는 <code>shoulder_pan</code>이 ±1에 머물고 lift·elbow만 까딱거리다 시간 초과 → 모델이 도리도리를 못 한다고 판단해 <b>코드 도리도리 1회</b> 버튼을 추가했다(<code>dori_script</code>, <code>78a23ae</code>, 줄바꿈 CSS <code>db24091</code>, opus 승인(참고 사항 있음)). <b>(5) 개수 세기:</b> OpenCV counter v2(<code>fb6a85d</code>): 검은 매트 ROI, 어두운 링 검사(도착 트레이 제외), 색상 hue ≤ 22 · 면적 ≥ 800(노란 공·버섯 과자 제외), 붙은 덩어리는 <code>unit_area</code> 1700으로 분리(이후 10-25에 오란다 색 화소 마스크 H 5~21 · S≥80 · min_area 600으로 교체, 5장 중앙값). 실제 프레임에서 오란다 3개, 17 ms. UI에 개수 세기 토글(끔 · OpenCV)과 "지금 세기" 버튼. VLM은 일단 빼고(사용자의 1 epoch VLM은 나중에 추가), dry-run은 가짜 counter. <b>(6) 거부 규칙:</b> <code>decision.refuse: half</code>(기본, <code>27bdae2</code>): 전체의 절반(올림)을 옮기면 작업당 한 번 거부(3→2, 4→2, 5→3, 6→3), 달랜 뒤엔 다시 거부하지 않는다. 전체 = 첫 개수 세기 성공 값(없으면 채팅 개수 → <code>initial_count</code>). UI 게이지 "전체 N · M개째 뒤 거부". 옛 고정 임계값은 <code>fixed</code>. <b>(7) 열린 문제:</b> 제어 루프가 11~13 Hz로 돌았다(녹화 에피소드 fps 11.0 / 13.1, 학습은 30 Hz, 런타임 스텝당 약 77 ms). 의심: 카메라 3대 NV12→RGB 변환, MJPEG 스트림 인코딩, 실행 기록, 3D 트윈, CPU 경쟁. 아직 조사하지 않았다. 서버를 다시 띄울 때 카메라 "Timed out waiting for first frame"이 가끔 난다(USB 대역폭, 포트를 나눠 다시 꽂기). <b>(8) 리뷰:</b> <code>fb6a85d</code> + <code>27bdae2</code>의 opus 리뷰는 <b>진행 중</b>(결과 아직 없음). 그 밖에 <code>course_guide.html</code>에 06 Physical AI 장, 07 해커톤 프로젝트 장을 추가했다(<code>a3d8024</code>). 자동 테스트 445개.</div>
 
@@ -118,20 +120,20 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="summary">2. 전체 진척 요약</h2>
 <div class="grid">
-  <div class="stat"><b style="color:var(--done)">63</b><span>완료</span></div>
+  <div class="stat"><b style="color:var(--done)">66</b><span>완료</span></div>
   <div class="stat"><b style="color:var(--review)">0</b><span>리뷰 대기 (구현됨, 리뷰 안 함)</span></div>
-  <div class="stat"><b style="color:var(--wip)">3</b><span>진행 중</span></div>
-  <div class="stat"><b style="color:var(--todo)">2</b><span>남음</span></div>
-  <div class="stat"><b style="color:var(--hold)">2</b><span>보류</span></div>
-  <div class="stat"><b>499</b><span>자동 테스트 통과 (<code>pytest -q</code>, <code>1995537</code> 시점 전체)</span></div>
+  <div class="stat"><b style="color:var(--wip)">0</b><span>진행 중</span></div>
+  <div class="stat"><b style="color:var(--todo)">0</b><span>남음</span></div>
+  <div class="stat"><b style="color:var(--hold)">4</b><span>보류</span></div>
+  <div class="stat"><b>487</b><span>자동 테스트 (<code>pytest -q</code>, 최종 정리 기준)</span></div>
 </div>
-<p class="sub" style="margin-top:8px">비교표(4장) 70개 행 기준. 소프트웨어 계획 Task 1~10, 로봇 연결(M4) 코드 Task 1~6, 4분할·3D 트윈 Task 1~7, 스킬 테스트·코드 도리도리·LLM 도리도리 Task 1~6은 모두 완료. 2026-10-23에 시연 노트북에서 실기를 시작해 <code>오란다 1회</code> 성공까지 확인했다. 2026-10-24에 실제 로봇으로 전체 흐름(테스트 버튼·채팅·STT·TTS)을 브라우저에서 확인했고, 10-25에 두 번 놓치면 투덜대고 도리도리하는 규칙과 대기 중 채팅 재개를 넣었다. 제어 루프 주기, pickup 추가 학습, 도리도리 데이터, VLM이 남았다.</p>
+<p class="sub" style="margin-top:8px">비교표(4장) 70개 행 기준. 소프트웨어 계획 Task 1~10, 로봇 연결(M4) 코드 Task 1~6, 4분할·3D 트윈 Task 1~7, 스킬 테스트·코드 도리도리·LLM 도리도리 Task 1~6은 모두 완료. 2026-10-23에 시연 노트북에서 실기를 시작해 <code>오란다 1회</code> 성공까지 확인했다. 2026-10-24에 실제 로봇으로 전체 흐름(테스트 버튼·채팅·STT·TTS)을 브라우저에서 확인했고, 10-25에 두 번 놓치면 투덜대고 도리도리하는 규칙과 대기 중 채팅 재개를 넣었다. 시연(10-25)에서 오란다 집기는 12번 중 1번 성공했다. 제어 루프 주기, pickup 추가 학습, 도리도리 데이터, VLM은 프로젝트 종료로 하지 않고 보류로 닫았다. 진행 중 · 남음 행은 없다.</p>
 
 <div class="card">
-<div class="prow"><span class="n">설계 마일스톤 M0~M7</span><div class="bar"><i class="d" style="width:75%"></i><i class="w" style="width:12.5%"></i></div><span class="v">완료 6 · 진행 1 · 남음 1</span></div>
+<div class="prow"><span class="n">설계 마일스톤 M0~M7</span><div class="bar"><i class="d" style="width:87.5%"></i></div><span class="v">완료 7 · 보류 1</span></div>
 <div class="prow"><span class="n">소프트웨어 Task 1~10</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 10 / 10</span></div>
 <div class="prow"><span class="n">M4 로봇 Task 1~6</span><div class="bar"><i class="d" style="width:100%"></i></div><span class="v">완료 6 / 6</span></div>
-<div class="prow"><span class="n">그 밖의 연결·정리 (38개)</span><div class="bar"><i class="d" style="width:81.6%"></i><i class="w" style="width:5.3%"></i></div><span class="v">완료 31 · 진행 2 · 남음 3 · 보류 2</span></div>
+<div class="prow"><span class="n">그 밖의 연결·정리 (38개)</span><div class="bar"><i class="d" style="width:86.8%"></i></div><span class="v">완료 33 · 보류 3 · 진행 0 · 남음 0 (그 밖의 연결·정리 38개 중)</span></div>
 </div>
 <p class="sub">범례: <span class="badge b-done">완료</span> <span class="badge b-review">리뷰 대기</span> <span class="badge b-wip">진행 중</span> <span class="badge b-todo">남음</span> <span class="badge b-hold">보류</span></p>
 
@@ -139,11 +141,11 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <h3>3계층 구조</h3>
 <div class="layers">
   <div class="layer"><h4>인식 <small>끝·성공 판정</small></h4>
-    B: 시작 개수 + 그리퍼 쥠 판정<br>A: counter 체인 (YOLO-World / VLM / OpenCV)<br><small>구현: <code>vision.py</code></small></div>
+    B: 시작 개수 + 그리퍼 쥠 판정<br>A: counter 체인 (OpenCV 규칙; YOLO-World · VLM은 만들었다가 삭제, VLM은 학습 못 함)<br><small>구현: <code>vision.py</code></small></div>
   <div class="layer"><h4>판단 <small>다음 행동과 대사, 채팅 의도</small></h4>
     코드 가드 + LLM (provider 체인), TTS 출력<br><small>구현: <code>brain.py</code> <code>providers.py</code> <code>voice.py</code></small></div>
   <div class="layer"><h4>행동 <small>동작 실행</small></h4>
-    ACT 정책 2개 (OpenVINO): <code>oranda_pickup</code>, <code>dori_dori</code><br><small>구현: <code>skills.py</code> (dry-run 완료), <code>motion.py</code> <code>robot.py</code> 완료, 진입점 연결 완료 (M4), 실기 확인은 남음</small></div>
+    ACT 정책 2개 (OpenVINO): <code>oranda_pickup</code>, <code>dori_dori</code><br><small>구현: <code>skills.py</code> (dry-run 완료), <code>motion.py</code> <code>robot.py</code> 완료, 진입점 연결 완료 (M4), 실기 확인 완료(오란다 집기는 12번 중 1번 성공)</small></div>
 </div>
 <p>의존 방향: <code>server → controller → (brain, vision, skills, voice)</code>. controller는 FastAPI를 모르므로 <code>--no-ui</code>로도 돈다.</p>
 
@@ -176,10 +178,10 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>M1 controller, brain 규칙, B 판정, dry skills, 콘솔 키, JSONL</td><td><span class="badge b-done">완료</span></td><td><code>89b3c4a</code> <code>f6d6a08</code> <code>cd33df2</code></td></tr>
 <tr><td>M2 server.py + 계약, <code>frontend/</code></td><td><span class="badge b-done">완료</span></td><td><code>985351f</code> <code>6a7353b</code></td></tr>
 <tr><td>M3 providers + brain(decide·chat) + TTS, counter 체인(A)</td><td><span class="badge b-done">완료</span></td><td><code>437149a</code> <code>f648b13</code> <code>93915c8</code> <code>f6c1921</code>. 코드·테스트는 끝. 실제 YOLO/VLM 모델은 아직 안 붙였다(vision.chain 비어 있음, 아래 "남음" 참고)</td></tr>
-<tr><td>M4 로봇 연결 (자세 이동 → 정책 단독 → 전체 루프 → 카메라 스트림)</td><td><span class="badge b-wip">진행 중</span></td><td>코드 Task 1~6 모두 완료. 2026-10-23 노트북 실기: 연결·포즈·<code>오란다 1회</code> 성공·<code>홈으로</code> 확인. 전체 흐름 실기, 제어 루프 11~13 Hz 조사가 남아 진행 중</td></tr>
+<tr><td>M4 로봇 연결 (자세 이동 → 정책 단독 → 전체 루프 → 카메라 스트림)</td><td><span class="badge b-done">완료</span></td><td>코드 Task 1~6 모두 완료. 2026-10-23 노트북 실기: 연결·포즈·<code>오란다 1회</code> 성공·<code>홈으로</code> 확인. 전체 흐름 실기는 10-24 현장 확인과 10-25 시연으로 마쳤다. 제어 루프 11~13 Hz는 고치지 못한 채 종료</td></tr>
 <tr><td>M5 달래기 (REFUSING에서 resume intent)</td><td><span class="badge b-done">완료</span></td><td><code>f648b13</code> (intent) + <code>89b3c4a</code> (상태 전이). dry-run 기준, 대화 LLM은 별도 행</td></tr>
 <tr><td>M6 STT (<code>/stt</code> + stt.py, 말로 시작·달래기)</td><td><span class="badge b-done">완료</span></td><td>서버 경로 <code>985351f</code> + 로컬 Whisper <code>1284e6a</code> <code>e006840</code></td></tr>
-<tr><td>M7 (선택) ACT 디바이스별 지연 비교</td><td><span class="badge b-todo">남음</span></td><td>자를 때 가장 먼저 자르는 항목</td></tr>
+<tr><td>M7 (선택) ACT 디바이스별 지연 비교</td><td><span class="badge b-hold">보류</span></td><td>프로젝트 종료로 하지 않음 (CPU로 정해 씀)</td></tr>
 <tr><td class="grp" colspan="3">소프트웨어 계획 Task 1~10 (plans/2026-10-22-snackbot-software.md)</td></tr>
 <tr><td>Task 1 프로젝트 기반 (config · 테스트 설정)</td><td><span class="badge b-done">완료</span></td><td><code>49b9e0e..18d347f</code>, 리뷰 통과</td></tr>
 <tr><td>Task 2 provider 어댑터와 fallback 체인</td><td><span class="badge b-done">완료</span></td><td><code>437149a</code> <code>820037b</code>, 수정 1회 후 통과</td></tr>
@@ -212,13 +214,13 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>동기화 Minor 정리 (기본값 8초 ↔ config 10초 불일치, 다 옮김 경로 세션 번호 확인 등)</td><td><span class="badge b-done">완료</span></td><td><code>8cd3b82</code> <code>637a678</code>. 음성 동기화 기본값을 10초로 맞춤, 이전 세션의 '다 옮김'·개수 결과가 새 세션을 덮지 않음</td></tr>
 <tr><td>controller 정리 (재시작은 동작이 멈춘 뒤, 비상정지 때 남은 대사 버리기)</td><td><span class="badge b-done">완료</span></td><td><code>8cd3b82</code> <code>637a678</code>, opus 리뷰. 재시작은 진행 중인 동작이 멈춘 뒤에만(최대 5초, 안 멈추면 거부하고 비상정지 유지), 웹 UI 재시작에도 세션 번호 확인, 재시작 취소 시 UI 알림</td></tr>
 <tr><td>런북에 노트북 "로봇 첫 연결" 절차 (2-2절)</td><td><span class="badge b-done">완료</span></td><td><code>56c1b67</code>, <a href="DEMO_RUNBOOK.md"><code>DEMO_RUNBOOK.md</code></a>. 포트 → 캘리브레이션 → watch(그리퍼 방향) → 포즈 저장 → home 이동(Ctrl+C 토크 유지 확인) → dori_dori 순서, 무료 Gemini 키 안내 포함</td></tr>
-<tr><td>노트북에서 로봇 실기 확인 (런북 2-2절 순서)</td><td><span class="badge b-wip">진행 중</span></td><td>2026-10-23: 포트(COM5), 카메라 번호, 캘리브레이션, 그리퍼 watch, 포즈 저장(home·lift), home 이동 2.2초, 오란다 1회 성공(22.7초) 확인. 남은 것: 전체 흐름(채팅 시작 → 반복 → 거부 → 달래기), 3D 영점(<code>twin.sign</code>/<code>offset_deg</code>), 루프 주기</td></tr>
+<tr><td>노트북에서 로봇 실기 확인 (런북 2-2절 순서)</td><td><span class="badge b-done">완료</span></td><td>2026-10-23: 포트(COM5), 카메라 번호, 캘리브레이션, 그리퍼 watch, 포즈 저장(home·lift), home 이동 2.2초, 오란다 1회 성공(22.7초) 확인. 남은 것: 전체 흐름(채팅 시작 → 반복 → 거부 → 달래기), 3D 영점(<code>twin.sign</code>/<code>offset_deg</code>), 루프 주기</td></tr>
 <tr><td>UI 말하기 단계 (단계 표시줄 "말하기", 상태 "말하는 중", 목업 반영)</td><td><span class="badge b-done">완료</span></td><td><code>d8d67fb</code>. 연동 계약(UI_DESIGN_PROMPT, 설계 문서)의 phase 목록에 speaking 추가</td></tr>
 <tr><td>채팅 개수 우선순위 ("3개 옮겨줘"의 3이 LLM 값보다 우선)</td><td><span class="badge b-done">완료</span></td><td><code>c2c269e</code>. 절대 규칙 1 "횟수는 코드가 센다"에 맞춤. 리뷰에서 발견</td></tr>
 <tr><td>STT·TTS 선택 문서와 Gemini 예비 STT 실제 확인</td><td><span class="badge b-done">완료</span></td><td><a href="VOICE_PROVIDERS.md"><code>VOICE_PROVIDERS.md</code></a> (<code>1449202</code>, <code>5312105</code>): 후보 비교와 선택 이유. 무료 키로 <code>gemini-3.5-flash-lite</code> 오디오 입력, 3문장 모두 정확, 1.5~2.4초</td></tr>
 <tr><td>physicalai 0.3.0 소스 확인 (설치 없이 소스만 읽음)</td><td><span class="badge b-done">완료</span></td><td><code>RobotRuntime.run()</code>은 실행마다 동작 출처의 connect를 부르고 끝에 disconnect(runtime/core.py:376, :639) → 정책이 실행마다 초기화됨</td></tr>
-<tr><td>UI에서 🎤 마이크 입력과 음성 재생 확인</td><td><span class="badge b-wip">진행 중</span></td><td>사용자가 브라우저로 확인 중 (결과 아직 없음). dry-run <code>/stt</code> 업로드 → 인식 → 채팅 → 작업 시작 흐름은 확인함</td></tr>
-<tr><td>OpenAI STT/TTS 엔진 (예비)</td><td><span class="badge b-hold">보류</span></td><td><code>bd1c9ee</code>. 키가 401(무효)이라 예비로만 남김</td></tr>
+<tr><td>UI에서 🎤 마이크 입력과 음성 재생 확인</td><td><span class="badge b-done">완료</span></td><td>10-24 현장 확인에서 STT·TTS 동작, 시연에서 사용. dry-run <code>/stt</code> 업로드 → 인식 → 채팅 → 작업 시작 흐름은 확인함</td></tr>
+<tr><td>OpenAI STT/TTS 엔진 (예비)</td><td><span class="badge b-hold">보류</span></td><td><code>bd1c9ee</code>. 키가 401(무효)이라 예비로만 남겼고, 최종 정리에서 코드를 삭제했다</td></tr>
 <tr><td>STT를 OpenVINO Whisper 로컬로 (결정 21번)</td><td><span class="badge b-done">완료</span></td><td>결정은 <code>4ac9524</code>, 구현 <code>1284e6a</code> <code>e006840</code> (small CPU 기본, Gemini 예비). 노트북에서 설치·속도 확인은 남음</td></tr>
 <tr><td>oranda_pickup ACT 학습 (Studio)</td><td><span class="badge b-done">완료</span></td><td>결과물 <code>traind-model/pickup/exports/openvino</code> 반영(<code>6681a3d</code>). 노트북 CPU에서 로드 6초, 청크당 0.14~0.23초, 실기 1회 성공</td></tr>
 <tr><td>counter 체인의 실제 모델: OpenCV counter v2 (YOLO-World·VLM은 나중)</td><td><span class="badge b-done">완료</span></td><td>OpenCV는 <code>fb6a85d</code>(실제 프레임 3개, 17 ms). YOLO-World 도구(<code>93915c8</code>)는 있으나 큰 패키지를 설치하지 않았다. VLM은 아래 보류 행</td></tr>
@@ -241,14 +243,15 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <tr><td>대기 중 채팅으로 재개 ("이어서 해줘")</td><td><span class="badge b-done">완료</span></td><td><code>1995537</code>. 대기 중 intent는 <code>resume</code>·<code>chat</code>, 키워드 이어서·계속·재개 추가. 🎤·재개 버튼·r 키도 같은 경로, count 불변. 재개·재시작 버튼 납작함과 제어 칸 스크롤도 수정</td></tr>
 <tr><td>전체 워크플로우 브라우저 확인 (실제 로봇, 2026-10-24)</td><td><span class="badge b-done">완료</span></td><td>모든 테스트 버튼, 채팅, STT(<code>/stt</code>에 Heami WAV), TTS 확인. TTS는 Gemini 한도(429)로 Heami로 넘어감. 웹캠 3대 기록은 <code>logs/workflow_check/</code>(git 제외)</td></tr>
 <tr><td>설정 파일 커밋 (<code>poses.yaml</code>, <code>calibration/follower.yaml</code>)</td><td><span class="badge b-done">완료</span></td><td><code>174f381</code>. 머리말 주석(환경별 명령)을 <code>save_pose</code>·<code>fetch_calibration</code>이 지키고 다시 씀(<code>config.leading_comments</code>)</td></tr>
-<tr><td>제어 루프 주기 조사 (11~13 Hz 대 학습 30 Hz)</td><td><span class="badge b-todo">남음</span></td><td>런타임 스텝당 약 77 ms. 의심: 카메라 3대 NV12→RGB, MJPEG 인코딩, 실행 기록, 3D 트윈, CPU 경쟁. 아직 조사 전</td></tr>
+<tr><td>제어 루프 주기 조사 (11~13 Hz 대 학습 30 Hz)</td><td><span class="badge b-hold">보류</span></td><td>런타임 스텝당 약 77 ms. 의심: 카메라 3대 NV12→RGB, MJPEG 인코딩, 실행 기록, 3D 트윈, CPU 경쟁. 프로젝트 종료로 하지 않음 (오란다 집기 실패의 원인 후보)</td></tr>
 <tr><td>도리도리: 모델 대신 코드 쓸지 결정 (<code>skills.dori_dori.source: script</code> 고려)</td><td><span class="badge b-done">완료</span></td><td>시연은 코드 도리도리(<code>skills.dori_dori.source: script</code>, <code>40f2c4c</code>)로 정했다. 모델은 데이터가 적어 과적합(val 0.49)이라 데이터를 더 녹화한 뒤 다시 본다. 모델 도리도리는 "모델 도리도리 1회" 버튼으로 확인할 수 있다</td></tr>
 <tr><td>전체 흐름 실기 (OpenCV 개수 세기 + half 거부 + 달래기)</td><td><span class="badge b-done">완료</span></td><td>2026-10-24 실제 로봇으로 모든 테스트 버튼·채팅·STT·TTS를 브라우저에서 확인(아래 행). 제어 루프 주기와 집기 정확도는 열린 문제로 남음</td></tr>
-<tr><td>VLM 개수 세기</td><td><span class="badge b-hold">보류</span></td><td>사용자가 1 epoch VLM을 갖고 있어 나중에 chain에 추가</td></tr>
+<tr><td>VLM 개수 세기</td><td><span class="badge b-hold">보류</span></td><td>학습하지 못했다. 프로젝트 종료로 하지 않고 코드도 삭제함. 개수 세기는 OpenCV 규칙</td></tr>
 </tbody></table></div>
 <p class="sub">리뷰 대기 커밋은 <code>fb6a85d</code>, <code>27bdae2</code> 둘이었고 opus 리뷰(Approved with notes)와 수정 <code>0ea623b</code>로 완료했다. 이전 리뷰 대기 7개 중 5개(<code>4d6b040</code> <code>bd1c9ee</code> <code>982692d</code> <code>b2fc422</code> <code>6db1ac4</code>)는 승인, 콘솔 키 2개(<code>620cdfa</code> <code>b2f4c6e</code>)는 수정 후 opus 재리뷰로 완료했다.</p>
 
 <h2 id="detail">5. 단계별 상세</h2>
+<p class="sub">이 장은 만들 당시의 기록이다. YOLO-World · VLM counter, OpenAI·pyttsx3 음성 엔진, openrouter · openai · ollama provider는 최종 정리(2026-10-25)에서 코드를 삭제했다.</p>
 <p class="sub">각 항목을 눌러 펼친다. 근거는 진행 기록(<code>.superpowers/sdd/progress.md</code>), 계획, 설계 문서, 의논 기록(결정 1~21).</p>
 
 <h3>5-A. 설계 마일스톤</h3>
@@ -292,7 +295,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <p><span class="k">주의:</span> 현재 <code>vision.chain</code>은 빈 목록이라 B단계로만 동작한다. 실제 YOLO-World/VLM은 이 PC에 ultralytics 등을 설치하지 않았기 때문에 검증하지 않았다(남음 항목).</p>
 </div></details>
 
-<details><summary>M4 로봇 연결 <span class="badge b-wip">진행 중</span></summary><div class="body">
+<details><summary>M4 로봇 연결 <span class="badge b-done">완료</span></summary><div class="body">
 <p><span class="k">무엇:</span> physical-ai-studio가 학습한 ACT OpenVINO 정책 2개를 <code>physicalai</code> 0.3.0 런타임으로 SO-101에서 직접 실행. 그리퍼 "닫힘 → 열림"에서 ACT를 멈추고 코드가 <code>lift_pose → home_pose</code>로 복귀, 비상정지는 토크 유지.</p>
 <p><span class="k">구조(계획):</span> <code>RobotRuntime</code> 하나를 시작 때 연결해 두고 <code>run()</code>마다 동작 출처를 바꿔 끼운다(<code>Switch.active</code> = 정책 A / 정책 B / <code>MoveSource</code>). 매 틱 콜백(<code>Tap</code>)이 관절값·프레임을 저장하고 <code>GripperWatch</code>에 넘긴다.</p>
 <p><span class="k">왜 그리퍼 전이인가:</span> 홈 자세에서 그리퍼가 이미 열려 있으면 "열림 + 0.5초"는 시작하자마자 걸린다. 닫힘 기준을 한 번 지난 뒤 열림 기준을 0.5초 넘으면 정지, 최대 시간은 안전장치(결정 17). 기준값은 <code>tools/gripper_stats.py</code>로 데이터셋에서 정한다.</p>
@@ -314,7 +317,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 <p><span class="k">다음 순서:</span> 8장 참고.</p>
 </div></details>
 
-<details><summary>M7 디바이스별 지연 비교 <span class="badge b-todo">남음</span></summary><div class="body">
+<details><summary>M7 디바이스별 지연 비교 <span class="badge b-hold">보류</span></summary><div class="body">
 <p>선택 항목. <code>openvino-physical-ai-lab/scripts/bench_policy.py</code>를 재사용해 ACT를 CPU/GPU/NPU에서 돌려 발표용 비교표를 만든다(결정 14). 시간이 부족하면 가장 먼저 자른다(자르는 순서: M7 → M6 → M5 → counter 체인). M4까지 B 판정 + 채팅 시작 + r 키만으로 시연이 성립한다.</p>
 </div></details>
 
@@ -456,7 +459,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 </tbody></table></div>
 <p class="sub">의논 기록 전체(1~21번): <code>docs/memo/2026-10-22-design-discussion.md</code>. 최종 기준은 <code>docs/superpowers/specs/2026-10-22-chat-ui-design.md</code>.</p>
 
-<h2 id="next">8. 리뷰, 남은 결정, 다음 할 일</h2>
+<h2 id="next">8. 리뷰, 남은 결정, 하지 못한 것 / 다음에 해 볼 것</h2>
 
 <h3>리뷰 결과 (이전 리뷰 대기 커밋 7개)</h3>
 <ul>
@@ -466,7 +469,15 @@ svg .lbl{fill:var(--muted);font-size:11px}
 </ul>
 <p>리뷰 보고서 위치: <code>.superpowers/sdd/</code> 의 keys-fix-report.md, llm-connect-report.md, voice-llm-report.md, memory-report.md, gemini-voice-report.md.</p>
 
-<h3>다음 할 일 (순서)</h3>
+<h3>하지 못한 것 / 다음에 해 볼 것</h3>
+<p class="sub">시연이 끝나 아래 항목은 하지 않고 닫았다. 이어서 한다면 1~4번 순서로 본다. 번호 옆 설명은 당시 작업 메모다.</p>
+<ol>
+<li><b>제어 루프 주기:</b> 11~13 Hz를 30 Hz에 가깝게 (MJPEG/JPEG 인코딩 부하부터 의심).</li>
+<li><b>oranda_pickup 재학습:</b> 5 epoch에서 val loss가 계속 내려가는 중이라 더 학습한다.</li>
+<li><b>dori_dori 데이터 추가:</b> 지금 모델은 과적합이다. 시연은 코드 도리도리였다.</li>
+<li><b>VLM 개수 세기:</b> 학습하지 못했다. 개수 세기는 OpenCV 규칙으로 끝났다.</li>
+</ol>
+<h3>아래는 당시 작업 메모 (기록)</h3>
 <ol>
 <li><b>STT 로컬 Whisper: 완료</b> (<code>1284e6a</code>, <code>e006840</code>). 남은 것은 시연 노트북에서 openvino-genai 설치, <code>hf download OpenVINO/whisper-small-int8-ov --local-dir models/whisper-small</code>, <code>python -m snackbot.stt</code>로 속도 확인, CPU/GPU 선택(device와 label을 같이 바꾼다).</li>
 <li><b>TTS 완료(Heami 예비 포함):</b> 무료 Gemini 키로 동작하고 왕복 검사도 통과했다(처음엔 OS TTS 예비를 만들지 않기로 했으나, 2026-10-24에 사용자 요청으로 Windows Heami 예비를 추가했다).</li>
@@ -497,7 +508,7 @@ svg .lbl{fill:var(--muted);font-size:11px}
 
 <h2 id="verify">9. 확인 방법 모음</h2>
 <pre><code># project 루트에서
-.venv/Scripts/python -m pytest -q                       # 499개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
+.venv/Scripts/python -m pytest -q                       # 487개 통과 (test_server.py는 Windows에서 가끔 1~3개 실패, 재실행)
 .venv/Scripts/python -m snackbot --dry-run              # 로봇 없이 전체 흐름 + UI (http://localhost:8000)
 .venv/Scripts/python -m snackbot --dry-run --no-ui      # 콘솔만 (s 시작, r 재개, space 비상정지, h 재시작, q 종료)
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg</code></pre>

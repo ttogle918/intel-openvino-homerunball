@@ -15,7 +15,7 @@ const S = { state: 'IDLE', phase: 'idle', count: 0, remaining: null, vision_meth
 
 const STATE_KO = { IDLE: '대기', WORKING: '작업 중', REFUSING: '거부 중', DONE: '완료', ESTOP: '비상정지', TESTING: '테스트' };
 const PHASE_KO = { idle: '쉬는 중', counting: '개수 세는 중', thinking: '생각 중', speaking: '말하는 중', acting: '옮기는 중', returning: '제자리로', waiting_operator: '도움 필요' };
-const METHOD_KO = { yolo: 'YOLO', vlm: 'VLM', opencv: 'OpenCV', fake: '테스트 값' };
+const METHOD_KO = { opencv: 'OpenCV', fake: '테스트 값' };
 const STEP_ORDER = ['counting', 'thinking', 'speaking', 'acting', 'returning'];
 
 /* ---------- render ---------- */
@@ -90,7 +90,7 @@ function renderState() {
   });
 }
 
-const CHOICE_KO = { off: '끔', auto: '자동', opencv: 'OpenCV', yolo: 'YOLO', vlm: 'VLM', fake: '테스트 값' };
+const CHOICE_KO = { off: '끔', auto: '자동', opencv: 'OpenCV', fake: '테스트 값' };
 let visionKey = '';
 function renderVision() {   // 서버가 알려 준 선택지만 보여 준다 (없으면 칸 전체 숨김)
   const opts = S.vision_options || [];
@@ -625,7 +625,7 @@ function createMock(emit) {
 
   const api = {
     start() {
-      emit({ type: 'info', target: { name: '오란다' }, models: { vision: 'YOLO-World · OpenVINO · GPU', llm: 'API · openrouter', stt: 'Whisper · OpenVINO · CPU', act: 'ACT · OpenVINO · GPU' },
+      emit({ type: 'info', target: { name: '오란다' }, models: { vision: 'OpenCV · CPU', llm: 'API · anthropic', stt: 'Whisper · OpenVINO · CPU', act: 'ACT · OpenVINO · GPU' },
         ui: { tiles: DEFAULT_TILES }, twin: { mode: 'mock', urdf: DEFAULT_URDF }, replays: [], tests: TEST_DEFAULT });
       pushState({});
       say('system', '시뮬레이터가 연결되었어요');

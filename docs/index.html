@@ -85,7 +85,7 @@ ol.steps li{margin:6px 0}
 <p>하드웨어는 SO-ARM101 팔로워 1대·학습용 리더 1대, 카메라 3대(tower · side 외부 2대 + follow 손목)이고, 2일 해커톤 프로젝트다. 시연 노트북은 Windows 11 PC이고, 화면은 카메라 3칸 + 3D 디지털 트윈의 4분할이다 (2026-10-23 실기를 시작했다).</p>
 <div class="tablewrap"><table>
 <tr><th>계층</th><th>담당</th><th>구현</th></tr>
-<tr><td><b>인식</b></td><td>끝·성공 판정</td><td>B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (지금 <b>OpenCV</b>, YOLO-World / VLM은 같은 자리에 꽂을 수 있음)</td></tr>
+<tr><td><b>인식</b></td><td>끝·성공 판정</td><td>B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (<b>OpenCV</b> 규칙. VLM 개수 세기는 계획만 하고 학습하지 못했다)</td></tr>
 <tr><td><b>판단</b></td><td>다음 행동과 대사, 채팅 의도</td><td>코드 가드 + LLM (provider 체인), TTS 출력</td></tr>
 <tr><td><b>행동</b></td><td>동작 실행</td><td>ACT 정책 2개 (OpenVINO): <code>oranda_pickup</code>, <code>dori_dori</code> (모델이 없거나 <code>source: script</code>면 코드 도리도리)</td></tr>
 </table></div>
@@ -98,7 +98,7 @@ ol.steps li{margin:6px 0}
     end
     subgraph P["인식 계층"]
         CAM["카메라 3대&lt;br/&gt;tower · side · follow"]
-        CNT_A["A: counter 체인&lt;br/&gt;OpenCV (YOLO-World · VLM 자리)"]
+        CNT_A["A: counter 체인&lt;br/&gt;OpenCV 규칙"]
         GRIP["B: 시작 개수 +&lt;br/&gt;그리퍼 쥠 판정"]
     end
     subgraph J["판단 계층"]
@@ -157,7 +157,7 @@ ol.steps li{margin:6px 0}
 <tr><td>2</td><td><b>ACT 정책 하나 = 동작 하나.</b> 순서·횟수는 controller가 관리한다.</td><td>ACT는 기억이 없어 몇 번째인지 모른다.</td></tr>
 <tr><td>3</td><td><b>LLM 출력은 허용된 값만.</b> skill은 <code>oranda_pickup | dori_dori | done</code>, 채팅 intent는 상태별 허용 목록(<code>start_task | chat | resume | dori_dori</code>) 안에서만. 벗어나면 규칙으로 결정. <code>dori_dori</code>(도리도리 1회)는 대기 상태에서만.</td><td>잘못된 출력이 로봇 동작으로 이어지지 않게 한다.</td></tr>
 <tr><td>4</td><td><b>STT는 UI 🎤 누르고 말하기.</b> 인식 문장은 채팅과 같은 경로(<code>controller.chat</code>).</td><td>상시 청취는 발표장 소음·모터 소리·로봇 자신의 TTS 때문에 부정확하다. 같은 경로면 로직을 재사용한다.</td></tr>
-<tr><td>5</td><td><b>파인튜닝 없음.</b> 개수 세기는 OpenCV(현재 사용)와 제로샷(YOLO-World 텍스트 클래스, VLM). 외부 OpenVINO 검출 모델은 같은 자리에 꽂을 수 있다.</td><td>2일 안에 끝내야 하고, 학습 없이도 박스 오버레이까지 얻는다.</td></tr>
+<tr><td>5</td><td><b>파인튜닝 없음.</b> 개수 세기는 학습 없이 OpenCV 규칙으로 한다(VLM은 계획만 했고 학습하지 못했다).</td><td>2일 안에 끝내야 해서 개수 세기는 학습 없이 간다.</td></tr>
 <tr><td>6</td><td><b>physicalai / LeRobot 코어 수정 금지.</b> 설치된 버전의 API를 확인해 그대로 사용.</td><td>라이브러리를 고치면 유지가 어려워지고, 시그니처가 버전마다 다를 수 있다.</td></tr>
 <tr><td>7</td><td><b>oranda_pickup ACT는 놓기까지만.</b> 그리퍼 "닫힘 → 열림"을 감지하면 ACT를 멈추고 코드가 <code>lift_pose → home_pose</code>로 복귀. 스킬 시작 전에는 항상 <code>home_pose</code>.</td><td>복귀 구간은 매번 궤적이 달라 데이터가 적을 때 노이즈가 되고, "돌아오자마자 또 집으러 가는" 혼란도 막는다.</td></tr>
 <tr><td>8</td><td><b>외부 API는 타임아웃 필수.</b> provider 체인이 전부 실패해도 로봇 루프는 규칙 fallback으로 계속 돈다.</td><td>네트워크 때문에 로봇이 멈추면 시연이 깨진다.</td></tr>
@@ -174,7 +174,7 @@ ol.steps li{margin:6px 0}
 .venv/Scripts/python -m snackbot.vision tests/samples/tray_3.jpg   # 모듈 단독 테스트 (--blobs: ROI·면적 맞추기)
 .venv/Scripts/python -m tools.robot_probe save home   # 현재 팔 자세를 home_pose로 (lift도 동일)
 .venv/Scripts/python -m snackbot.robot home           # 스킬 하나만: home | dori_dori | dori_script | oranda_pickup
-.venv/Scripts/python -m pytest                        # 499개</code></pre>
+.venv/Scripts/python -m pytest                        # 487개</code></pre>
 <div class="callout"><b>의존 방향:</b> <code>server → controller → (brain, vision, skills, voice)</code>. controller는 FastAPI를 모른다. <code>--no-ui</code>면 server 없이 돈다. 실제 로봇이면 <code>skills</code> 자리에 <code>robot.py</code>의 <code>RobotSkills</code>가 들어간다.</div>
 <h3>저장소 구조</h3>
 <div class="tablewrap"><table>
@@ -188,7 +188,7 @@ ol.steps li{margin:6px 0}
 <tr><td><code>snackbot/server.py</code></td><td>FastAPI: <code>/ws</code>, <code>/stt</code>, <code>/stream/{cam}</code>(MJPEG), <code>/api/replay/{skill}</code>, <code>/replays</code>, <code>frontend/</code> 정적 서빙</td></tr>
 <tr><td><code>snackbot/providers.py</code></td><td>openai_compat / anthropic / openvino 어댑터 + fallback 체인</td></tr>
 <tr><td><code>snackbot/brain.py</code></td><td><code>decide()</code> 작업 판단(가드 규칙 half·fixed), <code>chat()</code> 의도·대사</td></tr>
-<tr><td><code>snackbot/vision.py</code></td><td>counter 체인(opencv v2 / yolo / vlm / fake). 개수 세기 방법 토글·지금 세기가 이 체인을 고른다</td></tr>
+<tr><td><code>snackbot/vision.py</code></td><td>counter 체인(opencv v2 / fake). 개수 세기 방법 토글·지금 세기가 이 체인을 고른다</td></tr>
 <tr><td><code>snackbot/stt.py</code></td><td>STT 체인 (OpenVINO Whisper 로컬 → Gemini), 워밍업, 단독 확인 CLI</td></tr>
 <tr><td><code>snackbot/voice.py</code></td><td>TTS (Gemini, 실패 시 Windows Heami 예비), 합성·재생 두 스레드, 대사 소리 시작 알림</td></tr>
 <tr><td><code>snackbot/skills.py</code></td><td><code>DrySkills</code>(dry-run, 녹화 재생 포함), <code>RunResult</code></td></tr>
@@ -198,8 +198,8 @@ ol.steps li{margin:6px 0}
 <tr><td><code>snackbot/recorder.py</code></td><td>실행 기록: 정책 phase 관절값·프레임 → <code>logs/runs/</code> (백그라운드 저장)</td></tr>
 <tr><td><code>snackbot/wincam.py</code></td><td>Windows 카메라 목록 보정 (pynokhwa의 JSON 역슬래시 버그)</td></tr>
 <tr><td><code>frontend/</code></td><td>Claude Design 결과물: index.html, app.js, style.css + <code>twin.js</code>(3D). <code>vendor/</code>(three, urdf-loader 고정 파일), <code>twin/so101/</code>(URDF + STL). 빌드 없음</td></tr>
-<tr><td><code>tools/</code></td><td><code>fetch_calibration</code>(Studio 캘리브레이션, GET만), <code>robot_probe</code>(watch / save), <code>fetch_replays</code>(Studio 녹화 → <code>replays/</code>), <code>cameras</code>(목록·시리얼·사진), <code>export_yolo_world</code></td></tr>
-<tr><td><code>tests/</code></td><td>499개. <code>samples/</code>(dry-run용 트레이 사진)</td></tr>
+<tr><td><code>tools/</code></td><td><code>fetch_calibration</code>(Studio 캘리브레이션, GET만), <code>robot_probe</code>(watch / save), <code>fetch_replays</code>(Studio 녹화 → <code>replays/</code>), <code>cameras</code>(목록·시리얼·사진)</td></tr>
+<tr><td><code>tests/</code></td><td>487개. <code>samples/</code>(dry-run용 트레이 사진)</td></tr>
 <tr><td><code>models/</code>, <code>logs/</code>, <code>replays/</code>, <code>calibration/</code></td><td>로컬 모델, 사이클별 JSONL 로그와 실행 기록, dry-run 재생 데이터, 팔로워 캘리브레이션 (git 제외)</td></tr>
 <tr><td><code>docs/</code></td><td>문서 (11장 문서 지도)</td></tr>
 </table></div>
@@ -417,9 +417,9 @@ ol.steps li{margin:6px 0}
 <p>역할(brain · vision · stt)마다 provider 목록을 두고 <b>순서대로 시도</b>한다. 예외나 타임아웃이면 다음으로 넘어가고, 전부 실패하면 규칙 fallback으로 결정한다. 어떤 provider가 응답했는지는 사이클 로그와 UI <code>info</code>에 남는다. API 키가 없는 provider는 체인에서 건너뛰고 시작 시 경고한다.</p>
 <div class="tablewrap"><table>
 <tr><th>어댑터 type</th><th>대상</th><th>비고</th></tr>
-<tr><td><code>openai_compat</code></td><td>OpenRouter, NVIDIA(build.nvidia.com), OpenAI, Gemini(OpenAI 호환), Groq, 로컬 Ollama</td><td><code>base_url</code> + <code>api_key_env</code>만 다름. 이미지 입력(VLM)·음성 전사도 이 형식</td></tr>
+<tr><td><code>openai_compat</code></td><td>NVIDIA(build.nvidia.com), Gemini(OpenAI 호환)</td><td><code>base_url</code> + <code>api_key_env</code>만 다름. 음성 전사도 이 형식</td></tr>
 <tr><td><code>anthropic</code></td><td>Claude</td><td>공식 SDK</td></tr>
-<tr><td><code>openvino</code></td><td>로컬 <code>openvino_genai</code> LLMPipeline / VLMPipeline / WhisperPipeline</td><td><code>model_dir</code>, <code>device</code></td></tr>
+<tr><td><code>openvino</code></td><td>로컬 <code>openvino_genai</code> WhisperPipeline (STT)</td><td><code>model_dir</code>, <code>device</code></td></tr>
 </table></div>
 <ul>
 <li>공통 함수: <code>complete(messages, image=None, max_tokens, timeout_s) -&gt; str</code>, <code>transcribe(wav) -&gt; str</code>.</li>
@@ -430,21 +430,19 @@ ol.steps li{margin:6px 0}
 <div class="tablewrap"><table>
 <tr><th>구성요소</th><th>모델</th><th>실행 위치</th><th>단계</th></tr>
 <tr><td>ACT 2개</td><td>physical-ai-studio 학습 → OpenVINO 결과물</td><td><b>로컬</b> CPU / GPU / NPU. 시연 노트북은 <b>CPU</b> (GPU 컴파일 정책마다 55~65초, CPU는 로드 6초 · 청크당 0.14~0.23초)</td><td>필수</td></tr>
-<tr><td>판단·대사·채팅 의도</td><td>instruct LLM</td><td><b>API</b> (OpenRouter / NVIDIA / 유료) → 선택적으로 로컬 OpenVINO → 규칙</td><td>필수</td></tr>
-<tr><td>개수 세기 (A)</td><td>OpenCV(현재) / YOLO-World(OpenVINO) / VLM</td><td>로컬 (OpenCV는 CPU 17 ms)</td><td>M3</td></tr>
-<tr><td>STT</td><td>Whisper</td><td>로컬 OpenVINO 또는 API</td><td>M6</td></tr>
-<tr><td>TTS</td><td>한국어 TTS</td><td>로컬</td><td>선택</td></tr>
+<tr><td>판단·대사·채팅 의도</td><td>instruct LLM</td><td><b>API</b> (Claude → NVIDIA) → 규칙</td><td>필수</td></tr>
+<tr><td>개수 세기 (A)</td><td>OpenCV 규칙 (VLM은 학습하지 못함)</td><td>로컬 (OpenCV는 CPU 17 ms)</td><td>M3</td></tr>
+<tr><td>STT</td><td>Whisper</td><td>로컬 OpenVINO (예비: Gemini API)</td><td>M6</td></tr>
+<tr><td>TTS</td><td>Gemini TTS (예비: Windows Heami)</td><td>API / 로컬(Heami)</td><td>선택</td></tr>
 </table></div>
 <div class="callout">시연 기본값: <b>판단·대사 LLM은 API, ACT는 로컬 OpenVINO</b>. 개수 세기·STT는 상황에 맞게 고른다. (참고: 실습 자료의 상호평가 기준에 "on-device, no external API" 20점 항목이 있으나, 이를 알고 LLM은 API로 정했다 — 의논 기록 12번.)</div>
 <details><summary>counter 체인(개수 세기)과 STT 체인 상세</summary>
 <div class="tablewrap"><table>
 <tr><th>type</th><th>방식</th></tr>
-<tr><td><code>yolo</code></td><td>Ultralytics OpenVINO 모델 폴더. YOLO-World에 텍스트 클래스를 지정해 내보낸 모델(제로샷) 또는 외부 검출 모델. 박스를 화면에 오버레이할 수 있다</td></tr>
-<tr><td><code>vlm</code></td><td>provider(로컬 openvino VLM 또는 API)에 이미지 + 질문, 숫자만 파싱, 1회 재시도</td></tr>
 <tr><td><code>opencv</code> <span class="tag">사용 중</span></td><td>counter v2: 검은 매트 ROI 안에서 어두운 링 검사(도착 트레이 제외), 오란다 색 화소 마스크(H 5~21, S≥80, min_area 600)로 초코송이와 붙어 있어도 따로 세고, 붙은 덩어리는 <code>unit_area</code> 1700으로 분리. 한 번 셀 때 5장(<code>vision.frames</code>, 0.1초 간격)의 중앙값을 쓴다. tower cam 실제 프레임에서 오란다 3개, 17 ms. ROI는 카메라가 바뀌면 <code>snackbot.vision &lt;사진&gt; --blobs</code>로 다시 맞춘다</td></tr>
 <tr><td><code>fake</code></td><td>dry-run 사진 파일명(<code>tray_3.jpg</code>)에서 개수</td></tr>
 </table></div>
-<p>VLM은 일단 빼 두었고(사용자의 1 epoch VLM을 나중에 chain에 추가), YOLO-World는 큰 패키지를 설치하지 않아 보류다. STT 체인 예: 로컬 Whisper(openvino, CPU, ko) → openai 전사 모델. 설정 예시는 설계 문서 6장.</p>
+<p>VLM 개수 세기는 계획만 하고 학습하지 못했다. YOLO-World · VLM counter 코드는 최종 정리에서 삭제했고, 개수 세기는 OpenCV 규칙이다. STT 체인: 로컬 Whisper(openvino, CPU, ko) → Gemini 전사. 설정 예시는 설계 문서 6장(옛 provider 예시가 남아 있을 수 있다).</p>
 </details>
 <details><summary>오류 처리 요약</summary>
 <div class="tablewrap"><table>
@@ -544,7 +542,7 @@ ol.steps li{margin:6px 0}
 <tr><td>M6</td><td>STT: <code>/stt</code> + stt.py</td><td>말로 시작·달래기</td></tr>
 <tr><td>M7</td><td>(선택) ACT 디바이스별 지연 비교 (<code>bench_policy.py</code>)</td><td>발표 비교표</td></tr>
 </table></div>
-<div class="callout"><b>현재 위치 (2026-10-25):</b> M0~M6 코드는 끝났고, 4분할 화면·3D 트윈·녹화 재생·실행 기록, 스킬 테스트(버튼 4개)·코드 도리도리, OpenCV 개수 세기(5장 중앙값·확인 재세기·정정), half 거부 규칙, 두 번 놓치면 투덜대고 도리도리 → 대기 → 채팅 재개, Windows Heami 예비 TTS, 발표 자료 11장(<code>slides.html</code>·<code>slides.pptx</code>)도 구현됐다. 시연 노트북(Windows)에서 실제 로봇으로 전체 흐름(테스트 버튼·채팅·STT·TTS)을 브라우저에서 확인했고 도리도리는 코드(<code>source: script</code>)로 정했다. 남은 일은 <b>제어 루프 주기(11~13 Hz, 학습은 30 Hz)</b>, pickup 추가 학습(5 epoch로 덜 학습), 도리도리 데이터 추가 녹화(모델은 과적합), VLM 개수 세기다. 자세한 진척은 <a href="PROGRESS_REPORT.html">PROGRESS_REPORT.html</a>.</div>
+<div class="callout"><b>현재 위치 (2026-10-25, 프로젝트 끝):</b> 해커톤 시연과 발표를 마쳤다. 4분할 화면·3D 트윈·녹화 재생·실행 기록, 스킬 테스트·코드 도리도리, OpenCV 개수 세기, half 거부 규칙, 채팅·음성 명령, Gemini TTS(Heami 예비)는 현장 확인(10-24)에서 동작했다. <b>시연 결과: 오란다 집기는 12번 중 1번 성공.</b> 팔이 오란다까지 가서 집고 옮기는 동작은 하지만 그리퍼가 실제로 잡지 못하고 주변을 쥐는 경우가 많았다. 원인 후보는 pickup 5 epoch만 학습(train 0.35 / val 0.66, val loss가 계속 내려가는 중), 제어 루프 11~13 Hz(학습 30 Hz, JPEG 인코딩 부하로 의심, 못 고침)다. 도리도리 모델은 과적합이라 시연은 코드 도리도리였다. VLM 개수 세기는 학습하지 못했다. 쓰지 않은 코드(YOLO-World · VLM counter, OpenAI·pyttsx3 음성, openrouter · openai · ollama)는 삭제했고 테스트는 487개다. 소개와 결과는 <a href="../README.md">README.md</a>, 진척은 <a href="PROGRESS_REPORT.html">PROGRESS_REPORT.html</a>.</div>
 <div class="callout warn"><b>시간이 부족하면 자르는 순서:</b> M7 → M6 → M5 → (M3의 counter 체인). M4까지 B 판정 + 채팅 시작 + <code>r</code> 키만으로 시연이 성립한다. M1~M3은 ACT 학습이 끝나기 전(1일차)에 끝내고, M4는 2일차 맨 앞에 한다.</div>
 <details><summary>dry-run 3단계와 테스트</summary>
 <div class="tablewrap"><table>
@@ -553,7 +551,7 @@ ol.steps li{margin:6px 0}
 <tr><td>②</td><td>샘플 사진에 실제 counter</td><td>실제 provider</td><td>sleep</td><td>프롬프트·클래스 텍스트 다듬기, 지연 측정</td></tr>
 <tr><td>③</td><td>카메라 (또는 B)</td><td>실제</td><td>physicalai</td><td>시연</td></tr>
 </table></div>
-<p>dry skills는 <code>dry_run.fail_rate</code> 확률로 <code>grasped=false</code>를 돌려준다. 자동 테스트 499개: <code>test_brain.py</code>(가드 표 half·fixed, 출력 검증, 키워드 fallback, provider 체인), <code>test_controller.py</code>(B/A 판정, 상태 전이, 재시도 초과, TESTING, 거부 한 번), <code>test_motion.py</code>, <code>test_server.py</code> 등. Windows에서 <code>test_server.py</code>가 가끔 WinError 10014로 1~3개 실패하면 재실행한다. UI·하드웨어는 런북 체크리스트로 수동 확인한다.</p>
+<p>dry skills는 <code>dry_run.fail_rate</code> 확률로 <code>grasped=false</code>를 돌려준다. 자동 테스트 487개: <code>test_brain.py</code>(가드 표 half·fixed, 출력 검증, 키워드 fallback, provider 체인), <code>test_controller.py</code>(B/A 판정, 상태 전이, 재시도 초과, TESTING, 거부 한 번), <code>test_motion.py</code>, <code>test_server.py</code> 등. Windows에서 <code>test_server.py</code>가 가끔 WinError 10014로 1~3개 실패하면 재실행한다. UI·하드웨어는 런북 체크리스트로 수동 확인한다.</p>
 </details>
 </section>
 
@@ -561,6 +559,7 @@ ol.steps li{margin:6px 0}
 <h2>11. 문서 지도</h2>
 <div class="tablewrap"><table>
 <tr><th>문서</th><th>내용</th><th>언제 읽나</th></tr>
+<tr><td><a href="../README.md">README.md</a> <span class="tag">처음</span></td><td>프로젝트 소개, 동작 흐름, 데이터셋·학습(사진), 역할, 시연 결과(12번 중 1번 성공), 한계</td><td>프로젝트를 처음 볼 때</td></tr>
 <tr><td><a href="../CLAUDE.md">CLAUDE.md</a></td><td>프로젝트 요약, 절대 규칙 9개, 파일 구조, 실행 명령(개발 PC와 로봇 노트북), 진행자 키</td><td>가장 먼저. 코드 작업 전 항상</td></tr>
 <tr><td><a href="superpowers/specs/2026-10-22-chat-ui-design.md">superpowers/specs/2026-10-22-chat-ui-design.md</a> <span class="tag">기준</span></td><td>현재 설계 기준: 상태, 모듈 API, B→A 판정, provider, physicalai 연동, 오류 처리, 완성 순서</td><td>구현할 때. 다른 문서와 충돌하면 이쪽이 우선</td></tr>
 <tr><td><a href="superpowers/specs/2026-10-22-digital-twin-design.md">digital-twin-design.md</a></td><td>4분할 화면, 3D 트윈, 녹화 재생(dry-run), 실행 기록, 카메라 찾기. UI·트윈 부분은 기준 문서보다 우선</td><td>화면·트윈·기록을 만지거나 로봇이 안 될 때의 대비책을 볼 때</td></tr>
@@ -591,19 +590,19 @@ ol.steps li{margin:6px 0}
 <li><b>그리퍼 기준값:</b> 실측으로 확정(빈손 49.4~50.1, 쥠 54.2~55.4, 열림 79.0 → 56.0 / 56.5 / 52 / 0.15).</li>
 <li><b>API 모델 ID:</b> 대화 LLM은 Claude(<code>claude-opus-5-5</code>) → NVIDIA(nemotron) → 규칙, STT는 로컬 Whisper → Gemini, TTS는 Gemini → Windows Heami 예비.</li>
 </ul>
-<h3>열린 문제 (2026-10-23)</h3>
+<h3>열린 문제 (2026-10-23 기록 · 시연 후 모두 하지 않고 종료)</h3>
 <ul>
-<li><b>제어 루프 주기:</b> 11~13 Hz (녹화 에피소드 fps 11.0 / 13.1, 학습은 30 Hz, 런타임 스텝당 약 77 ms). 의심: 카메라 3대 NV12→RGB 변환, MJPEG 스트림 인코딩, 실행 기록, 3D 트윈, CPU 경쟁. 아직 조사 전이다 (<code>ui.tiles</code>·<code>recording.enabled</code>를 줄여 비교).</li>
+<li><b>제어 루프 주기:</b> 11~13 Hz (녹화 에피소드 fps 11.0 / 13.1, 학습은 30 Hz, 런타임 스텝당 약 77 ms). 의심: 카메라 3대 NV12→RGB 변환, MJPEG 스트림 인코딩, 실행 기록, 3D 트윈, CPU 경쟁. 끝내 고치지 못했다. 오란다 집기 실패의 원인 후보다 (<code>ui.tiles</code>·<code>recording.enabled</code>를 줄여 비교하는 일은 하지 않았다).</li>
 <li><b>카메라 시간 초과:</b> 서버를 다시 띄울 때 "Timed out waiting for first frame"이 가끔 난다 (USB 대역폭). 다시 꽂거나 USB 포트를 나눈다.</li>
-<li><b>도리도리 모델:</b> 모델은 pan이 ±1에 머물러 못 한다. 코드 도리도리(<code>source: script</code>)로 갈지 결정 대기 (루프 주기를 고친 뒤 모델을 한 번 더 시험할 수도 있다).</li>
+<li><b>도리도리 모델:</b> 모델은 pan이 ±1에 머물러 못 한다. 시연은 코드 도리도리(<code>source: script</code>)로 했다. 모델은 데이터가 적어 과적합이고 더 녹화하지 못했다.</li>
 <li><b>쥠 판정 거짓 실패(리뷰 I-2):</b> 녹화 시뮬레이션에서 정지하지 않은 8개 중 7개가 <code>grasped=False</code>. 실기 1회는 쥠 성공이라 전체 흐름에서 빈도를 본 뒤 고칠지 정한다.</li>
-<li><b>VLM 개수 세기:</b> 사용자의 1 epoch VLM을 나중에 chain에 추가한다.</li>
+<li><b>VLM 개수 세기:</b> 학습하지 못했고 코드도 삭제했다. 개수 세기는 OpenCV 규칙.</li>
 <li><b>리뷰:</b> OpenCV counter v2(<code>fb6a85d</code>)와 half 거부 규칙(<code>27bdae2</code>)의 opus 리뷰는 Approved with notes. 지적 사항(허용 밖 skill이면 LLM 대사도 버림, 사이클당 세기 방법 한 번 결정, half 게이지)은 <code>0ea623b</code>에서 반영했다.</li>
 <li>homerunball 원격은 <code>e066990</code>까지이고 이후 로컬 커밋은 사용자가 push한다.</li>
 </ul>
 </section>
 
-<footer style="margin-top:48px;color:var(--muted);font-size:13px">2026-10-23 갱신. 이 페이지는 위 문서들을 요약한 안내서이며, 세부 내용과 최신 결정은 각 원문(특히 설계 문서)을 따른다.</footer>
+<footer style="margin-top:48px;color:var(--muted);font-size:13px">2026-10-25 최종 정리. 이 페이지는 위 문서들을 요약한 안내서이며, 세부 내용과 최신 결정은 각 원문(특히 설계 문서)을 따른다.</footer>
 </main>
 </div>
 

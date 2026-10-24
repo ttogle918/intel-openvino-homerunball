@@ -19,7 +19,7 @@
 
 | 후보 | 결과 | 탈락·채택 이유 |
 |---|---|---|
-| OpenAI `gpt-4o-mini-transcribe` | 키 401 (무효) | 유료 API, 키 없음. 체인 예비로 주석만 남김 |
+| OpenAI `gpt-4o-mini-transcribe` | 키 401 (무효) | 유료 API, 키 없음. 예비로 두었다가 프로젝트 정리 때 코드에서 지움 (2026-10-25) |
 | Gemini 오디오 입력 (`gemini-3.5-flash-lite`) | 처음 키는 402 (크레딧 없음). 무료 키로 실제 호출 확인: 3문장 모두 정확, 1.5~2.4초 ("힘내 줘"도 맞힘) | 정확하지만 네트워크·한도에 좌우됨. **예비**로 체인 2번째에 둠 |
 | NVIDIA API (`integrate.api.nvidia.com`) | OpenAI 호환 모델 83개 중 STT 없음 | 지금 코드가 쓰는 곳에 음성 모델이 없다 |
 | NVIDIA 음성 NIM (build.nvidia.com: Parakeet, Canary, Whisper Large v3) | Riva gRPC 방식 (`grpc.nvcf.nvidia.com` + function-id) | 새 어댑터·`nvidia-riva-client` 필요. 한국어는 Whisper Large v3만 (Parakeet는 en/vi/es/zh) |

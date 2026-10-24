@@ -5,7 +5,7 @@
 ## 프로젝트
 - 하드웨어: SO-ARM101 (팔로워 1대, 학습용 리더 1대), 카메라 3대(tower · side 외부 2대 + follow 손목). 시연 노트북 = Windows 11 PC (팔로워 COM5, 리더 COM6)
 - 소프트웨어: physical-ai-studio로 학습한 ACT(OpenVINO 결과물, `physicalai` 런타임), LLM(API 또는 로컬), TTS, STT(OpenVINO Whisper 로컬), FastAPI + 웹 UI
-- 기간: 2일 해커톤
+- 기간: 2일 해커톤 (**시연·발표 끝, 2026-10-25 정리 완료**). 시연 결과: 오란다 집기 12번 중 1번 성공 (집는 동작은 하지만 그리퍼가 과자를 잘 못 잡음)
 - 시연: 섞인 트레이에서 목표 과자(지금은 **오란다**)만 빈 트레이로 옮긴다. 채팅·음성으로 작업을 시키고,
   전체의 절반(올림)을 옮기면 작업당 한 번 지쳐서 도리도리로 거부하며(`decision.refuse: half`, 옛 고정 임계값은 `fixed`), 달래면(채팅·음성·r 키) 다시 일한다.
   같은 과자를 두 번 연속 놓치면 투덜대고 도리도리 1회 뒤 진행자를 기다린다(`decision.max_retry: 1`, "이어서 해줘"·재개 버튼으로 다시).
@@ -13,7 +13,7 @@
 ## 3계층 구조
 | 계층 | 담당 | 구현 |
 |---|---|---|
-| 인식 | 끝·성공 판정 | B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (지금 OpenCV, YOLO-World/VLM은 같은 자리에 추가) |
+| 인식 | 끝·성공 판정 | B: 시작 개수 + 그리퍼 쥠 판정 → A: counter 체인 (OpenCV. YOLO·VLM은 쓰지 않아 정리하며 지웠다, 같은 자리에 counter를 추가할 수 있다) |
 | 판단 | 다음 행동과 대사, 채팅 의도 | 코드 가드 + LLM (provider 체인), TTS 출력 |
 | 행동 | 동작 실행 | ACT 정책 2개 (OpenVINO, 시연 노트북은 CPU): `oranda_pickup`, `dori_dori` (모델이 없거나 `source: script`면 코드 도리도리) |
 
@@ -23,7 +23,7 @@
 3. **LLM 출력은 허용된 값만.** skill은 `oranda_pickup | dori_dori | done`, 채팅 intent는 상태별 허용 목록
    (`start_task | chat | resume | dori_dori`) 안에서만. 벗어나면 규칙으로 결정한다. `dori_dori`(도리도리 1회)는 대기 상태에서만, `resume`은 거부 중·두 번 놓친 뒤 대기(`waiting_operator`)에서만.
 4. **STT는 UI 🎤 누르고 말하기.** 인식된 문장은 채팅과 같은 경로(`controller.chat`)로 들어간다.
-5. **파인튜닝 없음.** 개수 세기는 제로샷(YOLO-World 텍스트 클래스, VLM)과 OpenCV. 외부에서 받은 OpenVINO 검출 모델은 같은 자리에 꽂을 수 있다.
+5. **개수 세기는 OpenCV 규칙.** 검출 모델을 학습하지 않았다 (VLM은 계획했지만 학습 못 함). 다른 counter는 `vision.py` 체인에 같은 인터페이스(`count(frame) -> Count | None`)로 추가한다.
 6. **physicalai / LeRobot 코어 수정 금지.** 설치된 버전의 API를 확인하고 그대로 사용한다.
 7. **oranda_pickup ACT는 놓기까지만.** 그리퍼 "닫힘 → 열림"을 감지하면 ACT를 멈추고,
    코드가 `lift_pose → home_pose`로 복귀시킨다. 스킬 시작 전에는 항상 `home_pose`에 있어야 한다.
@@ -42,7 +42,7 @@
 - `docs/VOICE_PROVIDERS.md` — STT·TTS 선택 이유와 검토한 후보
 - `docs/memo/` — 의논 기록
 
-## 파일 구조 (목표)
+## 파일 구조
 ```
 .
 ├── CLAUDE.md
@@ -55,7 +55,7 @@
 │   ├── server.py       # FastAPI: /ws, /stt, /stream/{cam}, /api/replay/{skill}, /replays, frontend/ 서빙
 │   ├── providers.py    # openai_compat / anthropic / openvino 어댑터 + fallback 체인
 │   ├── brain.py        # decide() 작업 판단, chat() 의도·대사
-│   ├── vision.py       # counter 체인 (OpenCV v2 사용 중, YOLO-World/VLM 자리)
+│   ├── vision.py       # counter 체인 (OpenCV v2, dry-run용 가짜 counter)
 │   ├── stt.py          # STT 체인 (OpenVINO Whisper 로컬 → Gemini), 워밍업, 단독 확인 CLI
 │   ├── voice.py        # TTS (Gemini → Windows Heami 예비), 합성·재생 두 스레드, 대사 소리 시작 알림
 │   ├── skills.py       # DrySkills (dry-run), RunResult
@@ -71,8 +71,7 @@
 │   ├── fetch_calibration.py   # Studio runtime-config → calibration/follower.yaml (GET만)
 │   ├── robot_probe.py         # 관절값 보기(watch), home/lift 포즈 저장(save)
 │   ├── fetch_replays.py       # Studio 녹화 에피소드 → replays/<스킬>/ (GET만, dry-run 재생용)
-│   ├── cameras.py             # 카메라 목록·시리얼·사진 1장 → config cameras 예시
-│   └── export_yolo_world.py   # YOLO-World → OpenVINO (개수 세기 A단계)
+│   └── cameras.py             # 카메라 목록·시리얼·사진 1장 → config cameras 예시
 ├── tests/
 │   └── samples/        # 트레이 사진 (dry-run용)
 ├── models/             # 로컬 모델 (git 제외)
@@ -113,7 +112,7 @@ cp .env.example .env                                      # 쓸 API 키만 채�
 - 의존 방향: `server → controller → (brain, vision, skills, voice)`. controller는 FastAPI를 모른다.
 - 로봇 포트는 한 프로그램만 잡을 수 있다. 실행 전 physical-ai-studio 세션을 닫는다.
 - 시연 노트북(Windows) 장치: 팔로워 `COM5`, 리더 `COM6`, 카메라 1 = follow(손목) · 2 = tower · 3 = side (0 = 내장, 쓰지 않음). 카메라는 USB 포트를 나눠 꽂는다 (NV12 비압축이라 한 경로에 두 대면 시간 초과). 정책은 CPU (`skills.device`).
-- 개수 세기 ROI는 `python -m snackbot.vision <사진> --blobs`로 맞춘다. 열린 문제: 제어 루프 11~13 Hz(목표 30, 화면을 여러 창에서 열면 4 Hz), pickup 덜 학습(5 epoch), 모델 도리도리 과적합(데이터 부족, 시연은 코드 도리도리), VLM 개수 세기는 나중 → 상세는 `docs/PROGRESS_REPORT.html`.
+- 개수 세기 ROI는 `python -m snackbot.vision <사진> --blobs`로 맞춘다. 남은 한계: 제어 루프 11~13 Hz(목표 30, 화면을 여러 창에서 열면 4 Hz), pickup 덜 학습(5 epoch), 모델 도리도리 과적합(데이터 부족, 시연은 코드 도리도리) → 상세는 `README.md`, `docs/PROGRESS_REPORT.html`.
 
 ## 진행자 키 (UI 버튼과 같은 동작)
 | 키 | 동작 |

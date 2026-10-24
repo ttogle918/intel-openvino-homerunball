@@ -1,17 +1,13 @@
 """A단계 개수 세기: counter 체인. 프레임은 RGB uint8 HxWx3.
 비어 있으면 controller가 B단계(시작 개수 + 그리퍼 판정)로 동작한다."""
 import logging
-import re
 import time
 from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
-from .providers import ProviderError, build_chain
-
 log = logging.getLogger(__name__)
-MAX_COUNT = 50
 
 
 @dataclass
@@ -19,14 +15,6 @@ class Count:
     n: int
     method: str
     boxes: list | None = None
-
-
-def parse_count(text):
-    m = re.search(r"\d+", text or "")
-    if not m:
-        return None
-    n = int(m.group(0))
-    return n if n <= MAX_COUNT else None
 
 
 def encode_jpeg(frame_rgb, quality=85):
@@ -107,44 +95,6 @@ class OpenCVCounter:
         return Count(sum(b["n"] for b in counted), "opencv", [b["box"] for b in counted])
 
 
-class VlmCounter:
-    """이미지 + 질문 → 숫자만 파싱. 실패하면 retries번 더 묻고, 그래도 안 되면 None."""
-    name = "vlm"
-
-    def __init__(self, chain, prompt, retries=1, max_tokens=64):
-        self.chain, self.prompt, self.retries, self.max_tokens = chain, prompt, retries, max_tokens
-
-    def count(self, frame):
-        jpg = encode_jpeg(frame)
-        for _ in range(self.retries + 1):
-            try:
-                text, _source = self.chain.complete([{"role": "user", "content": self.prompt}],
-                                                    max_tokens=self.max_tokens, image=jpg)
-            except ProviderError as e:
-                log.warning("VLM 실패: %s", e)
-                return None
-            n = parse_count(text)
-            if n is not None:
-                return Count(n, "vlm")
-        return None
-
-
-class YoloCounter:
-    """Ultralytics OpenVINO 모델 폴더 (YOLO-World 텍스트 클래스로 내보낸 것 등)."""
-    name = "yolo"
-
-    def __init__(self, model_dir, conf=0.35, device="intel:gpu"):
-        from ultralytics import YOLO
-        self.model = YOLO(str(model_dir), task="detect")
-        self.conf, self.device = conf, device
-
-    def count(self, frame):
-        res = self.model(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), conf=self.conf,
-                         device=self.device, verbose=False)[0]
-        boxes = [[float(v) for v in b] for b in res.boxes.xyxy.tolist()]
-        return Count(len(boxes), "yolo", boxes)
-
-
 class Vision:
     def __init__(self, counters):
         self.counters = list(counters)
@@ -172,7 +122,7 @@ class Vision:
         return None
 
 
-def build_vision(vision_cfg, providers_cfg, env, remaining_fn=None):
+def build_vision(vision_cfg, remaining_fn=None):
     counters = []
     for e in (vision_cfg or {}).get("chain") or []:
         kind = e.get("type")
@@ -183,12 +133,6 @@ def build_vision(vision_cfg, providers_cfg, env, remaining_fn=None):
                 counters.append(OpenCVCounter(**{k: e[k] for k in
                                                  ("min_area", "max_area", "hsv_low", "hsv_high", "roi", "unit_area",
                                                   "max_hue", "ring", "ring_dark", "dark_v") if k in e}))
-            elif kind == "vlm":
-                chain = build_chain([e], providers_cfg, env)
-                if chain:
-                    counters.append(VlmCounter(chain, e["prompt"], e.get("retries", 1), e.get("max_tokens", 64)))
-            elif kind == "yolo":
-                counters.append(YoloCounter(e["model_dir"], e.get("conf", 0.35), e.get("device", "intel:gpu")))
             else:
                 log.warning("알 수 없는 counter: %s (건너뜀)", kind)
         except Exception as ex:
@@ -199,7 +143,7 @@ def build_vision(vision_cfg, providers_cfg, env, remaining_fn=None):
 def main(argv=None):
     import argparse
 
-    from .config import load_config, load_env
+    from .config import load_config
 
     p = argparse.ArgumentParser(prog="python -m snackbot.vision")
     p.add_argument("image")
@@ -207,7 +151,7 @@ def main(argv=None):
     p.add_argument("--blobs", action="store_true", help="OpenCV 덩어리별 면적·색상·매트 판정을 보여준다 (ROI·min_area 조정용)")
     a = p.parse_args(argv)
     cfg = load_config(a.config)
-    v = build_vision(cfg["vision"], cfg.get("providers", {}), load_env())
+    v = build_vision(cfg["vision"])
     if not v.enabled:
         print("vision.chain이 비어 있어요 (B단계). config.yaml에 counter를 추가하세요.")
         return 1

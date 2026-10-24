@@ -17,7 +17,7 @@ class Fake:
     def __init__(self, reply=None, exc=None):
         self.reply, self.exc, self.calls = reply, exc, 0
 
-    def complete(self, messages, max_tokens=300, image=None):
+    def complete(self, messages, max_tokens=300):
         self.calls += 1
         if self.exc:
             raise self.exc
@@ -52,7 +52,7 @@ def test_chain_transcribe():
     assert Chain([Member("w", Fake(reply="안녕"))]).transcribe(b"wav") == ("안녕", "w")
 
 
-def test_openai_compat_sends_model_auth_and_image():
+def test_openai_compat_sends_model_and_auth():
     seen = {}
 
     def handler(request):
@@ -62,14 +62,11 @@ def test_openai_compat_sends_model_auth_and_image():
         return httpx.Response(200, json={"choices": [{"message": {"content": "3"}}]})
 
     p = OpenAICompat("https://example.test/api/v1", "k", "m1", 5, transport=httpx.MockTransport(handler))
-    out = p.complete([{"role": "user", "content": "몇 개?"}], max_tokens=8, image=b"\xff\xd8jpg")
+    out = p.complete([{"role": "user", "content": "몇 개?"}], max_tokens=8)
     assert out == "3"
     assert seen["url"] == "https://example.test/api/v1/chat/completions"
     assert seen["auth"] == "Bearer k"
     assert seen["body"]["model"] == "m1" and seen["body"]["max_tokens"] == 8
-    parts = seen["body"]["messages"][-1]["content"]
-    assert parts[0] == {"type": "text", "text": "몇 개?"}
-    assert parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
 def test_openai_compat_http_error_raises():
@@ -77,15 +74,6 @@ def test_openai_compat_http_error_raises():
                      transport=httpx.MockTransport(lambda r: httpx.Response(500)))
     with pytest.raises(httpx.HTTPStatusError):
         p.complete([{"role": "user", "content": "x"}])
-
-
-def test_openai_compat_transcribe():
-    def handler(request):
-        assert str(request.url).endswith("/audio/transcriptions")
-        return httpx.Response(200, json={"text": "과자 옮겨줘"})
-
-    p = OpenAICompat("https://e.test/v1", "k", "w", 5, transport=httpx.MockTransport(handler))
-    assert p.transcribe(b"RIFF") == "과자 옮겨줘"
 
 
 def test_anthropic_provider_builds_request_and_reads_text():
@@ -101,14 +89,13 @@ def test_anthropic_provider_builds_request_and_reads_text():
     client = SimpleNamespace(messages=SimpleNamespace(create=create))
     p = AnthropicProvider("k", "claude-opus-5-5", 5, effort="low", client=client)
     out = p.complete([{"role": "system", "content": "sys"}, {"role": "user", "content": "u"}],
-                     max_tokens=512, image=b"jpg")
+                     max_tokens=512)
     assert out == '{"skill": "done"}'
     assert calls["system"] == "sys"
     assert calls["model"] == "claude-opus-5-5" and calls["max_tokens"] == 512
     assert calls["output_config"] == {"effort": "low"}
     content = calls["messages"][0]["content"]
-    assert content[0]["type"] == "image" and content[0]["source"]["media_type"] == "image/jpeg"
-    assert content[1] == {"type": "text", "text": "u"}
+    assert content == [{"type": "text", "text": "u"}]
 
 
 def test_anthropic_without_effort_omits_output_config():
@@ -132,20 +119,20 @@ def test_anthropic_refusal_raises():
 
 def test_build_chain_skips_missing_keys_and_unknown():
     providers = {
-        "openrouter": {"type": "openai_compat", "base_url": "https://o.test/v1", "api_key_env": "OR_KEY"},
-        "ollama": {"type": "openai_compat", "base_url": "http://localhost:11434/v1"},
+        "nvidia": {"type": "openai_compat", "base_url": "https://o.test/v1", "api_key_env": "NV_KEY"},
+        "gemini": {"type": "openai_compat", "base_url": "http://localhost:1/v1"},
         "local_ov": {"type": "openvino"},
     }
     entries = [
-        {"provider": "openrouter", "model": "a"},
+        {"provider": "nvidia", "model": "a"},
         {"provider": "nope", "model": "b"},
-        {"provider": "ollama", "model": "c"},
+        {"provider": "gemini", "model": "c"},
         {"provider": "local_ov", "model_dir": "models/llm", "device": "GPU"},
     ]
     assert [m.name for m in build_chain(entries, providers, env={}).members] == [
-        "ollama:c", "local_ov:models/llm"]
-    assert [m.name for m in build_chain(entries, providers, env={"OR_KEY": "x"}).members] == [
-        "openrouter:a", "ollama:c", "local_ov:models/llm"]
+        "gemini:c", "local_ov:models/llm"]
+    assert [m.name for m in build_chain(entries, providers, env={"NV_KEY": "x"}).members] == [
+        "nvidia:a", "gemini:c", "local_ov:models/llm"]
     assert not build_chain(None, providers, env={})
 
 
@@ -160,9 +147,9 @@ def test_wav_to_float32():
 
 
 def test_build_chain_skips_entry_missing_model():
-    providers = {"ollama": {"type": "openai_compat", "base_url": "http://x"}}
-    entries = [{"provider": "ollama"}, {"provider": "ollama", "model": "m"}]
-    assert [m.name for m in build_chain(entries, providers, env={}).members] == ["ollama:m"]
+    providers = {"gemini": {"type": "openai_compat", "base_url": "http://x"}}
+    entries = [{"provider": "gemini"}, {"provider": "gemini", "model": "m"}]
+    assert [m.name for m in build_chain(entries, providers, env={}).members] == ["gemini:m"]
 
 
 def test_build_chain_skips_provider_missing_type():
@@ -176,13 +163,6 @@ def test_build_chain_skips_anthropic_when_sdk_missing(monkeypatch):
     providers = {"claude": {"type": "anthropic", "api_key_env": "K"}}
     entries = [{"provider": "claude", "model": "m"}]
     assert not build_chain(entries, providers, env={"K": "x"}).members
-
-
-def test_openvino_vlm_requires_image():
-    p = OpenVINOProvider("x", kind="vlm")
-    p._pipe = object()
-    with pytest.raises(ProviderError):
-        p.complete([{"role": "user", "content": "q"}], image=None)
 
 
 def test_openai_compat_extra_body_is_merged_into_request():
@@ -211,16 +191,16 @@ def test_anthropic_sends_alternating_roles_merged_and_user_first():
     p.complete([{"role": "system", "content": "s1"}, {"role": "system", "content": "s2"},
                 {"role": "assistant", "content": "먼저"},
                 {"role": "user", "content": "a"}, {"role": "user", "content": "b"},
-                {"role": "assistant", "content": "c"}, {"role": "user", "content": "d"}], image=b"jpg")
+                {"role": "assistant", "content": "c"}, {"role": "user", "content": "d"}])
     assert calls["system"] == "s1\ns2"
     assert [m["role"] for m in calls["messages"]] == ["user", "assistant", "user"]
     assert calls["messages"][0]["content"] == [{"type": "text", "text": "a\nb"}]
     assert calls["messages"][1]["content"] == [{"type": "text", "text": "c"}]
     last = calls["messages"][2]["content"]
-    assert last[0]["type"] == "image" and last[1] == {"type": "text", "text": "d"}
+    assert last == [{"type": "text", "text": "d"}]
 
 
-def test_openai_compat_transcribe_chat_mode():
+def test_openai_compat_transcribe():
     import base64
     import json
     seen = []
@@ -229,8 +209,7 @@ def test_openai_compat_transcribe_chat_mode():
         seen.append(request)
         return httpx.Response(200, json={"choices": [{"message": {"content": " 과자 옮겨줘 \n"}}]})
 
-    p = OpenAICompat("https://e.test/v1", "k", "gm", 5, transport=httpx.MockTransport(handler),
-                     transcribe_mode="chat")
+    p = OpenAICompat("https://e.test/v1", "k", "gm", 5, transport=httpx.MockTransport(handler))
     assert p.transcribe(b"RIFFwav") == "과자 옮겨줘"
     assert seen[0].url.path == "/v1/chat/completions"
     body = json.loads(seen[0].content)
@@ -239,12 +218,3 @@ def test_openai_compat_transcribe_chat_mode():
     assert parts[0]["type"] == "text" and "받아써" in parts[0]["text"]
     assert parts[1] == {"type": "input_audio", "input_audio": {
         "data": base64.b64encode(b"RIFFwav").decode(), "format": "wav"}}
-
-
-def test_build_chain_passes_transcribe_mode():
-    from snackbot.providers import build_chain
-    cfg = {"g": {"type": "openai_compat", "base_url": "https://e.test/v1", "api_key_env": "K"}}
-    chain = build_chain([{"provider": "g", "model": "m", "transcribe": "chat"}], cfg, {"K": "x"})
-    assert chain.members[0].provider.transcribe_mode == "chat"
-    chain = build_chain([{"provider": "g", "model": "m"}], cfg, {"K": "x"})
-    assert chain.members[0].provider.transcribe_mode == "transcriptions"

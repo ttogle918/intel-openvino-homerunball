@@ -45,7 +45,7 @@ def act_label(cfg, skills):
     return act
 
 
-VISION_LABELS = {"opencv": "OpenCV (ROI·색상)", "yolo": "YOLO-World"}
+VISION_LABELS = {"opencv": "OpenCV (ROI·색상)"}
 
 
 def skill_tests_info(cfg, skills):
@@ -85,7 +85,7 @@ def build(cfg, env, dry_run=True):
         cfg = {**cfg, "vision": {**cfg["vision"], "chain": [{"type": "fake"}]}}
     providers = cfg.get("providers", {})
     llm = build_chain(cfg["brain"].get("chain"), providers, env)
-    vision = build_vision(cfg["vision"], providers, env, remaining_fn=lambda: skills.tray)
+    vision = build_vision(cfg["vision"], remaining_fn=lambda: skills.tray)
     stt = build_stt(cfg.get("stt"), providers, env)
     voice = make_voice(cfg, env)
     controller = Controller(cfg, Brain(cfg, chain=llm), skills, vision=vision, voice=voice,

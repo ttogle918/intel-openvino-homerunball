@@ -14,12 +14,9 @@ decision:
   max_retry: 1              # 옮기기 실패 시 재시도 횟수 (1 = 두 번 연속 놓치면 투덜대고 도리도리 → 진행자 확인 대기)
 
 providers:                  # 접속 정보만. 어떤 모델을 쓸지는 각 역할의 chain에서 고른다.
-  openrouter: {type: openai_compat, base_url: "https://openrouter.ai/api/v1", api_key_env: OPENROUTER_API_KEY}
   nvidia:     {type: openai_compat, base_url: "https://integrate.api.nvidia.com/v1", api_key_env: NVIDIA_API_KEY}
-  openai:     {type: openai_compat, base_url: "https://api.openai.com/v1", api_key_env: OPENAI_API_KEY}
   gemini:     {type: openai_compat, base_url: "https://generativelanguage.googleapis.com/v1beta/openai", api_key_env: GEMINI_API_KEY, native_base_url: "https://generativelanguage.googleapis.com/v1beta"}
   anthropic:  {type: anthropic, api_key_env: ANTHROPIC_API_KEY}
-  ollama:     {type: openai_compat, base_url: "http://localhost:11434/v1"}
   local_ov:   {type: openvino}
 
 brain:
@@ -33,7 +30,6 @@ brain:
     - {provider: nvidia, model: "nvidia/nemotron-3.5-lightning-30b-a3b", timeout_s: 8, extra_body: {chat_template_kwargs: {enable_thinking: false}}}
   # chain:
   #   - {provider: gemini, model: "[모델 ID]", timeout_s: 5}
-  #   - {provider: openrouter, model: "[모델 ID]", timeout_s: 5}
   #   - {provider: anthropic, model: "claude-opus-5-5", effort: low, timeout_s: 8}
   #   - {provider: local_ov, model_dir: "models/llm", device: GPU, kind: llm}
 
@@ -48,8 +44,6 @@ vision:
   chain:
     # 오란다 색 화소만 (H 5~21, S≥80): 붙어 있는 초코송이(초록 갓·밝은 기둥)·노란 볼과 한 덩어리로 묶이지 않게 (2026-10-23 실기에서 3개→2개 오판)
     - {type: opencv, roi: [0.289, 0.208, 0.617, 0.847], hsv_low: [5, 80, 90], hsv_high: [21, 255, 255], max_hue: 21, min_area: 600, unit_area: 1700}
-  #   - {type: vlm, provider: local_ov, model_dir: "models/vlm", device: GPU, kind: vlm, prompt: "How many [오란다 생김새] are in the tray? Answer with a number only."}
-  #   - {type: yolo, model_dir: "models/oranda_world_openvino_model", conf: 0.35, device: "intel:gpu"}
   #   - {type: fake}        # dry-run에서 A단계 흐름 확인용
 
 stt:
@@ -57,8 +51,7 @@ stt:
     # device를 GPU로 바꾸면 label도 같이 바꾼다 (UI 모델 정보에 표시됨)
     - {provider: local_ov, kind: whisper, model_dir: "models/whisper-small", device: CPU, language: ko,
        cache_dir: "models/ov_cache", label: "Whisper small · OpenVINO · CPU"}
-    - {provider: gemini, model: "gemini-3.5-flash-lite", transcribe: chat, timeout_s: 15}   # 크레딧 있을 때 예비
-  #  - {provider: openai, model: "gpt-4o-mini-transcribe", timeout_s: 15}   # 키가 정상일 때의 백업
+    - {provider: gemini, model: "gemini-3.5-flash-lite", timeout_s: 15}   # 크레딧 있을 때 예비
 
 robot:
   # 시연 노트북은 Windows. 팔로워 = COM5 (CH343 시리얼 5B90101274), 리더 = COM6 (5B79080541) — 2026-10-23 서보 레지스터·토크 상태로 판별.
@@ -129,7 +122,7 @@ recording:                                # 실행 기록: 실제 로봇에서 �
   frame_width: 640
 
 voice:
-  engine: gemini            # none | log | pyttsx3 | openai | gemini
+  engine: gemini            # gemini | log | none (gemini가 실패하면 아래 fallback)
   provider: gemini          # providers의 접속 정보(키·base_url / gemini는 native_base_url)
   model: gemini-2.5-flash-preview-tts
   voice: Leda               # 어리고 밝은 목소리

@@ -1,7 +1,6 @@
-"""LLM / VLM / STT provider 어댑터와 fallback 체인.
+"""LLM / STT provider 어댑터와 fallback 체인.
 
 메시지 형식: [{"role": "system" | "user", "content": str}, ...]
-이미지: JPEG bytes (complete의 image 인자)
 """
 import base64
 import io
@@ -27,23 +26,17 @@ class ProviderError(Exception):
 
 
 class OpenAICompat:
-    """OpenRouter, NVIDIA, OpenAI, Gemini(OpenAI 호환), Groq, Ollama — base_url과 키만 다르다."""
+    """NVIDIA, Gemini(OpenAI 호환) — base_url과 키만 다르다."""
 
-    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None, extra_body=None,
-                 transcribe_mode="transcriptions"):
+    def __init__(self, base_url, api_key, model, timeout_s=5.0, transport=None, extra_body=None):
         self.model = model
-        self.transcribe_mode = transcribe_mode  # "transcriptions": /audio/transcriptions, "chat": 오디오 입력 chat
         self.extra_body = dict(extra_body or {})  # 예: 추론 모델의 생각 끄기
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.http = httpx.Client(base_url=base_url.rstrip("/"), headers=headers,
                                  timeout=timeout_s, transport=transport)
 
-    def complete(self, messages, max_tokens=300, image=None):
+    def complete(self, messages, max_tokens=300):
         msgs = [dict(m) for m in messages]
-        if image is not None:
-            url = "data:image/jpeg;base64," + base64.standard_b64encode(image).decode()
-            msgs[-1]["content"] = [{"type": "text", "text": msgs[-1]["content"]},
-                                   {"type": "image_url", "image_url": {"url": url}}]
         r = self.http.post("/chat/completions",
                            json={**self.extra_body, "model": self.model, "messages": msgs,
                                  "max_tokens": max_tokens})
@@ -51,15 +44,7 @@ class OpenAICompat:
         return r.json()["choices"][0]["message"]["content"] or ""
 
     def transcribe(self, wav, language="ko"):
-        if self.transcribe_mode == "chat":
-            return self._transcribe_chat(wav)
-        r = self.http.post("/audio/transcriptions",
-                           files={"file": ("speech.wav", wav, "audio/wav")},
-                           data={"model": self.model, "language": language})
-        r.raise_for_status()
-        return r.json()["text"]
-
-    def _transcribe_chat(self, wav):
+        """오디오 입력 chat으로 받아쓴다 (Gemini)."""
         audio = base64.standard_b64encode(wav).decode()
         content = [{"type": "text", "text": STT_CHAT_PROMPT},
                    {"type": "input_audio", "input_audio": {"data": audio, "format": "wav"}}]
@@ -79,7 +64,7 @@ class AnthropicProvider:
             client = anthropic.Anthropic(api_key=api_key, timeout=timeout_s, max_retries=0)
         self.client, self.model, self.effort = client, model, effort
 
-    def complete(self, messages, max_tokens=300, image=None):
+    def complete(self, messages, max_tokens=300):
         system = "\n".join(m["content"] for m in messages if m["role"] == "system")
         turns = []  # 같은 role이 이어지면 합쳐서 user/assistant가 번갈아 오게 한다
         for m in messages:
@@ -92,14 +77,6 @@ class AnthropicProvider:
         while turns and turns[0]["role"] != "user":  # Anthropic은 user로 시작해야 한다
             turns.pop(0)
         out = [{"role": t["role"], "content": [{"type": "text", "text": t["content"]}]} for t in turns]
-        if image is not None:
-            block = {"type": "image", "source": {
-                "type": "base64", "media_type": "image/jpeg",
-                "data": base64.standard_b64encode(image).decode()}}
-            if out and out[-1]["role"] == "user":
-                out[-1]["content"].insert(0, block)
-            else:
-                out.append({"role": "user", "content": [block]})
         kwargs = {"model": self.model, "max_tokens": max_tokens, "messages": out}
         if system:
             kwargs["system"] = system
@@ -115,7 +92,7 @@ class AnthropicProvider:
 
 
 class OpenVINOProvider:
-    """로컬 openvino_genai. kind: llm | vlm | whisper. 처음 호출할 때 파이프라인을 만든다.
+    """로컬 openvino_genai. kind: llm | whisper. 처음 호출할 때 파이프라인을 만든다.
     API는 M3에서 설치된 openvino_genai 버전으로 확인한다."""
 
     def __init__(self, model_dir, device="CPU", kind="llm", language="ko", cache_dir=None):
@@ -130,7 +107,7 @@ class OpenVINOProvider:
         with self._lock:  # 워밍업 스레드와 첫 요청이 겹쳐도 파이프라인은 하나만 만든다
             if self._pipe is None:
                 import openvino_genai as ov_genai
-                cls = {"llm": ov_genai.LLMPipeline, "vlm": ov_genai.VLMPipeline,
+                cls = {"llm": ov_genai.LLMPipeline,
                        "whisper": ov_genai.WhisperPipeline}[self.kind]
                 if self.cache_dir is not None:
                     self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -148,19 +125,8 @@ class OpenVINOProvider:
                 pipe.generate([0.0] * 8000, language=f"<|{self.language}|>", task="transcribe")
         return time.monotonic() - t0
 
-    def complete(self, messages, max_tokens=300, image=None):
+    def complete(self, messages, max_tokens=300):
         pipe = self._pipeline()
-        if self.kind == "vlm":
-            if image is None:
-                raise ProviderError("vlm에는 image가 필요")
-            import cv2
-            import numpy as np
-            import openvino as ov
-            prompt = "\n".join(m["content"] for m in messages)
-            bgr = cv2.imdecode(np.frombuffer(image, np.uint8), cv2.IMREAD_COLOR)
-            rgb = np.ascontiguousarray(bgr[:, :, ::-1])
-            with self._run_lock:
-                return _text(pipe.generate(prompt, image=ov.Tensor(rgb[None]), max_new_tokens=max_tokens))
         prompt = pipe.get_tokenizer().apply_chat_template(messages, add_generation_prompt=True)
         with self._run_lock:
             return _text(pipe.generate(prompt, max_new_tokens=max_tokens))
@@ -210,8 +176,8 @@ class Chain:
     def describe(self):
         return " → ".join(m.name for m in self.members) or "규칙"
 
-    def complete(self, messages, max_tokens=300, image=None):
-        return self._try(lambda p: p.complete(messages, max_tokens=max_tokens, image=image))
+    def complete(self, messages, max_tokens=300):
+        return self._try(lambda p: p.complete(messages, max_tokens=max_tokens))
 
     def transcribe(self, wav):
         return self._try(lambda p: p.transcribe(wav))
@@ -249,8 +215,7 @@ def build_chain(entries, providers_cfg, env):
                 continue
             timeout = float(e.get("timeout_s", 5))
             if kind == "openai_compat":
-                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout, extra_body=e.get("extra_body"),
-                                        transcribe_mode=e.get("transcribe", "transcriptions"))
+                provider = OpenAICompat(pc["base_url"], key, e["model"], timeout, extra_body=e.get("extra_body"))
             elif kind == "anthropic":
                 provider = AnthropicProvider(key, e["model"], timeout, e.get("effort"))
             elif kind == "openvino":
