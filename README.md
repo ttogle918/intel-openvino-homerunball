@@ -140,11 +140,28 @@ trained_model/
 ├── frontend/              # 웹 화면 (카메라 4분할, 3D 팔, 채팅, 버튼)
 ├── tools/                 # 캘리브레이션 받기, 관절값 보기 · 자세 저장, 카메라 찾기, 녹화 받기
 ├── tests/                 # 자동 테스트 (pytest)
-├── trained_model/         # ACT 모델 넣는 곳 (git 제외, 위 "모델 넣기")
-├── models/                # Whisper 등 내려받은 모델 (git 제외)
-├── logs/                  # 실행 로그 (git 제외)
+├── trained_model/         # ACT 모델 넣는 곳 (위 "모델 넣기")
+├── models/                # Whisper 모델 · OpenVINO 캐시
+├── data/                  # 학습 데이터셋 복사본
+├── replays/               # dry-run 녹화 재생 데이터
+├── logs/                  # 실행 로그 · 실행 기록 (자동 생성)
+├── cameras/               # 카메라 확인 사진 (tools.cameras)
 └── docs/                  # 발표 자료, 진행 보고서, 구조 · 판단 규칙 · 런북, 개발 기록
 ```
+
+### 저장소에 없는 것
+
+용량이 크거나 실행하면 생기는 것은 git에 올리지 않았습니다. 폴더마다 README.md에 안의 구조와 채우는 방법을 적어 두었습니다.
+
+| 폴더 · 파일 | 무엇 | 어떻게 채우나 | 없으면 |
+|---|---|---|---|
+| `.env` | API 키 (Claude, NVIDIA, Gemini) | `.env.example`을 복사해 채움 | LLM 대신 준비된 대사, TTS는 Windows 음성 |
+| [`trained_model/`](trained_model/README.md) | ACT 모델 2개 | physical-ai-studio에서 OpenVINO로 내보내 넣음 | 그 동작은 건너뜀 (도리도리는 코드 동작) |
+| [`models/`](models/README.md) | Whisper small, OpenVINO 캐시 | `hf download` (캐시는 자동) | 음성 인식은 Gemini 예비로 |
+| [`data/`](data/README.md) | 학습 데이터셋 (31 에피소드, 311MB) | physical-ai-studio의 `oranda` 프로젝트에서 받음 | 실행과 무관 (학습 데이터 확인용) |
+| [`replays/`](replays/README.md) | dry-run 재생용 녹화 | `tools.fetch_replays` (Studio 네트워크에서만) 또는 실행 기록 복사 | dry-run에서 팔 · 카메라 재생 없이 진행 |
+| [`logs/`](logs/README.md) | 사이클 로그, 실행 기록 | 실행하면 자동으로 생김 | — |
+| [`cameras/`](cameras/README.md) | 카메라 확인 사진 | `tools.cameras` | — |
 
 ## 문서
 

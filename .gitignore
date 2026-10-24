@@ -2,19 +2,20 @@ __pycache__/
 *.pyc
 .venv/
 
-# 실행 로그 (발표 통계용으로 따로 보관)
+# 실행 로그 (자동 생성). 폴더 설명 README.md만 올린다
 logs/*
-!logs/.gitkeep
+!logs/README.md
 
-# 다운로드한 OpenVINO 모델, ACT 학습 결과
+# 내려받은 모델(Whisper)·OpenVINO 캐시. ACT 모델은 trained_model/
 models/*
-!models/.gitkeep
+!models/README.md
 outputs/
 
 # physical-ai-studio 학습 결과물·내려받은 데이터셋 (용량 큼, git 제외). trained_model/README.md만 올린다
 trained_model/*
 !trained_model/README.md
-/data/
+/data/*
+!/data/README.md
 .env
 .pytest_cache/
 
@@ -22,5 +23,7 @@ trained_model/*
 frontend/.thumbnail
 
 # 녹화 재생 데이터 (tools.fetch_replays · 실행 기록 복사), 카메라 찾기 사진 (tools.cameras)
-/replays/
-/cameras/
+/replays/*
+!/replays/README.md
+/cameras/*
+!/cameras/README.md
