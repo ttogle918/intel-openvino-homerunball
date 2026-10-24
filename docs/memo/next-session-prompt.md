@@ -64,8 +64,8 @@
 
 ## 하드웨어·모델 사실 (확인된 것)
 - Studio: http://192.168.0.6:7860 (조회 API만 사용). dori-dori 프로젝트 0d36a88a-0078-47f9-972e-d5dd3e94a262, 환경 24aadb64-3457-411c-8411-48529eada534. oranda 프로젝트 20ca705b-b5a7-435b-9e49-6ae515a68e11, 환경 77201d65-2793-4ae4-b57c-9100c3c40fd0, 데이터셋 last 2fad5952-320a-42e2-b2a1-73e367f64e82 (31 에피소드, 5~18초, 복사본 project/data/last, git 제외).
-- oranda_pickup 결과물: traind-model/pickup/exports/openvino (입력 state(6), images.follow/a/b 3×720×1280, action (100,6), resnet18 ACT). config camera_map {a: tower cam, b: side cam, follow: follow cam}. a/b를 바꿔도 정책 출력은 같다.
-- dori_dori 결과물: traind-model/dori-dori-model/exports/openvino (입력 images.tower cam·images.follow cam, chunk 100). 실기에서 shoulder_pan이 거의 안 움직임(데이터 부족) → 시연은 코드 도리도리.
+- oranda_pickup 결과물: trained_model/oranda_pickup/exports/openvino (입력 state(6), images.follow/a/b 3×720×1280, action (100,6), resnet18 ACT). config camera_map {a: tower cam, b: side cam, follow: follow cam}. a/b를 바꿔도 정책 출력은 같다.
+- dori_dori 결과물: trained_model/dori_dori/exports/openvino (입력 images.tower cam·images.follow cam, chunk 100). 실기에서 shoulder_pan이 거의 안 움직임(데이터 부족) → 시연은 코드 도리도리.
 - 단위: 몸통 -100..100, 그리퍼 0..100 (작을수록 닫힘, 데이터와 실측으로 확인).
 - physicalai 0.3.0: SO101은 본체 physicalai.robot.so101에 있다. RobotRuntime(robot, action_source, fps, cameras, callbacks).run(duration_s, stop_event)은 매 run마다 action_source.connect/disconnect를 부른다. PolicySource(InferenceModel(export_dir, device)), InferenceModel이 모델이 기대하는 입력만 골라 쓴다.
 

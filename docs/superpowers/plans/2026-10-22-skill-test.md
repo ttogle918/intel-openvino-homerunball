@@ -237,7 +237,7 @@ class RunResult:
 `config.yaml`의 `dori_dori:` 한 줄을 다음 블록으로 바꾼다 (들여쓰기 2칸, `skills:` 아래):
 ```yaml
   dori_dori:
-    export_dir: traind-model/dori-dori-model/exports/openvino
+    export_dir: trained_model/dori_dori/exports/openvino
     max_time_s: 6
     camera_map: {}
     replay: {dataset: null, episode: null}

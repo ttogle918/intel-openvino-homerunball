@@ -11,8 +11,9 @@ models/*
 !models/.gitkeep
 outputs/
 
-# physical-ai-studio 학습 결과물·내려받은 데이터셋 (용량 큼, git 제외)
-traind-model/
+# physical-ai-studio 학습 결과물·내려받은 데이터셋 (용량 큼, git 제외). trained_model/README.md만 올린다
+trained_model/*
+!trained_model/README.md
 /data/
 .env
 .pytest_cache/

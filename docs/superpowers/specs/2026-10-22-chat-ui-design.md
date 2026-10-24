@@ -326,7 +326,7 @@ target:
 
 ## 11.5 확인된 사실 (2026-10-22, dori-dori 결과물과 06 실습)
 
-`traind-model/dori-dori-model/` (physical-ai-studio 결과물, git 제외):
+`trained_model/dori_dori/` (physical-ai-studio 결과물, git 제외):
 
 - 사용 파일: `exports/openvino/` = `act.xml`, `act.bin`, `manifest.json` (onnx·torch 내보내기와 `model.ckpt`도 있음)
 - 입력: `state` (6), `images.tower cam`, `images.follow cam` (각 3×720×1280). **카메라 이름이 `tower cam` / `follow cam`** (띄어쓰기 포함). 7.4절의 `front` / wrist 가정을 이 이름으로 바꾼다.
@@ -364,7 +364,7 @@ Studio(`192.168.0.6:7860`, 프로젝트 `dori-dori`)에서 읽은 설정 (조회
 
 로봇·카메라는 이 PC에 연결하지 않았다. 아래는 모델 파일, Studio 조회 API(GET만), 데이터셋 복사본에서 확인한 것이다. 노트북 실기는 아직 하지 않았다.
 
-- **모델:** `traind-model/pickup/exports/openvino` (git 제외). manifest 입력은 `state`(6), `images.follow`, `images.a`, `images.b`(각 3×720×1280, letterbox 384), 출력 `action`(100, 6), resnet18 ACT. 개발 PC OpenVINO CPU 추론은 청크당 140~230 ms. 녹화 대비 30스텝 예측 MAE는 1.3~2.6 (가만히 있기 기준 1.9~4.7).
+- **모델:** `trained_model/oranda_pickup/exports/openvino` (git 제외). manifest 입력은 `state`(6), `images.follow`, `images.a`, `images.b`(각 3×720×1280, letterbox 384), 출력 `action`(100, 6), resnet18 ACT. 개발 PC OpenVINO CPU 추론은 청크당 140~230 ms. 녹화 대비 30스텝 예측 MAE는 1.3~2.6 (가만히 있기 기준 1.9~4.7).
 - **카메라 이름은 정책에 영향이 없다:** `images.a`와 `images.b`를 서로 바꿔도 출력이 bit 단위로 같다 (ACT가 카메라별 위치 임베딩 없이 토큰을 한 집합으로 다룬다). 이미지 집합만 맞으면 된다. 다만 `vision.camera`(A단계 개수 세기)와 UI 라벨은 이름에 의존한다.
 - **Studio:** 프로젝트 `oranda`(20ca705b-b5a7-435b-9e49-6ae515a68e11), 환경 77201d65-2793-4ae4-b57c-9100c3c40fd0, 데이터셋 `last`(2fad5952-320a-42e2-b2a1-73e367f64e82): 31 에피소드, 5~18초, task `"PIck up the Snack and place it in the empty tray"`, AV1 영상. 복사본이 `project/data/last`(311MB, `/data/` git 제외)에 있고, dori-dori 프로젝트에도 같은 복사본(`last`, `final_oranda_pickup`)이 있다.
 - **runtime-config:** 팔로워 캘리브레이션은 dori-dori 환경과 oranda 환경이 같다. 카메라 `a` = 번호 0 (USB 14.0-3, dori의 tower cam과 같은 장치), `b` = 번호 4 (14.0-4), `follow` = 번호 2 (시리얼 20240307110322). **a와 b는 시리얼이 같아(zvcai231100001) 번호로만 지정할 수 있다.** Studio PC 포트는 팔로워 `/dev/ttyACM1`, 리더 `/dev/ttyACM0`.

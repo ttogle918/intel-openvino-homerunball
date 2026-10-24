@@ -446,14 +446,14 @@ def ui_tiles(cfg):
 
 `config.yaml`의 `skills:` 절에서 다음 두 줄을
 ```yaml
-  oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
-  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}}
+  oranda_pickup: {export_dir: trained_model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
+  dori_dori:     {export_dir: trained_model/dori_dori/exports/openvino, max_time_s: 6, camera_map: {}}
 ```
 다음으로 바꾼다:
 ```yaml
   # replay: dry-run 재생에 쓸 Studio 녹화 {dataset: <데이터셋 id>, episode: <번호>} (python -m tools.fetch_replays 가 읽는다)
-  oranda_pickup: {export_dir: traind-model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}, replay: {dataset: null, episode: null}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
-  dori_dori:     {export_dir: traind-model/dori-dori-model/exports/openvino, max_time_s: 6, camera_map: {}, replay: {dataset: null, episode: null}}
+  oranda_pickup: {export_dir: trained_model/oranda-pickup-model/exports/openvino, max_time_s: 20, camera_map: {}, replay: {dataset: null, episode: null}}   # [ ] 학습 끝나면 폴더 이름·camera_map 확인
+  dori_dori:     {export_dir: trained_model/dori_dori/exports/openvino, max_time_s: 6, camera_map: {}, replay: {dataset: null, episode: null}}
 ```
 `poses_file: poses.yaml ...` 줄 바로 다음(빈 줄 뒤 `voice:` 앞)에 넣는다:
 ```yaml

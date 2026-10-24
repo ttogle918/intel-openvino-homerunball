@@ -74,6 +74,7 @@
 │   └── cameras.py             # 카메라 목록·시리얼·사진 1장 → config cameras 예시
 ├── tests/
 │   └── samples/        # 트레이 사진 (dry-run용)
+├── trained_model/      # ACT 모델 trained_model/<스킬>/exports/openvino (git 제외, README.md만 올림)
 ├── models/             # 로컬 모델 (git 제외)
 ├── logs/               # 사이클별 JSONL 로그 (git 제외)
 ├── replays/            # dry-run 재생 데이터 replays/<스킬>/episode.json (git 제외)
